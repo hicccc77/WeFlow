@@ -1,0 +1,94 @@
+{
+  "name": "weflow",
+  "version": "1.0.0",
+  "description": "WeFlow - 微信聊天记录查看工具",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && electron-builder",
+    "preview": "vite preview",
+    "electron:dev": "vite --mode electron",
+    "electron:build": "npm run build",
+    "postinstall": "electron-rebuild"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "echarts": "^5.5.1",
+    "echarts-for-react": "^3.0.2",
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.3.9",
+    "fzstd": "^0.1.1",
+    "html2canvas": "^1.4.1",
+    "jieba-wasm": "^2.2.0",
+    "jszip": "^3.10.1",
+    "koffi": "^2.9.0",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.1.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^39.2.7",
+    "electron-builder": "^25.1.8",
+    "sass": "^1.83.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5",
+    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.WeFlow.app",
+    "productName": "WeFlow",
+    "artifactName": "${productName}-${version}-Setup.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "unicode": true,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "displayLanguageSelector": false,
+      "include": "installer.nsh",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico",
+      "perMachine": false,
+      "allowElevation": true,
+      "installerSidebar": null,
+      "uninstallerSidebar": null
+    },
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/"
+      },
+      {
+        "from": "public/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ]
+  }
+}

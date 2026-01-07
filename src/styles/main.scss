@@ -1,0 +1,304 @@
+// CSS 变量 - 主题
+@use './chat-patterns.scss';
+
+:root {
+  // 颜色
+  --primary: #8B7355;
+  --primary-hover: #7A6548;
+  --primary-light: rgba(139, 115, 85, 0.1);
+  --danger: #dc3545;
+  --warning: #ffc107;
+  
+  // 背景
+  --bg-primary: #F0EEE9;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  
+  // 文字
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  
+  // 边框
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-radius: 9999px;
+  
+  // 阴影
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  
+  // 侧边栏
+  --sidebar-width: 220px;
+  
+  // 主题渐变
+  --bg-gradient: linear-gradient(135deg, #F0EEE9 0%, #E8E6E1 100%);
+  --primary-gradient: linear-gradient(135deg, #8B7355 0%, #A68B5B 100%);
+  
+  // 卡片背景
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// ==================== 浅色主题 ====================
+
+// 云上舞白主题 (默认)
+[data-theme="cloud-dancer"][data-mode="light"],
+[data-theme="cloud-dancer"]:not([data-mode]) {
+  --primary: #8B7355;
+  --primary-hover: #7A6548;
+  --primary-light: rgba(139, 115, 85, 0.1);
+  --bg-primary: #F0EEE9;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --bg-gradient: linear-gradient(135deg, #F0EEE9 0%, #E8E6E1 100%);
+  --primary-gradient: linear-gradient(135deg, #8B7355 0%, #A68B5B 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// 刚玉蓝主题
+[data-theme="corundum-blue"][data-mode="light"],
+[data-theme="corundum-blue"]:not([data-mode]) {
+  --primary: #4A6670;
+  --primary-hover: #3D565E;
+  --primary-light: rgba(74, 102, 112, 0.1);
+  --bg-primary: #E8EEF0;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --bg-gradient: linear-gradient(135deg, #E8EEF0 0%, #D8E4E8 100%);
+  --primary-gradient: linear-gradient(135deg, #4A6670 0%, #5A7A86 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// 冰猕猴桃汁绿主题
+[data-theme="kiwi-green"][data-mode="light"],
+[data-theme="kiwi-green"]:not([data-mode]) {
+  --primary: #7A9A5C;
+  --primary-hover: #6A8A4C;
+  --primary-light: rgba(122, 154, 92, 0.1);
+  --bg-primary: #E8F0E4;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --bg-gradient: linear-gradient(135deg, #E8F0E4 0%, #D8E8D0 100%);
+  --primary-gradient: linear-gradient(135deg, #7A9A5C 0%, #8AAA6C 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// 辛辣红主题
+[data-theme="spicy-red"][data-mode="light"],
+[data-theme="spicy-red"]:not([data-mode]) {
+  --primary: #8B4049;
+  --primary-hover: #7A3540;
+  --primary-light: rgba(139, 64, 73, 0.1);
+  --bg-primary: #F0E8E8;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --bg-gradient: linear-gradient(135deg, #F0E8E8 0%, #E8D8D8 100%);
+  --primary-gradient: linear-gradient(135deg, #8B4049 0%, #A05058 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// 明水鸭色主题
+[data-theme="teal-water"][data-mode="light"],
+[data-theme="teal-water"]:not([data-mode]) {
+  --primary: #5A8A8A;
+  --primary-hover: #4A7A7A;
+  --primary-light: rgba(90, 138, 138, 0.1);
+  --bg-primary: #E4F0F0;
+  --bg-secondary: rgba(255, 255, 255, 0.7);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --text-primary: #3d3d3d;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --bg-gradient: linear-gradient(135deg, #E4F0F0 0%, #D4E8E8 100%);
+  --primary-gradient: linear-gradient(135deg, #5A8A8A 0%, #6A9A9A 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+}
+
+// ==================== 深色主题 ====================
+
+// 云上舞白 - 深色
+[data-theme="cloud-dancer"][data-mode="dark"] {
+  --primary: #C9A86C;
+  --primary-hover: #D9B87C;
+  --primary-light: rgba(201, 168, 108, 0.15);
+  --bg-primary: #1a1816;
+  --bg-secondary: rgba(40, 36, 32, 0.9);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #F0EEE9;
+  --text-secondary: #b3b0aa;
+  --text-tertiary: #807d78;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-gradient: linear-gradient(135deg, #1a1816 0%, #252220 100%);
+  --primary-gradient: linear-gradient(135deg, #8B7355 0%, #C9A86C 100%);
+  --card-bg: rgba(40, 36, 32, 0.9);
+}
+
+// 刚玉蓝 - 深色
+[data-theme="corundum-blue"][data-mode="dark"] {
+  --primary: #6A9AAA;
+  --primary-hover: #7AAABA;
+  --primary-light: rgba(106, 154, 170, 0.15);
+  --bg-primary: #141a1c;
+  --bg-secondary: rgba(30, 40, 44, 0.9);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #E8EEF0;
+  --text-secondary: #a8b4b8;
+  --text-tertiary: #6a7a80;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-gradient: linear-gradient(135deg, #141a1c 0%, #1e282c 100%);
+  --primary-gradient: linear-gradient(135deg, #4A6670 0%, #6A9AAA 100%);
+  --card-bg: rgba(30, 40, 44, 0.9);
+}
+
+// 冰猕猴桃汁绿 - 深色
+[data-theme="kiwi-green"][data-mode="dark"] {
+  --primary: #9ABA7C;
+  --primary-hover: #AACA8C;
+  --primary-light: rgba(154, 186, 124, 0.15);
+  --bg-primary: #161a14;
+  --bg-secondary: rgba(34, 42, 30, 0.9);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #E8F0E4;
+  --text-secondary: #a8b4a0;
+  --text-tertiary: #6a7a60;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-gradient: linear-gradient(135deg, #161a14 0%, #222a1e 100%);
+  --primary-gradient: linear-gradient(135deg, #7A9A5C 0%, #9ABA7C 100%);
+  --card-bg: rgba(34, 42, 30, 0.9);
+}
+
+// 辛辣红 - 深色
+[data-theme="spicy-red"][data-mode="dark"] {
+  --primary: #C06068;
+  --primary-hover: #D07078;
+  --primary-light: rgba(192, 96, 104, 0.15);
+  --bg-primary: #1a1416;
+  --bg-secondary: rgba(42, 32, 34, 0.9);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #F0E8E8;
+  --text-secondary: #b4a8aa;
+  --text-tertiary: #7a6a6c;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-gradient: linear-gradient(135deg, #1a1416 0%, #2a2022 100%);
+  --primary-gradient: linear-gradient(135deg, #8B4049 0%, #C06068 100%);
+  --card-bg: rgba(42, 32, 34, 0.9);
+}
+
+// 明水鸭色 - 深色
+[data-theme="teal-water"][data-mode="dark"] {
+  --primary: #7ABAAA;
+  --primary-hover: #8ACABA;
+  --primary-light: rgba(122, 186, 170, 0.15);
+  --bg-primary: #121a1a;
+  --bg-secondary: rgba(28, 42, 42, 0.9);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #E4F0F0;
+  --text-secondary: #a0b4b4;
+  --text-tertiary: #607a7a;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-gradient: linear-gradient(135deg, #121a1a 0%, #1c2a2a 100%);
+  --primary-gradient: linear-gradient(135deg, #5A8A8A 0%, #7ABAAA 100%);
+  --card-bg: rgba(28, 42, 42, 0.9);
+}
+
+// 重置样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 3px;
+  
+  &:hover {
+    background: var(--text-secondary);
+  }
+}
+
+// 按钮基础样式
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &-primary {
+    background: var(--primary);
+    color: white;
+    
+    &:hover {
+      background: var(--primary-hover);
+    }
+  }
+  
+  &-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    
+    &:hover {
+      background: var(--border-color);
+    }
+  }
+}
+
+// 卡片样式
+.card {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+}

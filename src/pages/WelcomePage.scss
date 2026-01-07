@@ -1,0 +1,150 @@
+.welcome-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.welcome-content {
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+.title {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -1.5px;
+  margin: 0 0 12px;
+}
+
+.subtitle {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin: 0 0 40px;
+  letter-spacing: 0.5px;
+}
+
+.config-card {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: left;
+  box-shadow: var(--shadow-md);
+}
+
+.config-section {
+  margin-bottom: 24px;
+}
+
+.config-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  
+  .optional {
+    font-weight: 400;
+    color: var(--text-tertiary);
+  }
+}
+
+.config-input {
+  width: 100%;
+  padding: 12px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font-size: 14px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+  
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+  
+  .config-input {
+    flex: 1;
+  }
+}
+
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  
+  &:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  
+  &:hover:not(:disabled) {
+    background: var(--border-color);
+  }
+}
+
+.btn-connect {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  margin-top: 8px;
+}
+
+.error-message {
+  background: rgba(250, 81, 81, 0.1);
+  color: var(--danger);
+  padding: 12px 20px;
+  border-radius: 9999px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.disclaimer {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 32px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 100px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.shield-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}

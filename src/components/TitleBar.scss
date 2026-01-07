@@ -1,0 +1,23 @@
+.title-bar {
+  height: 41px;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  border-bottom: 1px solid var(--border-color);
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.title-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.titles {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}

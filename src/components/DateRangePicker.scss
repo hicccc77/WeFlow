@@ -1,0 +1,214 @@
+.date-range-picker {
+  position: relative;
+  -webkit-app-region: no-drag;
+
+  .picker-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    height: 32px;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    svg {
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .picker-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .clear-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      border: none;
+      background: var(--bg-hover);
+      border-radius: 50%;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      margin-left: 4px;
+
+      &:hover {
+        background: var(--border-color);
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .picker-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    z-index: 1000;
+    display: flex;
+    overflow: hidden;
+    animation: dropdownFadeIn 0.15s ease-out;
+  }
+
+  @keyframes dropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .quick-options {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border-right: 1px solid var(--border-color);
+    min-width: 100px;
+
+    .quick-option {
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+      text-align: left;
+      transition: all 0.15s;
+      white-space: nowrap;
+
+      &:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+    }
+  }
+
+
+  .calendar-section {
+    padding: 16px;
+    min-width: 280px;
+  }
+
+  .calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: all 0.15s;
+
+      &:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+    }
+
+    .month-year {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+
+  .weekday-header {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    padding: 8px 0;
+    font-weight: 500;
+  }
+
+  .calendar-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--text-tertiary);
+    border-radius: 8px;
+    cursor: default;
+    position: relative;
+
+    &.valid {
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s;
+
+      &:hover {
+        background: var(--bg-hover);
+      }
+    }
+
+    &.today {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    &.in-range {
+      background: var(--primary-light);
+      border-radius: 0;
+    }
+
+    &.start {
+      background: var(--primary);
+      color: #fff;
+      border-radius: 8px 0 0 8px;
+
+      &.end {
+        border-radius: 8px;
+      }
+    }
+
+    &.end {
+      background: var(--primary);
+      color: #fff;
+      border-radius: 0 8px 8px 0;
+    }
+  }
+
+  .selection-hint {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+  }
+}
