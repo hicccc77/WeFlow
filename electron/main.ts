@@ -10,20 +10,31 @@ import { analyticsService } from './services/analyticsService'
 import { groupAnalyticsService } from './services/groupAnalyticsService'
 import { annualReportService } from './services/annualReportService'
 import { exportService, ExportOptions } from './services/exportService'
+import { KeyService } from './services/keyService'
 
 // 配置自动更新
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 autoUpdater.disableDifferentialDownload = true  // 禁用差分更新，强制全量下载
+const AUTO_UPDATE_ENABLED =
+  process.env.AUTO_UPDATE_ENABLED === 'true' ||
+  process.env.AUTO_UPDATE_ENABLED === '1' ||
+  (process.env.AUTO_UPDATE_ENABLED == null && !process.env.VITE_DEV_SERVER_URL)
 
 // 单例服务
 let configService: ConfigService | null = null
 
 // 协议窗口实例
 let agreementWindow: BrowserWindow | null = null
+let onboardingWindow: BrowserWindow | null = null
+const keyService = new KeyService()
 
-function createWindow() {
+let mainWindowReady = false
+let shouldShowMain = true
+
+function createWindow(options: { autoShow?: boolean } = {}) {
   // 获取图标路径 - 打包后在 resources 目录
+  const { autoShow = true } = options
   const isDev = !!process.env.VITE_DEV_SERVER_URL
   const iconPath = isDev
     ? join(__dirname, '../public/icon.ico')
@@ -49,13 +60,12 @@ function createWindow() {
     show: false
   })
 
-  // 初始化服务
-  configService = new ConfigService()
-  // wcdbService 将在各业务服务中按需初始化
-
   // 窗口准备好后显示
   win.once('ready-to-show', () => {
-    win.show()
+    mainWindowReady = true
+    if (autoShow || shouldShowMain) {
+      win.show()
+    }
   })
 
   // 开发环境加载 vite 服务器
@@ -133,6 +143,62 @@ function createAgreementWindow() {
   })
 
   return agreementWindow
+}
+
+/**
+ * 创建首次引导窗口
+ */
+function createOnboardingWindow() {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.focus()
+    return onboardingWindow
+  }
+
+  const isDev = !!process.env.VITE_DEV_SERVER_URL
+  const iconPath = isDev
+    ? join(__dirname, '../public/icon.ico')
+    : join(process.resourcesPath, 'icon.ico')
+
+  onboardingWindow = new BrowserWindow({
+    width: 1100,
+    height: 720,
+    minWidth: 900,
+    minHeight: 600,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    icon: iconPath,
+    webPreferences: {
+      preload: join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    show: false
+  })
+
+  onboardingWindow.once('ready-to-show', () => {
+    onboardingWindow?.show()
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    onboardingWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/onboarding-window`)
+  } else {
+    onboardingWindow.loadFile(join(__dirname, '../dist/index.html'), { hash: '/onboarding-window' })
+  }
+
+  onboardingWindow.on('closed', () => {
+    onboardingWindow = null
+  })
+
+  return onboardingWindow
+}
+
+function showMainWindow() {
+  shouldShowMain = true
+  if (mainWindowReady) {
+    mainWindow?.show()
+  }
 }
 
 // 注册 IPC 处理器
@@ -259,11 +325,15 @@ function registerIpcHandlers() {
   ipcMain.on('window:setTitleBarOverlay', (event, options: { symbolColor: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) {
-      win.setTitleBarOverlay({
-        color: '#00000000',
-        symbolColor: options.symbolColor,
-        height: 40
-      })
+      try {
+        win.setTitleBarOverlay({
+          color: '#00000000',
+          symbolColor: options.symbolColor,
+          height: 40
+        })
+      } catch (error) {
+        console.warn('TitleBarOverlay not enabled for this window:', error)
+      }
     }
   })
 
@@ -305,6 +375,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:getMessages', async (_, sessionId: string, offset?: number, limit?: number) => {
     return chatService.getMessages(sessionId, offset, limit)
+  })
+
+  ipcMain.handle('chat:getLatestMessages', async (_, sessionId: string, limit?: number) => {
+    return chatService.getLatestMessages(sessionId, limit)
   })
 
   ipcMain.handle('chat:getContact', async (_, username: string) => {
@@ -381,6 +455,21 @@ function registerIpcHandlers() {
     return true
   })
 
+  // 完成引导，关闭引导窗口并显示主窗口
+  ipcMain.handle('window:completeOnboarding', async () => {
+    try {
+      configService?.set('onboardingDone', true)
+    } catch (e) {
+      console.error('保存引导完成状态失败:', e)
+    }
+
+    if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+      onboardingWindow.close()
+    }
+    showMainWindow()
+    return true
+  })
+
   // 年度报告相关
   ipcMain.handle('annualReport:getAvailableYears', async () => {
     return annualReportService.getAvailableYears()
@@ -388,6 +477,19 @@ function registerIpcHandlers() {
 
   ipcMain.handle('annualReport:generateReport', async (_, year: number) => {
     return annualReportService.generateReport(year)
+  })
+
+  // 密钥获取
+  ipcMain.handle('key:autoGetDbKey', async (event) => {
+    return keyService.autoGetDbKey(60_000, (message, level) => {
+      event.sender.send('key:dbKeyStatus', { message, level })
+    })
+  })
+
+  ipcMain.handle('key:autoGetImageKey', async (event, manualDir?: string) => {
+    return keyService.autoGetImageKey(manualDir, (message) => {
+      event.sender.send('key:imageKeyStatus', { message })
+    })
   })
 
 }
@@ -423,8 +525,15 @@ function checkForUpdatesOnStartup() {
 }
 
 app.whenReady().then(() => {
+  configService = new ConfigService()
   registerIpcHandlers()
-  mainWindow = createWindow()
+  const onboardingDone = configService.get('onboardingDone')
+  shouldShowMain = onboardingDone
+  mainWindow = createWindow({ autoShow: onboardingDone })
+
+  if (!onboardingDone) {
+    createOnboardingWindow()
+  }
   
   // 启动时检测更新
   checkForUpdatesOnStartup()

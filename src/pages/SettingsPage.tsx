@@ -26,6 +26,8 @@ function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const [decryptKey, setDecryptKey] = useState('')
+  const [imageXorKey, setImageXorKey] = useState('')
+  const [imageAesKey, setImageAesKey] = useState('')
   const [dbPath, setDbPath] = useState('')
   const [wxid, setWxid] = useState('')
   const [cachePath, setCachePath] = useState('')
@@ -36,6 +38,8 @@ function SettingsPage() {
   const [isLoading, setIsLoadingState] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isDetectingPath, setIsDetectingPath] = useState(false)
+  const [isFetchingDbKey, setIsFetchingDbKey] = useState(false)
+  const [isFetchingImageKey, setIsFetchingImageKey] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(0)
@@ -43,11 +47,26 @@ function SettingsPage() {
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; version?: string; releaseNotes?: string } | null>(null)
   const [message, setMessage] = useState<{ text: string; success: boolean } | null>(null)
   const [showDecryptKey, setShowDecryptKey] = useState(false)
+  const [dbKeyStatus, setDbKeyStatus] = useState('')
+  const [imageKeyStatus, setImageKeyStatus] = useState('')
 
   useEffect(() => {
     loadConfig()
     loadDefaultExportPath()
     loadAppVersion()
+  }, [])
+
+  useEffect(() => {
+    const removeDb = window.electronAPI.key.onDbKeyStatus((payload) => {
+      setDbKeyStatus(payload.message)
+    })
+    const removeImage = window.electronAPI.key.onImageKeyStatus((payload) => {
+      setImageKeyStatus(payload.message)
+    })
+    return () => {
+      removeDb?.()
+      removeImage?.()
+    }
   }, [])
 
   const loadConfig = async () => {
@@ -58,12 +77,18 @@ function SettingsPage() {
       const savedCachePath = await configService.getCachePath()
       const savedExportPath = await configService.getExportPath()
       const savedLogEnabled = await configService.getLogEnabled()
+      const savedImageXorKey = await configService.getImageXorKey()
+      const savedImageAesKey = await configService.getImageAesKey()
       
       if (savedKey) setDecryptKey(savedKey)
       if (savedPath) setDbPath(savedPath)
       if (savedWxid) setWxid(savedWxid)
       if (savedCachePath) setCachePath(savedCachePath)
       if (savedExportPath) setExportPath(savedExportPath)
+      if (savedImageXorKey != null) {
+        setImageXorKey(`0x${savedImageXorKey.toString(16).toUpperCase().padStart(2, '0')}`)
+      }
+      if (savedImageAesKey) setImageAesKey(savedImageAesKey)
       setLogEnabled(savedLogEnabled)
     } catch (e) {
       console.error('加载配置失败:', e)
@@ -217,6 +242,53 @@ function SettingsPage() {
     }
   }
 
+  const handleAutoGetDbKey = async () => {
+    if (isFetchingDbKey) return
+    setIsFetchingDbKey(true)
+    setDbKeyStatus('正在连接微信进程...')
+    try {
+      const result = await window.electronAPI.key.autoGetDbKey()
+      if (result.success && result.key) {
+        setDecryptKey(result.key)
+        setDbKeyStatus('已获取解密密钥')
+        showMessage('已自动获取解密密钥', true)
+      } else {
+        showMessage(result.error || '自动获取密钥失败', false)
+      }
+    } catch (e) {
+      showMessage(`自动获取密钥失败: ${e}`, false)
+    } finally {
+      setIsFetchingDbKey(false)
+    }
+  }
+
+  const handleAutoGetImageKey = async () => {
+    if (isFetchingImageKey) return
+    if (!dbPath) {
+      showMessage('请先选择数据库目录', false)
+      return
+    }
+    setIsFetchingImageKey(true)
+    setImageKeyStatus('正在准备获取图片密钥...')
+    try {
+      const result = await window.electronAPI.key.autoGetImageKey(dbPath)
+      if (result.success && result.aesKey) {
+        if (typeof result.xorKey === 'number') {
+          setImageXorKey(`0x${result.xorKey.toString(16).toUpperCase().padStart(2, '0')}`)
+        }
+        setImageAesKey(result.aesKey)
+        setImageKeyStatus('已获取图片密钥')
+        showMessage('已自动获取图片密钥', true)
+      } else {
+        showMessage(result.error || '自动获取图片密钥失败', false)
+      }
+    } catch (e) {
+      showMessage(`自动获取图片密钥失败: ${e}`, false)
+    } finally {
+      setIsFetchingImageKey(false)
+    }
+  }
+
   const handleResetExportPath = async () => {
     try {
       const downloadsPath = await window.electronAPI.app.getDownloadsPath()
@@ -263,6 +335,20 @@ function SettingsPage() {
       await configService.setDbPath(dbPath)
       await configService.setMyWxid(wxid)
       await configService.setCachePath(cachePath)
+      if (imageXorKey) {
+        const parsed = parseInt(imageXorKey.replace(/^0x/i, ''), 16)
+        if (!Number.isNaN(parsed)) {
+          await configService.setImageXorKey(parsed)
+        }
+      } else {
+        await configService.setImageXorKey(0)
+      }
+      if (imageAesKey) {
+        await configService.setImageAesKey(imageAesKey)
+      } else {
+        await configService.setImageAesKey('')
+      }
+      await configService.setOnboardingDone(true)
 
       showMessage('配置保存成功，正在测试连接...', true)
       const result = await window.electronAPI.wcdb.testConnection(dbPath, decryptKey, wxid)
@@ -342,6 +428,10 @@ function SettingsPage() {
             {showDecryptKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
+        <button className="btn btn-secondary btn-sm" onClick={handleAutoGetDbKey} disabled={isFetchingDbKey}>
+          <Plug size={14} /> {isFetchingDbKey ? '获取中...' : '自动获取密钥'}
+        </button>
+        {dbKeyStatus && <div className="form-hint status-text">{dbKeyStatus}</div>}
       </div>
 
       <div className="form-group">
@@ -361,6 +451,22 @@ function SettingsPage() {
         <span className="form-hint">微信账号标识</span>
         <input type="text" placeholder="例如: wxid_xxxxxx" value={wxid} onChange={(e) => setWxid(e.target.value)} />
         <button className="btn btn-secondary btn-sm" onClick={handleScanWxid}><Search size={14} /> 扫描 wxid</button>
+      </div>
+
+      <div className="form-group">
+        <label>图片 XOR 密钥 <span className="optional">(可选)</span></label>
+        <span className="form-hint">用于解密图片缓存</span>
+        <input type="text" placeholder="例如: 0xA4" value={imageXorKey} onChange={(e) => setImageXorKey(e.target.value)} />
+      </div>
+
+      <div className="form-group">
+        <label>图片 AES 密钥 <span className="optional">(可选)</span></label>
+        <span className="form-hint">16 位密钥</span>
+        <input type="text" placeholder="16 位 AES 密钥" value={imageAesKey} onChange={(e) => setImageAesKey(e.target.value)} />
+        <button className="btn btn-secondary btn-sm" onClick={handleAutoGetImageKey} disabled={isFetchingImageKey}>
+          <Plug size={14} /> {isFetchingImageKey ? '获取中...' : '自动获取图片密钥'}
+        </button>
+        {imageKeyStatus && <div className="form-hint status-text">{imageKeyStatus}</div>}
       </div>
 
       <div className="form-group">
@@ -470,6 +576,8 @@ function SettingsPage() {
       <div className="about-footer">
         <p className="about-desc">微信聊天记录分析工具</p>
         <div className="about-links">
+          <a href="#" onClick={(e) => { e.preventDefault(); window.electronAPI.shell.openExternal('https://github.com/hicccc77/WeFlow') }}>官网</a>
+          <span>·</span>
           <a href="#" onClick={(e) => { e.preventDefault(); window.electronAPI.shell.openExternal('https://chatlab.fun') }}>ChatLab</a>
           <span>·</span>
           <a href="#" onClick={(e) => { e.preventDefault(); window.electronAPI.window.openAgreementWindow() }}>用户协议</a>

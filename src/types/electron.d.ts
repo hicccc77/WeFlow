@@ -6,6 +6,7 @@ export interface ElectronAPI {
     maximize: () => void
     close: () => void
     openAgreementWindow: () => Promise<boolean>
+    completeOnboarding: () => Promise<boolean>
     setTitleBarOverlay: (options: { symbolColor: string }) => void
   }
   config: {
@@ -42,6 +43,12 @@ export interface ElectronAPI {
     open: (dbPath: string, hexKey: string, wxid: string) => Promise<boolean>
     close: () => Promise<boolean>
   }
+  key: {
+    autoGetDbKey: () => Promise<{ success: boolean; key?: string; error?: string; logs?: string[] }>
+    autoGetImageKey: (manualDir?: string) => Promise<{ success: boolean; xorKey?: number; aesKey?: string; error?: string }>
+    onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => () => void
+    onImageKeyStatus: (callback: (payload: { message: string }) => void) => () => void
+  }
   chat: {
     connect: () => Promise<{ success: boolean; error?: string }>
     getSessions: () => Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }>
@@ -50,6 +57,11 @@ export interface ElectronAPI {
       messages?: Message[]; 
       hasMore?: boolean; 
       error?: string 
+    }>
+    getLatestMessages: (sessionId: string, limit?: number) => Promise<{
+      success: boolean
+      messages?: Message[]
+      error?: string
     }>
     getContact: (username: string) => Promise<Contact | null>
     getContactAvatar: (username: string) => Promise<{ avatarUrl?: string; displayName?: string } | null>

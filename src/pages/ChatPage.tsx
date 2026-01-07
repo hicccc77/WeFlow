@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
@@ -114,6 +114,21 @@ function ChatPage(_props: ChatPageProps) {
   const [showDetailPanel, setShowDetailPanel] = useState(false)
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+  const [highlightedMessageKeys, setHighlightedMessageKeys] = useState<string[]>([])
+
+  const highlightedMessageSet = useMemo(() => new Set(highlightedMessageKeys), [highlightedMessageKeys])
+  const messagesRef = useRef<Message[]>([])
+  const currentSessionRef = useRef<string | null>(null)
+  const isLoadingMessagesRef = useRef(false)
+  const isLoadingMoreRef = useRef(false)
+  const isConnectedRef = useRef(false)
+  const searchKeywordRef = useRef('')
+  const realtimeMessageBusyRef = useRef(false)
+  const realtimeMessageQueuedRef = useRef(false)
+  const realtimeSessionBusyRef = useRef(false)
+  const realtimeSessionQueuedRef = useRef(false)
+  const realtimeMessageTimerRef = useRef<number | null>(null)
+  const realtimeSessionTimerRef = useRef<number | null>(null)
 
   // 加载当前用户头像
   const loadMyAvatar = useCallback(async () => {
@@ -245,9 +260,14 @@ function ChatPage(_props: ChatPageProps) {
         }
         setHasMoreMessages(result.hasMore ?? false)
         setCurrentOffset(offset + result.messages.length)
+      } else if (!result.success) {
+        setConnectionError(result.error || '加载消息失败')
+        setHasMoreMessages(false)
       }
     } catch (e) {
       console.error('加载消息失败:', e)
+      setConnectionError('加载消息失败')
+      setHasMoreMessages(false)
     } finally {
       setLoadingMessages(false)
       setLoadingMore(false)
@@ -308,6 +328,19 @@ function ChatPage(_props: ChatPageProps) {
     }
   }, [isLoadingMore, isLoadingMessages, hasMoreMessages, currentSessionId, currentOffset])
 
+  const getMessageKey = useCallback((msg: Message): string => {
+    if (msg.localId && msg.localId > 0) return `l:${msg.localId}`
+    return `t:${msg.createTime}:${msg.sortSeq || 0}:${msg.serverId || 0}`
+  }, [])
+
+  const flashNewMessages = useCallback((keys: string[]) => {
+    if (keys.length === 0) return
+    setHighlightedMessageKeys((prev) => [...prev, ...keys])
+    window.setTimeout(() => {
+      setHighlightedMessageKeys((prev) => prev.filter((k) => !keys.includes(k)))
+    }, 2500)
+  }, [])
+
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
     if (messageListRef.current) {
@@ -348,6 +381,135 @@ function ChatPage(_props: ChatPageProps) {
       connect()
     }
   }, [])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    currentSessionRef.current = currentSessionId
+  }, [currentSessionId])
+
+  useEffect(() => {
+    isLoadingMessagesRef.current = isLoadingMessages
+    isLoadingMoreRef.current = isLoadingMore
+  }, [isLoadingMessages, isLoadingMore])
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected
+  }, [isConnected])
+
+  useEffect(() => {
+    searchKeywordRef.current = searchKeyword
+  }, [searchKeyword])
+
+  useEffect(() => {
+    if (!searchKeyword.trim()) return
+    const lower = searchKeyword.toLowerCase()
+    const filtered = sessions.filter(s =>
+      s.displayName?.toLowerCase().includes(lower) ||
+      s.username.toLowerCase().includes(lower) ||
+      s.summary.toLowerCase().includes(lower)
+    )
+    setFilteredSessions(filtered)
+  }, [sessions, searchKeyword, setFilteredSessions])
+
+  const refreshRealtimeSessions = useCallback(async () => {
+    if (!isConnectedRef.current) return
+    if (realtimeSessionBusyRef.current) {
+      realtimeSessionQueuedRef.current = true
+      return
+    }
+    realtimeSessionBusyRef.current = true
+    try {
+      const result = await window.electronAPI.chat.getSessions()
+      if (result.success && result.sessions) {
+        setSessions(result.sessions)
+        const keyword = searchKeywordRef.current.trim()
+        if (keyword) {
+          const lower = keyword.toLowerCase()
+          const filtered = result.sessions.filter(s =>
+            s.displayName?.toLowerCase().includes(lower) ||
+            s.username.toLowerCase().includes(lower) ||
+            s.summary.toLowerCase().includes(lower)
+          )
+          setFilteredSessions(filtered)
+        }
+      } else if (!result.success) {
+        setConnectionError(result.error || '实时刷新会话失败')
+      }
+    } catch (e) {
+      console.error('实时刷新会话失败:', e)
+    } finally {
+      realtimeSessionBusyRef.current = false
+      if (realtimeSessionQueuedRef.current) {
+        realtimeSessionQueuedRef.current = false
+        refreshRealtimeSessions()
+      }
+    }
+  }, [setSessions, setFilteredSessions, setConnectionError])
+
+  const refreshRealtimeMessages = useCallback(async () => {
+    if (!isConnectedRef.current) return
+    const sessionId = currentSessionRef.current
+    if (!sessionId) return
+    if (isLoadingMessagesRef.current || isLoadingMoreRef.current) return
+    if (realtimeMessageBusyRef.current) {
+      realtimeMessageQueuedRef.current = true
+      return
+    }
+    realtimeMessageBusyRef.current = true
+    try {
+      const result = await window.electronAPI.chat.getLatestMessages(sessionId, 50)
+      if (!result.success || !result.messages) {
+        return
+      }
+      const existing = new Set(messagesRef.current.map(getMessageKey))
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1]
+      const lastTime = lastMsg?.createTime ?? 0
+      const newMessages = result.messages.filter((msg) => {
+        const key = getMessageKey(msg)
+        if (existing.has(key)) return false
+        if (lastTime > 0 && msg.createTime < lastTime) return false
+        return true
+      })
+      if (newMessages.length > 0) {
+        appendMessages(newMessages, false)
+        flashNewMessages(newMessages.map(getMessageKey))
+        const listEl = messageListRef.current
+        if (listEl) {
+          const distance = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight
+          if (distance < 80) {
+            requestAnimationFrame(() => {
+              listEl.scrollTop = listEl.scrollHeight
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.error('实时刷新消息失败:', e)
+    } finally {
+      realtimeMessageBusyRef.current = false
+      if (realtimeMessageQueuedRef.current) {
+        realtimeMessageQueuedRef.current = false
+        refreshRealtimeMessages()
+      }
+    }
+  }, [appendMessages, flashNewMessages, getMessageKey])
+
+  useEffect(() => {
+    if (!isConnected) return
+    if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
+    if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
+    realtimeMessageTimerRef.current = window.setInterval(refreshRealtimeMessages, 5000)
+    realtimeSessionTimerRef.current = window.setInterval(refreshRealtimeSessions, 12000)
+    return () => {
+      if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
+      if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
+      realtimeMessageTimerRef.current = null
+      realtimeSessionTimerRef.current = null
+    }
+  }, [isConnected, refreshRealtimeMessages, refreshRealtimeSessions])
 
   // 格式化会话时间（相对时间）- 与原项目一致
   const formatSessionTime = (timestamp: number): string => {
@@ -564,8 +726,9 @@ function ChatPage(_props: ChatPageProps) {
                   // 系统消息居中显示
                   const wrapperClass = isSystem ? 'system' : (isSent ? 'sent' : 'received')
                   
+                  const messageKey = getMessageKey(msg)
                   return (
-                    <div key={msg.localId} className={`message-wrapper ${wrapperClass}`}>
+                    <div key={messageKey} className={`message-wrapper ${wrapperClass} ${highlightedMessageSet.has(messageKey) ? 'new-message' : ''}`}>
                       {showDateDivider && (
                         <div className="date-divider">
                           <span>{formatDateDivider(msg.createTime)}</span>

@@ -1,48 +1,44 @@
-import { useNavigate } from 'react-router-dom'
-import { MessageSquare, Database, Settings, FileText } from 'lucide-react'
+import { FolderOpen, ShieldCheck, Sparkles, Waves } from 'lucide-react'
+import { useAppStore } from '../stores/appStore'
 import './HomePage.scss'
 
 function HomePage() {
-  const navigate = useNavigate()
+  const dbPath = useAppStore((state) => state.dbPath)
 
   return (
     <div className="home-page">
       <div className="home-content">
-        <div className="app-info">
-          <img src="./logo.png" alt="WeFlow" className="app-logo" />
-          <h1 className="app-name">WeFlow</h1>
-          <p className="app-desc">微信聊天记录查看工具</p>
+        <div className="hero">
+          <div className="hero-badge">
+            <Sparkles size={14} />
+            本地私密分析
+          </div>
+          <h1 className="hero-title">WeFlow</h1>
+          <p className="hero-subtitle">把你的聊天记录整理成更清晰的时间脉络与关系图谱</p>
         </div>
 
-        <div className="shortcuts">
-          <div className="shortcut-card" onClick={() => navigate('/chat')}>
-            <div className="shortcut-icon" style={{ backgroundColor: '#07c160' }}>
-              <MessageSquare size={24} />
+        <div className="hero-panels">
+          <div className="hero-card">
+            <div className="card-icon"><Waves size={18} /></div>
+            <div>
+              <h3>情感与节奏</h3>
+              <p>用时间序列还原对话节奏，发现沉默与高光时刻。</p>
             </div>
-            <span className="shortcut-label">聊天记录</span>
           </div>
-          <div className="shortcut-card" onClick={() => navigate('/data-management')}>
-            <div className="shortcut-icon" style={{ backgroundColor: '#1989fa' }}>
-              <Database size={24} />
+          <div className="hero-card">
+            <div className="card-icon"><ShieldCheck size={18} /></div>
+            <div>
+              <h3>本地处理</h3>
+              <p>数据只在本地完成解析，不上传任何服务器。</p>
             </div>
-            <span className="shortcut-label">数据管理</span>
           </div>
-          <div className="shortcut-card" onClick={() => navigate('/settings')}>
-            <div className="shortcut-icon" style={{ backgroundColor: '#909399' }}>
-              <Settings size={24} />
+          <div className="hero-card">
+            <div className="card-icon"><FolderOpen size={18} /></div>
+            <div>
+              <h3>当前数据库</h3>
+              <p className="card-path">{dbPath || '未检测到路径'}</p>
             </div>
-            <span className="shortcut-label">设置</span>
           </div>
-        </div>
-
-        <div className="tips">
-          <h3><FileText size={16} /> 使用提示</h3>
-          <ul>
-            <li>首次使用请先在「设置」中获取解密密钥</li>
-            <li>自动获取时会提示退出重新登陆</li>
-            <li>测试链接成功后，到「数据管理」界面解密数据库</li>
-            <li>数据仅在本地处理，不会上传到任何服务器</li>
-          </ul>
         </div>
       </div>
     </div>

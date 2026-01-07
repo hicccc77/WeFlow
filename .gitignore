@@ -42,7 +42,7 @@ release
 # OS
 Thumbs.db
 
-wcdb/*
+wcdb/
 
 # 忽略 Visual Studio 临时文件夹
 .vs/
@@ -50,4 +50,4 @@ wcdb/*
 *.ipch
 *.aps
 
-echotrace/*
+echotrace/

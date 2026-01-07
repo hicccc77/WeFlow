@@ -15,7 +15,7 @@ import DataManagementPage from './pages/DataManagementPage'
 import SettingsPage from './pages/SettingsPage'
 import ExportPage from './pages/ExportPage'
 import { useAppStore } from './stores/appStore'
-import { useThemeStore } from './stores/themeStore'
+import { themes, useThemeStore, type ThemeId } from './stores/themeStore'
 import * as configService from './services/config'
 import { Download, X, Shield } from 'lucide-react'
 import './App.scss'
@@ -24,7 +24,10 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const { setDbConnected } = useAppStore()
-  const { currentTheme, themeMode } = useThemeStore()
+  const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
+  const isAgreementWindow = location.pathname === '/agreement-window'
+  const isOnboardingWindow = location.pathname === '/onboarding-window'
+  const [themeHydrated, setThemeHydrated] = useState(false)
   
   // 协议同意状态
   const [showAgreement, setShowAgreement] = useState(false)
@@ -36,6 +39,30 @@ function App() {
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(0)
 
+  useEffect(() => {
+    const root = document.documentElement
+    const body = document.body
+    const appRoot = document.getElementById('app')
+
+    if (isOnboardingWindow) {
+      root.style.background = 'transparent'
+      body.style.background = 'transparent'
+      body.style.overflow = 'hidden'
+      if (appRoot) {
+        appRoot.style.background = 'transparent'
+        appRoot.style.overflow = 'hidden'
+      }
+    } else {
+      root.style.background = 'var(--bg-primary)'
+      body.style.background = 'var(--bg-primary)'
+      body.style.overflow = ''
+      if (appRoot) {
+        appRoot.style.background = ''
+        appRoot.style.overflow = ''
+      }
+    }
+  }, [isOnboardingWindow])
+
   // 应用主题
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme)
@@ -43,8 +70,49 @@ function App() {
     
     // 更新窗口控件颜色以适配主题
     const symbolColor = themeMode === 'dark' ? '#ffffff' : '#1a1a1a'
-    window.electronAPI.window.setTitleBarOverlay({ symbolColor })
-  }, [currentTheme, themeMode])
+    if (!isOnboardingWindow) {
+      window.electronAPI.window.setTitleBarOverlay({ symbolColor })
+    }
+  }, [currentTheme, themeMode, isOnboardingWindow])
+
+  // 读取已保存的主题设置
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const [savedThemeId, savedThemeMode] = await Promise.all([
+          configService.getThemeId(),
+          configService.getTheme()
+        ])
+        if (savedThemeId && themes.some((theme) => theme.id === savedThemeId)) {
+          setTheme(savedThemeId as ThemeId)
+        }
+        if (savedThemeMode === 'light' || savedThemeMode === 'dark') {
+          setThemeMode(savedThemeMode)
+        }
+      } catch (e) {
+        console.error('读取主题配置失败:', e)
+      } finally {
+        setThemeHydrated(true)
+      }
+    }
+    loadTheme()
+  }, [setTheme, setThemeMode])
+
+  // 保存主题设置
+  useEffect(() => {
+    if (!themeHydrated) return
+    const saveTheme = async () => {
+      try {
+        await Promise.all([
+          configService.setThemeId(currentTheme),
+          configService.setTheme(themeMode)
+        ])
+      } catch (e) {
+        console.error('保存主题配置失败:', e)
+      }
+    }
+    saveTheme()
+  }, [currentTheme, themeMode, themeHydrated])
 
   // 检查是否已同意协议
   useEffect(() => {
@@ -102,20 +170,22 @@ function App() {
     setUpdateInfo(null)
   }
 
-  const isAgreementWindow = location.pathname === '/agreement-window'
-
   // 启动时自动检查配置并连接数据库
   useEffect(() => {
-    if (isAgreementWindow) return
+    if (isAgreementWindow || isOnboardingWindow) return
 
     const autoConnect = async () => {
       try {
         const dbPath = await configService.getDbPath()
         const decryptKey = await configService.getDecryptKey()
         const wxid = await configService.getMyWxid()
+        const onboardingDone = await configService.getOnboardingDone()
 
         // 如果配置完整，自动测试连接
         if (dbPath && decryptKey && wxid) {
+          if (!onboardingDone) {
+            await configService.setOnboardingDone(true)
+          }
           console.log('检测到已保存的配置，正在自动连接...')
           const result = await window.electronAPI.wcdb.testConnection(dbPath, decryptKey, wxid)
           
@@ -136,11 +206,15 @@ function App() {
     }
 
     autoConnect()
-  }, [isAgreementWindow, navigate, setDbConnected])
+  }, [isAgreementWindow, isOnboardingWindow, navigate, setDbConnected])
 
   // 独立协议窗口
   if (isAgreementWindow) {
     return <AgreementPage />
+  }
+
+  if (isOnboardingWindow) {
+    return <WelcomePage standalone />
   }
 
   // 主窗口 - 完整布局

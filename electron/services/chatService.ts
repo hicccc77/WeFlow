@@ -279,52 +279,109 @@ class ChatService {
       const rows = batch.rows as Record<string, any>[]
       const hasMore = batch.hasMore === true
 
-      const messages: Message[] = []
-      for (const row of rows) {
-        const content = this.decodeMessageContent(row.message_content, row.compress_content)
-        const localType = parseInt(row.local_type || row.type || '1', 10)
-        const isSendRaw = row.computed_is_send ?? row.is_send ?? null
-        const isSend = isSendRaw === null ? null : parseInt(isSendRaw, 10)
-
-        let emojiCdnUrl: string | undefined
-        let emojiMd5: string | undefined
-        let quotedContent: string | undefined
-        let quotedSender: string | undefined
-
-        if (localType === 47 && content) {
-          const emojiInfo = this.parseEmojiInfo(content)
-          emojiCdnUrl = emojiInfo.cdnUrl
-          emojiMd5 = emojiInfo.md5
-        } else if (localType === 244813135921 || (content && content.includes('<type>57</type>'))) {
-          const quoteInfo = this.parseQuoteMessage(content)
-          quotedContent = quoteInfo.content
-          quotedSender = quoteInfo.sender
-        }
-
-        messages.push({
-          localId: parseInt(row.local_id || '0', 10),
-          serverId: parseInt(row.server_id || '0', 10),
-          localType,
-          createTime: parseInt(row.create_time || '0', 10),
-          sortSeq: parseInt(row.sort_seq || '0', 10),
-          isSend,
-          senderUsername: row.sender_username || null,
-          parsedContent: this.parseMessageContent(content, localType),
-          rawContent: content,
-          emojiCdnUrl,
-          emojiMd5,
-          quotedContent,
-          quotedSender
-        })
-      }
-
-      messages.reverse()
+      const normalized = this.normalizeMessageOrder(this.mapRowsToMessages(rows))
       state.fetched += rows.length
-      return { success: true, messages, hasMore }
+      return { success: true, messages: normalized, hasMore }
     } catch (e) {
       console.error('ChatService: 获取消息失败:', e)
       return { success: false, error: String(e) }
     }
+  }
+
+  async getLatestMessages(sessionId: string, limit: number = this.messageBatchDefault): Promise<{ success: boolean; messages?: Message[]; error?: string }> {
+    try {
+      if (!this.connected) {
+        return { success: false, error: '数据库未连接' }
+      }
+
+      const batchSize = Math.max(1, limit)
+      const cursorResult = await wcdbService.openMessageCursor(sessionId, batchSize, false, 0, 0)
+      if (!cursorResult.success || !cursorResult.cursor) {
+        return { success: false, error: cursorResult.error || '打开消息游标失败' }
+      }
+
+      try {
+        const batch = await wcdbService.fetchMessageBatch(cursorResult.cursor)
+        if (!batch.success || !batch.rows) {
+          return { success: false, error: batch.error || '获取消息失败' }
+        }
+        const normalized = this.normalizeMessageOrder(this.mapRowsToMessages(batch.rows as Record<string, any>[]))
+        return { success: true, messages: normalized }
+      } finally {
+        await wcdbService.closeMessageCursor(cursorResult.cursor)
+      }
+    } catch (e) {
+      console.error('ChatService: 获取最新消息失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  private normalizeMessageOrder(messages: Message[]): Message[] {
+    if (messages.length < 2) return messages
+    const first = messages[0]
+    const last = messages[messages.length - 1]
+    const firstKey = first.sortSeq || first.createTime || first.localId || 0
+    const lastKey = last.sortSeq || last.createTime || last.localId || 0
+    if (firstKey > lastKey) {
+      return [...messages].reverse()
+    }
+    return messages
+  }
+
+  private mapRowsToMessages(rows: Record<string, any>[]): Message[] {
+    const myWxid = this.configService.get('myWxid')
+    const cleanedWxid = myWxid ? this.cleanAccountDirName(myWxid) : null
+    const myWxidLower = myWxid ? myWxid.toLowerCase() : null
+    const cleanedWxidLower = cleanedWxid ? cleanedWxid.toLowerCase() : null
+
+    const messages: Message[] = []
+    for (const row of rows) {
+      const content = this.decodeMessageContent(row.message_content, row.compress_content)
+      const localType = parseInt(row.local_type || row.type || '1', 10)
+      const isSendRaw = row.computed_is_send ?? row.is_send ?? null
+      let isSend = isSendRaw === null ? null : parseInt(isSendRaw, 10)
+      const senderUsername = row.sender_username || null
+
+      if (senderUsername && (myWxidLower || cleanedWxidLower)) {
+        const senderLower = String(senderUsername).toLowerCase()
+        const expectedIsSend = (senderLower === myWxidLower || senderLower === cleanedWxidLower) ? 1 : 0
+        if (isSend === null) {
+          isSend = expectedIsSend
+        }
+      }
+
+      let emojiCdnUrl: string | undefined
+      let emojiMd5: string | undefined
+      let quotedContent: string | undefined
+      let quotedSender: string | undefined
+
+      if (localType === 47 && content) {
+        const emojiInfo = this.parseEmojiInfo(content)
+        emojiCdnUrl = emojiInfo.cdnUrl
+        emojiMd5 = emojiInfo.md5
+      } else if (localType === 244813135921 || (content && content.includes('<type>57</type>'))) {
+        const quoteInfo = this.parseQuoteMessage(content)
+        quotedContent = quoteInfo.content
+        quotedSender = quoteInfo.sender
+      }
+
+      messages.push({
+        localId: parseInt(row.local_id || '0', 10),
+        serverId: parseInt(row.server_id || '0', 10),
+        localType,
+        createTime: parseInt(row.create_time || '0', 10),
+        sortSeq: parseInt(row.sort_seq || '0', 10),
+        isSend,
+        senderUsername,
+        parsedContent: this.parseMessageContent(content, localType),
+        rawContent: content,
+        emojiCdnUrl,
+        emojiMd5,
+        quotedContent,
+        quotedSender
+      })
+    }
+    return messages
   }
 
   /**
@@ -341,6 +398,7 @@ class ChatService {
     }
 
     content = this.decodeHtmlEntities(content)
+    content = this.cleanUtf16(content)
 
     // 检查 XML type，用于识别引用消息等
     const xmlType = this.extractXmlValue(content, 'type')
@@ -598,7 +656,37 @@ class ChatService {
     if (Buffer.isBuffer(str)) {
       str = str.toString('utf-8')
     }
-    return String(str).replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+    return this.cleanUtf16(String(str))
+  }
+
+  private cleanUtf16(input: string): string {
+    if (!input) return input
+    try {
+      const cleaned = input.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+      const codeUnits = cleaned.split('').map((c) => c.charCodeAt(0))
+      const validUnits: number[] = []
+      for (let i = 0; i < codeUnits.length; i += 1) {
+        const unit = codeUnits[i]
+        if (unit >= 0xd800 && unit <= 0xdbff) {
+          if (i + 1 < codeUnits.length) {
+            const nextUnit = codeUnits[i + 1]
+            if (nextUnit >= 0xdc00 && nextUnit <= 0xdfff) {
+              validUnits.push(unit, nextUnit)
+              i += 1
+              continue
+            }
+          }
+          continue
+        }
+        if (unit >= 0xdc00 && unit <= 0xdfff) {
+          continue
+        }
+        validUnits.push(unit)
+      }
+      return String.fromCharCode(...validUnits)
+    } catch {
+      return input.replace(/[^\u0020-\u007E\u4E00-\u9FFF\u3000-\u303F]/g, '')
+    }
   }
 
   /**
@@ -620,8 +708,8 @@ class ChatService {
     if (!raw) return ''
     
     // 如果是 Buffer/Uint8Array
-    if (Buffer.isBuffer(raw)) {
-      return this.decodeBinaryContent(raw)
+    if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
+      return this.decodeBinaryContent(Buffer.from(raw))
     }
     
     // 如果是字符串
@@ -660,8 +748,9 @@ class ChatService {
     try {
       // 检查是否是 zstd 压缩数据 (magic number: 0xFD2FB528)
       if (data.length >= 4) {
-        const magic = data.readUInt32LE(0)
-        if (magic === 0xFD2FB528) {
+        const magicLE = data.readUInt32LE(0)
+        const magicBE = data.readUInt32BE(0)
+        if (magicLE === 0xFD2FB528 || magicBE === 0xFD2FB528) {
           // zstd 压缩，需要解压
           try {
             const decompressed = fzstd.decompress(data)

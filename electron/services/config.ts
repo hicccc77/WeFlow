@@ -5,6 +5,9 @@ interface ConfigSchema {
   dbPath: string        // 数据库根目录 (xwechat_files)
   decryptKey: string    // 解密密钥
   myWxid: string        // 当前用户 wxid
+  onboardingDone: boolean
+  imageXorKey: number
+  imageAesKey: string
   
   // 缓存相关
   cachePath: string
@@ -13,6 +16,7 @@ interface ConfigSchema {
   
   // 界面相关
   theme: 'light' | 'dark' | 'system'
+  themeId: string
   language: string
   logEnabled: boolean
 }
@@ -27,10 +31,14 @@ export class ConfigService {
         dbPath: '',
         decryptKey: '',
         myWxid: '',
+        onboardingDone: false,
+        imageXorKey: 0,
+        imageAesKey: '',
         cachePath: '',
         lastOpenedDb: '',
         lastSession: '',
         theme: 'system',
+        themeId: 'cloud-dancer',
         language: 'zh-CN',
         logEnabled: false
       }

@@ -1,109 +1,137 @@
 .home-page {
   height: 100%;
+  background: radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.7), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(139, 115, 85, 0.18), transparent 40%),
+    var(--bg-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+.home-page::before {
+  content: '';
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: rgba(139, 115, 85, 0.12);
+  top: -180px;
+  left: 10%;
+  filter: blur(2px);
 }
 
 .home-content {
-  text-align: center;
-  max-width: 400px;
-  padding: 40px 20px;
-}
-
-.app-info {
-  margin-bottom: 40px;
-  
-  .app-logo {
-    width: 80px;
-    height: 80px;
-    border-radius: 16px;
-    margin-bottom: 16px;
-  }
-  
-  .app-name {
-    font-size: 28px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 8px;
-  }
-  
-  .app-desc {
-    font-size: 14px;
-    color: var(--text-tertiary);
-    margin: 0;
-  }
-}
-
-.shortcuts {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  margin-bottom: 40px;
-}
-
-.shortcut-card {
+  width: min(920px, 92vw);
   display: flex;
   flex-direction: column;
+  gap: 32px;
+  z-index: 1;
+  animation: fadeIn 0.6s ease-out;
+}
+
+.hero {
+  text-align: center;
+}
+
+.hero-badge {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
-  transition: transform 0.2s;
-  
-  &:hover {
-    transform: translateY(-2px);
-    
-    .shortcut-icon {
-      transform: scale(1.05);
-    }
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  font-size: 46px;
+  margin: 18px 0 8px;
+  color: var(--text-primary);
+  letter-spacing: -1.5px;
+}
+
+.hero-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.hero-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.hero-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hero-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.hero-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.hero-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.card-path {
+  font-family: 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .hero-panels {
+    grid-template-columns: 1fr;
   }
-  
-  .shortcut-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    transition: transform 0.2s;
-  }
-  
-  .shortcut-label {
-    font-size: 12px;
-    color: var(--text-secondary);
+
+  .hero-title {
+    font-size: 36px;
   }
 }
 
-.tips {
-  text-align: left;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 16px 20px;
-  
-  h3 {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin: 0 0 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    
-    svg {
-      opacity: 0.7;
-    }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
   }
-  
-  ul {
-    margin: 0;
-    padding-left: 18px;
-    
-    li {
-      font-size: 12px;
-      color: var(--text-tertiary);
-      line-height: 1.8;
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

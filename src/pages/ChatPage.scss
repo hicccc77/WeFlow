@@ -979,6 +979,21 @@
   }
 }
 
+.message-wrapper.new-message {
+  animation: messagePop 0.35s ease-out;
+}
+
+@keyframes messagePop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .load-more-trigger {
   text-align: center;
   padding: 12px;

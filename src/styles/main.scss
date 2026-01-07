@@ -245,6 +245,11 @@ html, body {
   user-select: none;
 }
 
+
+#app {
+  height: 100%;
+}
+
 // 滚动条样式
 ::-webkit-scrollbar {
   width: 6px;

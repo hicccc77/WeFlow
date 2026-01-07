@@ -7,12 +7,16 @@ export const CONFIG_KEYS = {
   DB_PATH: 'dbPath',
   MY_WXID: 'myWxid',
   THEME: 'theme',
+  THEME_ID: 'themeId',
   LAST_SESSION: 'lastSession',
   WINDOW_BOUNDS: 'windowBounds',
   CACHE_PATH: 'cachePath',
   EXPORT_PATH: 'exportPath',
   AGREEMENT_ACCEPTED: 'agreementAccepted',
-  LOG_ENABLED: 'logEnabled'
+  LOG_ENABLED: 'logEnabled',
+  ONBOARDING_DONE: 'onboardingDone',
+  IMAGE_XOR_KEY: 'imageXorKey',
+  IMAGE_AES_KEY: 'imageAesKey'
 } as const
 
 // 获取解密密钥
@@ -57,6 +61,17 @@ export async function getTheme(): Promise<'light' | 'dark'> {
 // 设置主题
 export async function setTheme(theme: 'light' | 'dark'): Promise<void> {
   await config.set(CONFIG_KEYS.THEME, theme)
+}
+
+// 获取主题配色
+export async function getThemeId(): Promise<string | null> {
+  const value = await config.get(CONFIG_KEYS.THEME_ID)
+  return (value as string) || null
+}
+
+// 设置主题配色
+export async function setThemeId(themeId: string): Promise<void> {
+  await config.set(CONFIG_KEYS.THEME_ID, themeId)
 }
 
 // 获取上次打开的会话
@@ -115,4 +130,38 @@ export async function getLogEnabled(): Promise<boolean> {
 // 设置日志开关
 export async function setLogEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.LOG_ENABLED, enabled)
+}
+
+// 获取图片 XOR 密钥
+export async function getImageXorKey(): Promise<number | null> {
+  const value = await config.get(CONFIG_KEYS.IMAGE_XOR_KEY)
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return null
+}
+
+// 设置图片 XOR 密钥
+export async function setImageXorKey(key: number): Promise<void> {
+  await config.set(CONFIG_KEYS.IMAGE_XOR_KEY, key)
+}
+
+// 获取图片 AES 密钥
+export async function getImageAesKey(): Promise<string | null> {
+  const value = await config.get(CONFIG_KEYS.IMAGE_AES_KEY)
+  return (value as string) || null
+}
+
+// 设置图片 AES 密钥
+export async function setImageAesKey(key: string): Promise<void> {
+  await config.set(CONFIG_KEYS.IMAGE_AES_KEY, key)
+}
+
+// 获取是否完成首次配置引导
+export async function getOnboardingDone(): Promise<boolean> {
+  const value = await config.get(CONFIG_KEYS.ONBOARDING_DONE)
+  return value === true
+}
+
+// 设置首次配置引导完成
+export async function setOnboardingDone(done: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.ONBOARDING_DONE, done)
 }

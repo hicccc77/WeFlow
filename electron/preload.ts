@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     maximize: () => ipcRenderer.send('window:maximize'),
     close: () => ipcRenderer.send('window:close'),
     openAgreementWindow: () => ipcRenderer.invoke('window:openAgreementWindow'),
+    completeOnboarding: () => ipcRenderer.invoke('window:completeOnboarding'),
     setTitleBarOverlay: (options: { symbolColor: string }) => ipcRenderer.send('window:setTitleBarOverlay', options)
   },
 
@@ -68,6 +69,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => ipcRenderer.invoke('wcdb:close')
   },
 
+  // 密钥获取
+  key: {
+    autoGetDbKey: () => ipcRenderer.invoke('key:autoGetDbKey'),
+    autoGetImageKey: (manualDir?: string) => ipcRenderer.invoke('key:autoGetImageKey', manualDir),
+    onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => {
+      ipcRenderer.on('key:dbKeyStatus', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('key:dbKeyStatus')
+    },
+    onImageKeyStatus: (callback: (payload: { message: string }) => void) => {
+      ipcRenderer.on('key:imageKeyStatus', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('key:imageKeyStatus')
+    }
+  },
+
 
   // 聊天
   chat: {
@@ -75,6 +90,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSessions: () => ipcRenderer.invoke('chat:getSessions'),
     getMessages: (sessionId: string, offset?: number, limit?: number) => 
       ipcRenderer.invoke('chat:getMessages', sessionId, offset, limit),
+    getLatestMessages: (sessionId: string, limit?: number) =>
+      ipcRenderer.invoke('chat:getLatestMessages', sessionId, limit),
     getContact: (username: string) => ipcRenderer.invoke('chat:getContact', username),
     getContactAvatar: (username: string) => ipcRenderer.invoke('chat:getContactAvatar', username),
     getMyAvatarUrl: () => ipcRenderer.invoke('chat:getMyAvatarUrl'),
