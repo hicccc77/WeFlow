@@ -307,6 +307,54 @@
   color: var(--text-secondary);
 }
 
+.wxid-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.wxid-option {
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  border-radius: 14px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  text-align: left;
+}
+
+.wxid-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(139, 115, 85, 0.4);
+  box-shadow: 0 8px 16px rgba(15, 15, 15, 0.08);
+}
+
+.wxid-option.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.wxid-option-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wxid-option-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  align-self: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .field-with-toggle {
   position: relative;
 }

@@ -13,9 +13,9 @@ import './WelcomePage.scss'
 const steps = [
   { id: 'intro', title: '欢迎', desc: '准备开始你的本地数据探索' },
   { id: 'db', title: '数据库目录', desc: '定位 xwechat_files 目录' },
+  { id: 'wxid', title: '微信账号', desc: '选择或输入 wxid' },
   { id: 'key', title: '解密密钥', desc: '填写 64 位十六进制密钥' },
-  { id: 'image', title: '图片密钥', desc: '获取 XOR 与 AES 密钥' },
-  { id: 'wxid', title: '微信账号', desc: '选择或输入 wxid' }
+  { id: 'image', title: '图片密钥', desc: '获取 XOR 与 AES 密钥' }
 ]
 
 interface WelcomePageProps {
@@ -32,6 +32,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   const [imageXorKey, setImageXorKey] = useState('')
   const [imageAesKey, setImageAesKey] = useState('')
   const [wxid, setWxid] = useState('')
+  const [wxidOptions, setWxidOptions] = useState<Array<{ wxid: string; modifiedTime: number }>>([])
   const [error, setError] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [isDetectingPath, setIsDetectingPath] = useState(false)
@@ -55,6 +56,11 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
       removeImage?.()
     }
   }, [])
+
+  useEffect(() => {
+    setWxidOptions([])
+    setWxid('')
+  }, [dbPath])
 
   const currentStep = steps[stepIndex]
   const rootClassName = `welcome-page${isClosing ? ' is-closing' : ''}${standalone ? ' is-standalone' : ''}`
@@ -113,10 +119,12 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     setError('')
     try {
       const wxids = await window.electronAPI.dbPath.scanWxids(dbPath)
+      setWxidOptions(wxids)
       if (wxids.length === 1) {
-        setWxid(wxids[0])
+        setWxid(wxids[0].wxid)
+        setError('')
       } else if (wxids.length > 1) {
-        setError(`检测到 ${wxids.length} 个账号，请手动选择`)
+        setError(`检测到 ${wxids.length} 个账号，请在下方选择`)
       } else {
         setError('未检测到账号目录，请检查路径')
       }
@@ -176,19 +184,19 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   }
 
   const canGoNext = () => {
-    if (stepIndex === 0) return true
-    if (stepIndex === 1) return Boolean(dbPath)
-    if (stepIndex === 2) return decryptKey.length === 64
-    if (stepIndex === 3) return true
-    if (stepIndex === 4) return Boolean(wxid)
+    if (currentStep.id === 'intro') return true
+    if (currentStep.id === 'db') return Boolean(dbPath)
+    if (currentStep.id === 'wxid') return Boolean(wxid)
+    if (currentStep.id === 'key') return decryptKey.length === 64
+    if (currentStep.id === 'image') return true
     return false
   }
 
   const handleNext = () => {
     if (!canGoNext()) {
-      if (stepIndex === 1 && !dbPath) setError('请先选择数据库目录')
-      if (stepIndex === 2 && decryptKey.length !== 64) setError('密钥长度必须为 64 个字符')
-      if (stepIndex === 4 && !wxid) setError('请填写 wxid')
+      if (currentStep.id === 'db' && !dbPath) setError('请先选择数据库目录')
+      if (currentStep.id === 'wxid' && !wxid) setError('请填写 wxid')
+      if (currentStep.id === 'key' && decryptKey.length !== 64) setError('密钥长度必须为 64 个字符')
       return
     }
     setError('')
@@ -248,6 +256,17 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     } finally {
       setIsConnecting(false)
     }
+  }
+
+  const formatModifiedTime = (time: number) => {
+    if (!time) return '未知时间'
+    const date = new Date(time)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day} ${hours}:${minutes}`
   }
 
   if (isDbConnected) {
@@ -444,6 +463,24 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                 value={wxid}
                 onChange={(e) => setWxid(e.target.value)}
               />
+              {wxidOptions.length > 0 && (
+                <div className="wxid-options">
+                  {wxidOptions.map((option) => (
+                    <button
+                      key={option.wxid}
+                      type="button"
+                      className={`wxid-option${option.wxid === wxid ? ' is-selected' : ''}`}
+                      onClick={() => {
+                        setWxid(option.wxid)
+                        setError('')
+                      }}
+                    >
+                      <span className="wxid-option-name">{option.wxid}</span>
+                      <span className="wxid-option-time">{formatModifiedTime(option.modifiedTime)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <button className="btn btn-secondary btn-inline" onClick={handleScanWxid} disabled={isScanningWxid}>
                 {isScanningWxid ? '扫描中...' : '扫描 wxid'}
               </button>

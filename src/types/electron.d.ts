@@ -35,7 +35,7 @@ export interface ElectronAPI {
   }
   dbPath: {
     autoDetect: () => Promise<{ success: boolean; path?: string; error?: string }>
-    scanWxids: (rootPath: string) => Promise<string[]>
+    scanWxids: (rootPath: string) => Promise<WxidInfo[]>
     getDefault: () => Promise<string>
   }
   wcdb: {
@@ -271,6 +271,11 @@ export interface ExportOptions {
   dateRange?: { start: number; end: number } | null
   exportMedia?: boolean
   exportAvatars?: boolean
+}
+
+export interface WxidInfo {
+  wxid: string
+  modifiedTime: number
 }
 
 declare global {

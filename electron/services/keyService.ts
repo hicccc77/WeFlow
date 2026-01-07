@@ -281,23 +281,34 @@ export class KeyService {
     return null
   }
 
-  private async findWeChatPid(): Promise<number | null> {
+  private async findPidByImageName(imageName: string): Promise<number | null> {
     try {
-      const { stdout } = await execFileAsync('tasklist', ['/FI', 'IMAGENAME eq Weixin.exe', '/FO', 'CSV', '/NH'])
+      const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${imageName}`, '/FO', 'CSV', '/NH'])
       const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
       for (const line of lines) {
         if (line.startsWith('INFO:')) continue
         const parts = line.split('","').map((p) => p.replace(/^"|"$/g, ''))
-        if (parts[0]?.toLowerCase() === 'weixin.exe') {
+        if (parts[0]?.toLowerCase() === imageName.toLowerCase()) {
           const pid = Number(parts[1])
           if (!Number.isNaN(pid)) return pid
         }
       }
       return null
     } catch (e) {
-      console.error('获取微信进程失败:', e)
+      console.error(`获取进程失败 (${imageName}):`, e)
       return null
     }
+  }
+
+  private async findWeChatPid(): Promise<number | null> {
+    const names = ['Weixin.exe', 'WeChat.exe']
+    for (const name of names) {
+      const pid = await this.findPidByImageName(name)
+      if (pid) return pid
+    }
+
+    const fallbackPid = await this.waitForWeChatWindowReady(5000)
+    return fallbackPid ?? null
   }
 
   private async killWeChatProcesses() {
@@ -468,6 +479,24 @@ export class KeyService {
 
   // --- Image Key Stuff (Legacy but kept) ---
 
+  private isAccountDir(dirPath: string): boolean {
+    return (
+      existsSync(join(dirPath, 'db_storage')) ||
+      existsSync(join(dirPath, 'FileStorage', 'Image')) ||
+      existsSync(join(dirPath, 'FileStorage', 'Image2'))
+    )
+  }
+
+  private isPotentialAccountName(name: string): boolean {
+    const lower = name.toLowerCase()
+    if (lower.startsWith('all') || lower.startsWith('applet') || lower.startsWith('backup') || lower.startsWith('wmpf')) {
+      return false
+    }
+    if (lower.startsWith('wxid_')) return true
+    if (/^\d+$/.test(name) && name.length >= 6) return true
+    return name.length > 5
+  }
+
   private listAccountDirs(rootDir: string): string[] {
     try {
       const entries = readdirSync(rootDir)
@@ -481,17 +510,11 @@ export class KeyService {
           continue
         }
 
-        const lower = entry.toLowerCase()
-        if (lower.startsWith('all') || lower.startsWith('applet') || lower.startsWith('backup') || lower.startsWith('wmpf')) {
-          continue
-        }
-        if (!entry.startsWith('wxid_') && entry.length <= 5) {
+        if (!this.isPotentialAccountName(entry)) {
           continue
         }
 
-        const hasDb = existsSync(join(fullPath, 'db_storage'))
-        const hasImage = existsSync(join(fullPath, 'FileStorage', 'Image'))
-        if (hasDb || hasImage) {
+        if (this.isAccountDir(fullPath)) {
           high.push(fullPath)
         } else {
           low.push(fullPath)
@@ -503,22 +526,57 @@ export class KeyService {
     }
   }
 
-  private resolveAccountDir(manualDir?: string): string | null {
-    if (manualDir && existsSync(manualDir)) {
-      const normalized = manualDir.replace(/[\\\\/]+$/, '')
-      if (existsSync(join(normalized, 'FileStorage', 'Image')) || existsSync(join(normalized, 'db_storage'))) {
-        return normalized
+  private normalizeExistingDir(inputPath: string): string | null {
+    const trimmed = inputPath.replace(/[\\\\/]+$/, '')
+    if (!existsSync(trimmed)) return null
+    try {
+      const stats = statSync(trimmed)
+      if (stats.isFile()) {
+        return dirname(trimmed)
       }
-      const candidates = this.listAccountDirs(normalized)
-      if (candidates.length) return candidates[0]
+    } catch {
+      return null
+    }
+    return trimmed
+  }
+
+  private resolveAccountDirFromPath(inputPath: string): string | null {
+    const normalized = this.normalizeExistingDir(inputPath)
+    if (!normalized) return null
+
+    if (this.isAccountDir(normalized)) return normalized
+
+    const lower = normalized.toLowerCase()
+    if (lower.endsWith('db_storage') || lower.endsWith('filestorage') || lower.endsWith('image') || lower.endsWith('image2')) {
+      const parent = dirname(normalized)
+      if (this.isAccountDir(parent)) return parent
+      const grandParent = dirname(parent)
+      if (this.isAccountDir(grandParent)) return grandParent
+    }
+
+    const candidates = this.listAccountDirs(normalized)
+    if (candidates.length) return candidates[0]
+    return null
+  }
+
+  private resolveAccountDir(manualDir?: string): string | null {
+    if (manualDir) {
+      const resolved = this.resolveAccountDirFromPath(manualDir)
+      if (resolved) return resolved
     }
 
     const userProfile = process.env.USERPROFILE
     if (!userProfile) return null
-    const wechatRoot = join(userProfile, 'Documents', 'xwechat_files')
-    if (!existsSync(wechatRoot)) return null
-    const candidates = this.listAccountDirs(wechatRoot)
-    return candidates[0] ?? null
+    const roots = [
+      join(userProfile, 'Documents', 'xwechat_files'),
+      join(userProfile, 'Documents', 'WeChat Files')
+    ]
+    for (const root of roots) {
+      if (!existsSync(root)) continue
+      const candidates = this.listAccountDirs(root)
+      if (candidates.length) return candidates[0]
+    }
+    return null
   }
 
   private findTemplateDatFiles(rootDir: string): string[] {
