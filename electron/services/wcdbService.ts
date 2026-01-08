@@ -581,10 +581,8 @@ export class WcdbService {
         if (!username || seen.has(username)) continue
         seen.add(username)
         const cached = this.avatarUrlCache.get(username)
-        if (cached && now - cached.updatedAt < this.avatarCacheTtlMs) {
-          if (cached.url) {
-            resultMap[username] = cached.url
-          }
+        if (cached && cached.url && now - cached.updatedAt < this.avatarCacheTtlMs) {
+          resultMap[username] = cached.url
           continue
         }
         toFetch.push(username)
@@ -609,8 +607,8 @@ export class WcdbService {
         const url = map[username]
         if (url) {
           resultMap[username] = url
+          this.avatarUrlCache.set(username, { url, updatedAt: now })
         }
-        this.avatarUrlCache.set(username, { url: url || undefined, updatedAt: now })
       }
       return { success: true, map: resultMap }
     } catch (e) {

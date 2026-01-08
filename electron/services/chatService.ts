@@ -250,10 +250,12 @@ class ChatService {
         const cached = this.avatarCache.get(session.username)
         if (cached && now - cached.updatedAt < this.avatarCacheTtlMs) {
           if (cached.displayName) session.displayName = cached.displayName
-          if (cached.avatarUrl) session.avatarUrl = cached.avatarUrl
-        } else {
-          missing.push(session.username)
+          if (cached.avatarUrl) {
+            session.avatarUrl = cached.avatarUrl
+            continue
+          }
         }
+        missing.push(session.username)
       }
 
       if (missing.length === 0) return
@@ -1094,14 +1096,14 @@ class ChatService {
       const connectResult = await this.ensureConnected()
       if (!connectResult.success) return null
       const cached = this.avatarCache.get(username)
-      if (cached && Date.now() - cached.updatedAt < this.avatarCacheTtlMs) {
+      if (cached && cached.avatarUrl && Date.now() - cached.updatedAt < this.avatarCacheTtlMs) {
         return { avatarUrl: cached.avatarUrl, displayName: cached.displayName }
       }
 
       const contact = await this.getContact(username)
       const avatarResult = await wcdbService.getAvatarUrls([username])
       const avatarUrl = avatarResult.success && avatarResult.map ? avatarResult.map[username] : undefined
-      const displayName = contact?.remark || contact?.nickName || contact?.alias || username
+      const displayName = contact?.remark || contact?.nickName || contact?.alias || cached?.displayName || username
       this.avatarCache.set(username, { avatarUrl, displayName, updatedAt: Date.now() })
       return { avatarUrl, displayName }
     } catch {
