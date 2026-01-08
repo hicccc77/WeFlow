@@ -388,7 +388,6 @@ function SettingsPage() {
       setExportPath('')
       setLogEnabled(false)
       setDbConnected(false)
-      setLoading(false)
       navigate('/onboarding-window')
     } catch (e) {
       showMessage(`清除配置失败: ${e}`, false)
