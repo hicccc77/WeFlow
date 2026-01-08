@@ -6,6 +6,7 @@ import { ConfigService } from './services/config'
 import { dbPathService } from './services/dbPathService'
 import { wcdbService } from './services/wcdbService'
 import { chatService } from './services/chatService'
+import { imageDecryptService } from './services/imageDecryptService'
 import { analyticsService } from './services/analyticsService'
 import { groupAnalyticsService } from './services/groupAnalyticsService'
 import { annualReportService } from './services/annualReportService'
@@ -404,6 +405,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:getSessionDetail', async (_, sessionId: string) => {
     return chatService.getSessionDetail(sessionId)
+  })
+
+  // 图片解密相关
+  ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => {
+    return imageDecryptService.decryptImage(payload)
   })
 
   // 导出相关

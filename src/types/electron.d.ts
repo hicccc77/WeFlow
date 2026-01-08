@@ -85,6 +85,9 @@ export interface ElectronAPI {
       error?: string
     }>
   }
+  image: {
+    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => Promise<{ success: boolean; localPath?: string; error?: string }>
+  }
   analytics: {
     getOverallStatistics: () => Promise<{ 
       success: boolean
