@@ -95,6 +95,12 @@
   }
 }
 
+.divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 20px 0;
+}
+
 .unavailable-notice {
   display: flex;
   align-items: center;

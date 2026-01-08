@@ -179,10 +179,11 @@ function App() {
         const dbPath = await configService.getDbPath()
         const decryptKey = await configService.getDecryptKey()
         const wxid = await configService.getMyWxid()
+        const cachePath = await configService.getCachePath()
         const onboardingDone = await configService.getOnboardingDone()
 
         // 如果配置完整，自动测试连接
-        if (dbPath && decryptKey && wxid) {
+        if (dbPath && decryptKey && wxid && cachePath) {
           if (!onboardingDone) {
             await configService.setOnboardingDone(true)
           }

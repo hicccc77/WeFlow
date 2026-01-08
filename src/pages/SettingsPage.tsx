@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../stores/appStore'
 import { useThemeStore, themes } from '../stores/themeStore'
 import { dialog } from '../services/ipc'
@@ -21,7 +22,8 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
 ]
 
 function SettingsPage() {
-  const { setDbConnected, setLoading } = useAppStore()
+  const navigate = useNavigate()
+  const { setDbConnected, setLoading, reset } = useAppStore()
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
@@ -326,6 +328,7 @@ function SettingsPage() {
     if (decryptKey.length !== 64) { showMessage('密钥长度必须为64个字符', false); return }
     if (!dbPath) { showMessage('请选择数据库目录', false); return }
     if (!wxid) { showMessage('请输入 wxid', false); return }
+    if (!cachePath) { showMessage('请选择缓存目录', false); return }
 
     setIsLoadingState(true)
     setLoading(true, '正在保存配置...')
@@ -361,6 +364,34 @@ function SettingsPage() {
       }
     } catch (e) {
       showMessage(`保存配置失败: ${e}`, false)
+    } finally {
+      setIsLoadingState(false)
+      setLoading(false)
+    }
+  }
+
+  const handleClearConfig = async () => {
+    const confirmed = window.confirm('确定要清除当前配置吗？清除后需要重新完成首次配置。')
+    if (!confirmed) return
+    setIsLoadingState(true)
+    setLoading(true, '正在清除配置...')
+    try {
+      await window.electronAPI.wcdb.close()
+      await configService.clearConfig()
+      reset()
+      setDecryptKey('')
+      setImageXorKey('')
+      setImageAesKey('')
+      setDbPath('')
+      setWxid('')
+      setCachePath('')
+      setExportPath('')
+      setLogEnabled(false)
+      setDbConnected(false)
+      setLoading(false)
+      navigate('/onboarding-window')
+    } catch (e) {
+      showMessage(`清除配置失败: ${e}`, false)
     } finally {
       setIsLoadingState(false)
       setLoading(false)
@@ -470,12 +501,12 @@ function SettingsPage() {
       </div>
 
       <div className="form-group">
-        <label>缓存目录 <span className="optional">(可选)</span></label>
-        <span className="form-hint">留空使用默认目录</span>
-        <input type="text" placeholder="留空使用默认目录" value={cachePath} onChange={(e) => setCachePath(e.target.value)} />
+        <label>缓存目录</label>
+        <span className="form-hint">用于头像、表情与图片缓存</span>
+        <input type="text" placeholder="例如: D:\\WeFlow\\cache" value={cachePath} onChange={(e) => setCachePath(e.target.value)} />
         <div className="btn-row">
           <button className="btn btn-secondary" onClick={handleSelectCachePath}><FolderOpen size={16} /> 浏览选择</button>
-          <button className="btn btn-secondary" onClick={() => setCachePath('')}><RotateCcw size={16} /> 恢复默认</button>
+          <button className="btn btn-secondary" onClick={() => setCachePath('')}><RotateCcw size={16} /> 清空</button>
         </div>
       </div>
 
@@ -533,6 +564,13 @@ function SettingsPage() {
         <button className="btn btn-secondary"><Trash2 size={16} /> 清除分析缓存</button>
         <button className="btn btn-secondary"><Trash2 size={16} /> 清除图片缓存</button>
         <button className="btn btn-danger"><Trash2 size={16} /> 清除所有缓存</button>
+      </div>
+      <div className="divider" />
+      <p className="section-desc">清除当前配置并重新开始首次引导</p>
+      <div className="btn-row">
+        <button className="btn btn-danger" onClick={handleClearConfig}>
+          <RefreshCw size={16} /> 清除当前配置
+        </button>
       </div>
     </div>
   )
