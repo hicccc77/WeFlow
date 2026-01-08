@@ -187,7 +187,7 @@ function App() {
             await configService.setOnboardingDone(true)
           }
           console.log('检测到已保存的配置，正在自动连接...')
-          const result = await window.electronAPI.wcdb.testConnection(dbPath, decryptKey, wxid)
+          const result = await window.electronAPI.chat.connect()
           
           if (result.success) {
             console.log('自动连接成功')
