@@ -168,9 +168,9 @@ function SettingsPage() {
         
         const wxids = await window.electronAPI.dbPath.scanWxids(result.path)
         if (wxids.length === 1) {
-          setWxid(wxids[0])
-          await configService.setMyWxid(wxids[0])
-          showMessage(`已检测到账号：${wxids[0]}`, true)
+          setWxid(wxids[0].wxid)
+          await configService.setMyWxid(wxids[0].wxid)
+          showMessage(`已检测到账号：${wxids[0].wxid}`, true)
         } else if (wxids.length > 1) {
           showMessage(`检测到 ${wxids.length} 个账号，请手动选择`, true)
         }
@@ -204,9 +204,9 @@ function SettingsPage() {
     try {
       const wxids = await window.electronAPI.dbPath.scanWxids(dbPath)
       if (wxids.length === 1) {
-        setWxid(wxids[0])
-        await configService.setMyWxid(wxids[0])
-        showMessage(`已检测到账号：${wxids[0]}`, true)
+        setWxid(wxids[0].wxid)
+        await configService.setMyWxid(wxids[0].wxid)
+        showMessage(`已检测到账号：${wxids[0].wxid}`, true)
       } else if (wxids.length > 1) {
         showMessage(`检测到 ${wxids.length} 个账号，请手动选择`, true)
       } else {
