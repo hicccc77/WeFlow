@@ -42,7 +42,7 @@ release
 # OS
 Thumbs.db
 
-wcdb/
+
 
 # 忽略 Visual Studio 临时文件夹
 .vs/
@@ -52,3 +52,4 @@ wcdb/
 
 echotrace/
 wx_key/
+wcdb/

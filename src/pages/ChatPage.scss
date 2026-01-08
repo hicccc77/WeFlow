@@ -2,13 +2,13 @@
   display: flex;
   height: 100%;
   gap: 16px;
-  
+
   // 独立窗口模式 - EchoTrace 特色风格（使用主题变量）
   &.standalone {
     height: 100vh;
     gap: 0;
     background: var(--bg-gradient);
-    
+
     .session-sidebar {
       flex: none;
       background: var(--card-bg);
@@ -16,7 +16,7 @@
       border-right: 1px solid var(--border-color);
       -webkit-app-region: no-drag;
       backdrop-filter: blur(20px);
-      
+
       .session-header {
         padding-top: 38px;
         padding-bottom: 12px;
@@ -24,15 +24,15 @@
         padding-right: 16px;
         background: transparent;
         -webkit-app-region: drag;
-        
+
         h2 {
           display: none;
         }
-        
+
         .header-actions {
           display: none;
         }
-        
+
         .search-row {
           display: flex;
           align-items: center;
@@ -40,7 +40,7 @@
           -webkit-app-region: no-drag;
           min-width: 0;
         }
-        
+
         .search-box {
           flex: 1;
           min-width: 0;
@@ -52,13 +52,13 @@
           align-items: center;
           gap: 8px;
           transition: all 0.2s;
-          
+
           &:focus-within {
             background: var(--bg-hover);
             border-color: var(--primary);
             box-shadow: 0 0 0 3px var(--primary-light);
           }
-          
+
           input {
             flex: 1;
             border: none;
@@ -66,17 +66,17 @@
             outline: none;
             color: var(--text-primary);
             font-size: 13px;
-            
+
             &::placeholder {
               color: var(--text-tertiary);
             }
           }
-          
+
           svg {
             color: var(--text-tertiary);
             flex-shrink: 0;
           }
-          
+
           .close-search {
             width: 18px;
             height: 18px;
@@ -90,14 +90,14 @@
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            
+
             &:hover {
               background: var(--border-color);
               color: var(--text-primary);
             }
           }
         }
-        
+
         .refresh-btn {
           width: 32px;
           height: 32px;
@@ -112,95 +112,96 @@
           justify-content: center;
           flex-shrink: 0;
           transition: all 0.2s;
-          
+
           &:hover {
             background: var(--bg-hover);
             color: var(--text-primary);
           }
-          
+
           &:disabled {
             opacity: 0.4;
             cursor: not-allowed;
           }
-          
+
           .spin {
             animation: spin 1s linear infinite;
           }
         }
       }
-      
+
       .session-list {
         background: transparent;
       }
-      
+
       .session-item {
         border-bottom: 1px solid var(--border-color);
         padding: 12px 16px;
         transition: all 0.2s;
-        
+
         &:hover {
           background: var(--bg-hover);
         }
-        
+
         &.active {
           background: var(--primary-light);
           border-left: 3px solid var(--primary);
           padding-left: 13px;
         }
-        
+
         .session-name {
           color: var(--text-primary);
           font-size: 14px;
           font-weight: 500;
         }
-        
+
         .session-time {
           color: var(--text-tertiary);
           font-size: 11px;
         }
-        
+
         .session-summary {
           color: var(--text-secondary);
           font-size: 12px;
         }
       }
-      
+
       .session-avatar {
         border-radius: 50%;
         width: 44px !important;
         height: 44px !important;
       }
-      
+
       .unread-badge {
         background: var(--primary-gradient);
         box-shadow: 0 2px 8px var(--primary-light);
       }
-      
+
       .connection-error {
         background: rgba(220, 53, 69, 0.08);
         border: 1px solid rgba(220, 53, 69, 0.2);
         margin: 8px 16px;
         border-radius: 10px;
-        
-        svg, span {
+
+        svg,
+        span {
           color: var(--danger);
         }
-        
+
         button {
           background: var(--danger);
           border-radius: 6px;
         }
       }
-      
+
       .empty-sessions {
         color: var(--text-tertiary);
-        
+
         svg {
           color: var(--text-tertiary);
           opacity: 0.5;
         }
       }
-      
+
       .skeleton-item {
         .skeleton-avatar {
           width: 44px;
@@ -208,42 +209,42 @@
           border-radius: 50%;
           background: var(--bg-tertiary);
         }
-        
+
         .skeleton-content .skeleton-line {
           background: var(--bg-tertiary);
         }
       }
-      
+
       .loading-sessions {
         background: transparent;
       }
-      
+
       .session-list {
         &::-webkit-scrollbar {
           width: 6px;
         }
-        
+
         &::-webkit-scrollbar-track {
           background: transparent;
         }
-        
+
         &::-webkit-scrollbar-thumb {
           background: var(--text-tertiary);
           opacity: 0.3;
           border-radius: 3px;
-          
+
           &:hover {
             opacity: 0.5;
           }
         }
       }
     }
-    
+
     .message-area {
       border-radius: 0;
       background: var(--bg-secondary);
       -webkit-app-region: no-drag;
-      
+
       .message-header {
         height: auto;
         padding: 0 24px;
@@ -253,23 +254,23 @@
         border-bottom: 1px solid var(--border-color);
         -webkit-app-region: drag;
         backdrop-filter: blur(10px);
-        
+
         .session-avatar {
           width: 36px;
           height: 36px;
           border-radius: 50%;
           -webkit-app-region: no-drag;
         }
-        
+
         .header-info {
           -webkit-app-region: no-drag;
-          
+
           h3 {
             font-size: 15px;
             font-weight: 600;
             color: var(--text-primary);
           }
-          
+
           .header-subtitle {
             font-size: 11px;
             color: var(--text-tertiary);
@@ -297,7 +298,7 @@
             color: var(--text-secondary);
             transition: all 0.2s;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-            
+
             &:hover {
               background: var(--bg-hover);
               color: var(--text-primary);
@@ -326,51 +327,51 @@
         display: flex;
         overflow: hidden;
       }
-      
+
       .message-list {
         flex: 1;
         background: var(--chat-pattern);
         background-color: var(--bg-secondary);
         padding: 20px 24px;
-        
+
         &::-webkit-scrollbar {
           width: 6px;
         }
-        
+
         &::-webkit-scrollbar-track {
           background: transparent;
         }
-        
+
         &::-webkit-scrollbar-thumb {
           background: var(--text-tertiary);
           opacity: 0.3;
           border-radius: 3px;
-          
+
           &:hover {
             opacity: 0.5;
           }
         }
-        
+
         .scroll-to-bottom {
           background: var(--primary);
           border: none;
           color: #fff;
           box-shadow: 0 4px 15px var(--primary-light);
-          
+
           &:hover {
             background: var(--primary-hover);
             box-shadow: 0 6px 20px var(--primary-light);
           }
         }
       }
-      
+
       .message-wrapper {
         margin-bottom: 16px;
       }
-      
+
       .message-bubble {
         max-width: 65%;
-        
+
         &.sent {
           .bubble-content {
             background: var(--primary-gradient);
@@ -382,7 +383,7 @@
             box-shadow: 0 2px 10px var(--primary-light);
           }
         }
-        
+
         &.received {
           .bubble-content {
             background: var(--card-bg);
@@ -395,10 +396,10 @@
             border: 1px solid var(--border-color);
           }
         }
-        
+
         &.system {
           max-width: 100%;
-          
+
           .bubble-content {
             background: transparent;
             color: var(--text-tertiary);
@@ -406,7 +407,7 @@
             padding: 4px 0;
           }
         }
-        
+
         &.emoji {
           .bubble-content {
             background: transparent !important;
@@ -416,19 +417,19 @@
           }
         }
       }
-      
+
       .bubble-avatar {
         width: 36px;
         height: 36px;
         border-radius: 50%;
       }
-      
+
       .sender-name {
         font-size: 12px;
         color: var(--text-secondary);
         margin-bottom: 4px;
       }
-      
+
       .quoted-message {
         background: var(--bg-tertiary);
         border-left: 2px solid var(--primary);
@@ -436,48 +437,49 @@
         margin-bottom: 8px;
         border-radius: 4px;
         font-size: 12px;
-        
+
         .quoted-sender {
           color: var(--primary);
         }
-        
+
         .quoted-text {
           color: var(--text-secondary);
         }
       }
-      
-      .time-divider, .date-divider {
+
+      .time-divider,
+      .date-divider {
         span {
           font-size: 11px;
           color: var(--text-tertiary);
         }
       }
-      
+
       .date-divider span {
         background: var(--bg-tertiary);
         padding: 4px 12px;
         border-radius: 12px;
       }
-      
+
       .load-more-trigger {
         color: var(--text-tertiary);
         font-size: 12px;
       }
-      
+
       .empty-chat {
         color: var(--text-tertiary);
-        
+
         svg {
           color: var(--text-tertiary);
           opacity: 0.4;
         }
       }
-      
+
       .loading-messages {
         color: var(--text-tertiary);
       }
     }
-    
+
     .resize-handle {
       width: 4px;
       margin-left: -2px;
@@ -488,13 +490,13 @@
       transition: background 0.2s;
       position: relative;
       z-index: 10;
-      
+
       &:hover {
         background: var(--primary);
         opacity: 0.4;
       }
     }
-    
+
     &.resizing .resize-handle {
       background: var(--primary);
     }
@@ -519,7 +521,7 @@
   align-items: center;
   justify-content: space-between;
   min-height: 56px;
-  
+
   h2 {
     font-size: 18px;
     font-weight: 600;
@@ -527,12 +529,12 @@
     color: var(--text-primary);
     white-space: nowrap;
   }
-  
+
   .header-actions {
     display: flex;
     gap: 4px;
   }
-  
+
   .icon-btn {
     width: 32px;
     height: 32px;
@@ -544,19 +546,27 @@
     align-items: center;
     justify-content: center;
     color: var(--text-secondary);
-    
+
     &:hover {
       background: var(--bg-hover);
     }
-    
+
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
-    
+
     .spin {
       animation: spin 1s linear infinite;
     }
+  }
+
+  .search-row {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
 
   .search-box {
@@ -568,12 +578,13 @@
     background: var(--bg-primary);
     border-radius: 8px;
     animation: searchExpand 0.25s ease-out;
-    
+    min-width: 0;
+
     svg {
       color: var(--text-tertiary);
       flex-shrink: 0;
     }
-    
+
     input {
       flex: 1;
       border: none;
@@ -582,7 +593,7 @@
       font-size: 14px;
       color: var(--text-primary);
       min-width: 0;
-      
+
       &::placeholder {
         color: var(--text-tertiary);
       }
@@ -600,7 +611,7 @@
       justify-content: center;
       color: var(--text-tertiary);
       flex-shrink: 0;
-      
+
       &:hover {
         background: var(--border-color);
         color: var(--text-primary);
@@ -615,6 +626,7 @@
     transform: scaleX(0.8);
     transform-origin: right center;
   }
+
   to {
     opacity: 1;
     transform: scaleX(1);
@@ -626,20 +638,20 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  
+
   // 滚动条样式
   &::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
-    
+
     &:hover {
       background: rgba(0, 0, 0, 0.3);
     }
@@ -654,15 +666,15 @@
   cursor: pointer;
   transition: background 0.15s;
   border-bottom: 1px solid var(--border-color);
-  
+
   &:last-child {
     border-bottom: none;
   }
-  
+
   &:hover {
     background: var(--bg-hover);
   }
-  
+
   &.active {
     background: var(--primary-light);
   }
@@ -679,36 +691,36 @@
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
-  
+
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     opacity: 0;
     transition: opacity 0.3s ease;
-    
+
     &.loaded {
       opacity: 1;
     }
   }
-  
+
   .avatar-letter {
     color: white;
     font-size: 18px;
     font-weight: 600;
   }
-  
+
   .avatar-skeleton {
     position: absolute;
     inset: 0;
     background: var(--bg-tertiary);
     animation: pulse 1.5s infinite;
   }
-  
+
   &.group {
     background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
   }
-  
+
   &.loading {
     background: var(--bg-tertiary);
     animation: pulse 1.5s infinite;
@@ -795,29 +807,29 @@
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--border-color);
-  
+
   .session-avatar {
     width: 40px;
     height: 40px;
   }
-  
+
   .header-info {
     flex: 1;
-    
+
     h3 {
       font-size: 16px;
       font-weight: 600;
       margin: 0;
       color: var(--text-primary);
     }
-    
+
     .header-subtitle {
       font-size: 12px;
       color: var(--text-tertiary);
       margin-top: 2px;
     }
   }
-  
+
   .refresh-messages-btn {
     .spin {
       animation: spin 1s linear infinite;
@@ -844,7 +856,7 @@
     color: var(--text-secondary);
     transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    
+
     &:hover {
       background: var(--bg-hover);
       color: var(--text-primary);
@@ -883,20 +895,20 @@
   background: var(--chat-pattern);
   background-color: var(--bg-tertiary);
   position: relative;
-  
+
   // 滚动条样式
   &::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
-    
+
     &:hover {
       background: rgba(0, 0, 0, 0.3);
     }
@@ -925,13 +937,13 @@
   transform: translateY(20px);
   pointer-events: none;
   transition: all 0.3s ease;
-  
+
   &.show {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
   }
-  
+
   &:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
@@ -946,7 +958,7 @@
   background: transparent;
   transition: background 0.2s;
   flex-shrink: 0;
-  
+
   &:hover {
     background: var(--primary);
   }
@@ -955,7 +967,7 @@
 // 拖动时禁用选择
 .chat-page.resizing {
   user-select: none;
-  
+
   .resize-handle {
     background: var(--primary);
   }
@@ -965,15 +977,15 @@
 .message-wrapper {
   display: flex;
   flex-direction: column;
-  
+
   &.sent {
     align-items: flex-end;
   }
-  
+
   &.received {
     align-items: flex-start;
   }
-  
+
   &.system {
     align-items: center;
   }
@@ -988,6 +1000,7 @@
     opacity: 0;
     transform: translateY(6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -999,7 +1012,7 @@
   padding: 12px;
   color: var(--text-tertiary);
   font-size: 13px;
-  
+
   &.loading {
     display: flex;
     align-items: center;
@@ -1014,18 +1027,18 @@
   gap: 10px;
   max-width: 70%;
   align-items: flex-start;
-  
+
   // 自己发送的消息 - 右侧绿色
   &.sent {
     flex-direction: row-reverse;
-    
+
     .bubble-content {
       background: var(--primary);
       color: white;
       border-radius: 18px 18px 4px 18px;
     }
   }
-  
+
   // 对方发送的消息 - 左侧白色
   &.received {
     .bubble-content {
@@ -1034,18 +1047,18 @@
       border-radius: 18px 18px 18px 4px;
     }
   }
-  
+
   &.system {
     max-width: 85%;
-    
+
     .bubble-avatar {
       display: none;
     }
-    
+
     .bubble-body {
       width: 100%;
     }
-    
+
     .bubble-content {
       background: rgba(0, 0, 0, 0.04);
       color: var(--text-tertiary);
@@ -1067,13 +1080,13 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  
+
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  
+
   .avatar-letter {
     font-size: 14px;
     font-weight: 600;
@@ -1115,7 +1128,7 @@
   border-radius: 8px;
   font-size: 12px;
   color: var(--text-tertiary);
-  
+
   .spin {
     animation: spin 1s linear infinite;
   }
@@ -1132,11 +1145,11 @@
   background: var(--bg-tertiary);
   border-radius: 8px;
   color: var(--text-quaternary);
-  
+
   svg {
     opacity: 0.5;
   }
-  
+
   span {
     font-size: 10px;
     opacity: 0.7;
@@ -1158,17 +1171,17 @@
   margin-bottom: 8px;
   border-radius: 4px;
   font-size: 13px;
-  
+
   .quoted-sender {
     color: var(--primary);
     font-weight: 500;
     margin-right: 4px;
-    
+
     &::after {
       content: ':';
     }
   }
-  
+
   .quoted-text {
     color: var(--text-secondary);
   }
@@ -1178,19 +1191,17 @@
 .message-bubble.sent .quoted-message {
   background: rgba(255, 255, 255, 0.15);
   border-left-color: rgba(255, 255, 255, 0.5);
-  
+
   .quoted-sender {
     color: rgba(255, 255, 255, 0.9);
   }
-  
+
   .quoted-text {
     color: rgba(255, 255, 255, 0.8);
   }
 }
 
-.message-text {
-  // 引用消息下方的正文
-}
+
 
 // 气泡内容区域（包含名字和内容）
 .bubble-body {
@@ -1207,7 +1218,7 @@
   padding: 8px 0;
   width: 100%;
   align-self: center;
-  
+
   span {
     font-size: 12px;
     color: var(--text-tertiary);
@@ -1222,7 +1233,7 @@
   padding: 8px 0;
   width: 100%;
   align-self: center;
-  
+
   span {
     font-size: 12px;
     color: var(--text-tertiary);
@@ -1241,13 +1252,13 @@
   justify-content: center;
   color: var(--text-tertiary);
   gap: 12px;
-  
+
   svg {
     width: 64px;
     height: 64px;
     opacity: 0.5;
   }
-  
+
   p {
     font-size: 14px;
     margin: 0;
@@ -1263,18 +1274,18 @@
   padding: 40px 20px;
   text-align: center;
   color: var(--text-tertiary);
-  
+
   svg {
     width: 48px;
     height: 48px;
     margin-bottom: 12px;
     opacity: 0.5;
   }
-  
+
   p {
     font-size: 13px;
     margin: 0;
-    
+
     &.hint {
       font-size: 12px;
       margin-top: 4px;
@@ -1296,7 +1307,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  
+
   .skeleton-avatar {
     width: 48px;
     height: 48px;
@@ -1304,21 +1315,21 @@
     background: var(--bg-tertiary);
     animation: pulse 1.5s infinite;
   }
-  
+
   .skeleton-content {
     flex: 1;
-    
+
     .skeleton-line {
       height: 14px;
       background: var(--bg-tertiary);
       border-radius: 4px;
       animation: pulse 1.5s infinite;
-      
+
       &:first-child {
         width: 50%;
         margin-bottom: 8px;
       }
-      
+
       &:last-child {
         width: 80%;
         height: 12px;
@@ -1328,13 +1339,25 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 // 连接错误
@@ -1346,18 +1369,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  
+
   svg {
     color: #f56c6c;
     flex-shrink: 0;
   }
-  
+
   span {
     flex: 1;
     font-size: 13px;
     color: #f56c6c;
   }
-  
+
   button {
     padding: 4px 12px;
     font-size: 12px;
@@ -1366,7 +1389,7 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    
+
     &:hover {
       background: #f78989;
     }
@@ -1382,7 +1405,7 @@
   justify-content: center;
   gap: 12px;
   color: var(--text-tertiary);
-  
+
   svg {
     animation: spin 1s linear infinite;
   }
@@ -1561,6 +1584,7 @@
     opacity: 0;
     transform: translateX(20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);

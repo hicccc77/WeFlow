@@ -2,11 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
+import { getEmojiPath } from 'wechat-emojis'
 import './ChatPage.scss'
 
 interface ChatPageProps {
   // 保留接口以备将来扩展
 }
+
 
 interface SessionDetail {
   wxid: string
@@ -27,7 +29,7 @@ function SessionAvatar({ session, size = 48 }: { session: ChatSession; size?: nu
   const [imageError, setImageError] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
   const isGroup = session.username.includes('@chatroom')
-  
+
   const getAvatarLetter = (): string => {
     const name = session.displayName || session.username
     if (!name) return '?'
@@ -51,16 +53,16 @@ function SessionAvatar({ session, size = 48 }: { session: ChatSession; size?: nu
   const hasValidUrl = session.avatarUrl && !imageError
 
   return (
-    <div 
+    <div
       className={`session-avatar ${isGroup ? 'group' : ''} ${hasValidUrl && !imageLoaded ? 'loading' : ''}`}
       style={{ width: size, height: size }}
     >
       {hasValidUrl ? (
         <>
           {!imageLoaded && <div className="avatar-skeleton" />}
-          <img 
+          <img
             ref={imgRef}
-            src={session.avatarUrl} 
+            src={session.avatarUrl}
             alt=""
             className={imageLoaded ? 'loaded' : ''}
             onLoad={() => setImageLoaded(true)}
@@ -116,6 +118,7 @@ function ChatPage(_props: ChatPageProps) {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [highlightedMessageKeys, setHighlightedMessageKeys] = useState<string[]>([])
 
+
   const highlightedMessageSet = useMemo(() => new Set(highlightedMessageKeys), [highlightedMessageKeys])
   const messagesRef = useRef<Message[]>([])
   const currentSessionRef = useRef<string | null>(null)
@@ -123,12 +126,6 @@ function ChatPage(_props: ChatPageProps) {
   const isLoadingMoreRef = useRef(false)
   const isConnectedRef = useRef(false)
   const searchKeywordRef = useRef('')
-  const realtimeMessageBusyRef = useRef(false)
-  const realtimeMessageQueuedRef = useRef(false)
-  const realtimeSessionBusyRef = useRef(false)
-  const realtimeSessionQueuedRef = useRef(false)
-  const realtimeMessageTimerRef = useRef<number | null>(null)
-  const realtimeSessionTimerRef = useRef<number | null>(null)
 
   // 加载当前用户头像
   const loadMyAvatar = useCallback(async () => {
@@ -208,15 +205,36 @@ function ChatPage(_props: ChatPageProps) {
     await loadSessions()
   }
 
-  // 刷新当前会话消息（清空缓存后重新加载）
+  // 刷新当前会话消息（增量更新新消息）
   const [isRefreshingMessages, setIsRefreshingMessages] = useState(false)
   const handleRefreshMessages = async () => {
     if (!currentSessionId || isRefreshingMessages) return
     setIsRefreshingMessages(true)
     try {
-      // 重新加载消息
-      setCurrentOffset(0)
-      await loadMessages(currentSessionId, 0)
+      // 获取最新消息并增量添加
+      const result = await window.electronAPI.chat.getLatestMessages(currentSessionId, 50)
+      if (!result.success || !result.messages) {
+        return
+      }
+      const existing = new Set(messages.map(getMessageKey))
+      const lastMsg = messages[messages.length - 1]
+      const lastTime = lastMsg?.createTime ?? 0
+      const newMessages = result.messages.filter((msg) => {
+        const key = getMessageKey(msg)
+        if (existing.has(key)) return false
+        if (lastTime > 0 && msg.createTime < lastTime) return false
+        return true
+      })
+      if (newMessages.length > 0) {
+        appendMessages(newMessages, false)
+        flashNewMessages(newMessages.map(getMessageKey))
+        // 滚动到底部
+        requestAnimationFrame(() => {
+          if (messageListRef.current) {
+            messageListRef.current.scrollTop = messageListRef.current.scrollHeight
+          }
+        })
+      }
     } catch (e) {
       console.error('刷新消息失败:', e)
     } finally {
@@ -227,7 +245,7 @@ function ChatPage(_props: ChatPageProps) {
   // 加载消息
   const loadMessages = async (sessionId: string, offset = 0) => {
     const listEl = messageListRef.current
-    
+
     if (offset === 0) {
       setLoadingMessages(true)
       setMessages([])
@@ -295,7 +313,7 @@ function ChatPage(_props: ChatPageProps) {
       return
     }
     const lower = keyword.toLowerCase()
-    const filtered = sessions.filter(s => 
+    const filtered = sessions.filter(s =>
       s.displayName?.toLowerCase().includes(lower) ||
       s.username.toLowerCase().includes(lower) ||
       s.summary.toLowerCase().includes(lower)
@@ -312,13 +330,13 @@ function ChatPage(_props: ChatPageProps) {
   // 滚动加载更多 + 显示/隐藏回到底部按钮
   const handleScroll = useCallback(() => {
     if (!messageListRef.current) return
-    
+
     const { scrollTop, clientHeight, scrollHeight } = messageListRef.current
-    
+
     // 显示回到底部按钮：距离底部超过 300px
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight
     setShowScrollToBottom(distanceFromBottom > 300)
-    
+
     // 预加载：当滚动到顶部 30% 区域时开始加载
     if (!isLoadingMore && !isLoadingMessages && hasMoreMessages && currentSessionId) {
       const threshold = clientHeight * 0.3
@@ -355,22 +373,22 @@ function ChatPage(_props: ChatPageProps) {
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     setIsResizing(true)
-    
+
     const startX = e.clientX
     const startWidth = sidebarWidth
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       const delta = e.clientX - startX
       const newWidth = Math.min(Math.max(startWidth + delta, 200), 400)
       setSidebarWidth(newWidth)
     }
-    
+
     const handleMouseUp = () => {
       setIsResizing(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-    
+
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
   }, [sidebarWidth])
@@ -414,126 +432,31 @@ function ChatPage(_props: ChatPageProps) {
     setFilteredSessions(filtered)
   }, [sessions, searchKeyword, setFilteredSessions])
 
-  const refreshRealtimeSessions = useCallback(async () => {
-    if (!isConnectedRef.current) return
-    if (realtimeSessionBusyRef.current) {
-      realtimeSessionQueuedRef.current = true
-      return
-    }
-    realtimeSessionBusyRef.current = true
-    try {
-      const result = await window.electronAPI.chat.getSessions()
-      if (result.success && result.sessions) {
-        setSessions(result.sessions)
-        const keyword = searchKeywordRef.current.trim()
-        if (keyword) {
-          const lower = keyword.toLowerCase()
-          const filtered = result.sessions.filter(s =>
-            s.displayName?.toLowerCase().includes(lower) ||
-            s.username.toLowerCase().includes(lower) ||
-            s.summary.toLowerCase().includes(lower)
-          )
-          setFilteredSessions(filtered)
-        }
-      } else if (!result.success) {
-        setConnectionError(result.error || '实时刷新会话失败')
-      }
-    } catch (e) {
-      console.error('实时刷新会话失败:', e)
-    } finally {
-      realtimeSessionBusyRef.current = false
-      if (realtimeSessionQueuedRef.current) {
-        realtimeSessionQueuedRef.current = false
-        refreshRealtimeSessions()
-      }
-    }
-  }, [setSessions, setFilteredSessions, setConnectionError])
 
-  const refreshRealtimeMessages = useCallback(async () => {
-    if (!isConnectedRef.current) return
-    const sessionId = currentSessionRef.current
-    if (!sessionId) return
-    if (isLoadingMessagesRef.current || isLoadingMoreRef.current) return
-    if (realtimeMessageBusyRef.current) {
-      realtimeMessageQueuedRef.current = true
-      return
-    }
-    realtimeMessageBusyRef.current = true
-    try {
-      const result = await window.electronAPI.chat.getLatestMessages(sessionId, 50)
-      if (!result.success || !result.messages) {
-        return
-      }
-      const existing = new Set(messagesRef.current.map(getMessageKey))
-      const lastMsg = messagesRef.current[messagesRef.current.length - 1]
-      const lastTime = lastMsg?.createTime ?? 0
-      const newMessages = result.messages.filter((msg) => {
-        const key = getMessageKey(msg)
-        if (existing.has(key)) return false
-        if (lastTime > 0 && msg.createTime < lastTime) return false
-        return true
-      })
-      if (newMessages.length > 0) {
-        appendMessages(newMessages, false)
-        flashNewMessages(newMessages.map(getMessageKey))
-        const listEl = messageListRef.current
-        if (listEl) {
-          const distance = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight
-          if (distance < 80) {
-            requestAnimationFrame(() => {
-              listEl.scrollTop = listEl.scrollHeight
-            })
-          }
-        }
-      }
-    } catch (e) {
-      console.error('实时刷新消息失败:', e)
-    } finally {
-      realtimeMessageBusyRef.current = false
-      if (realtimeMessageQueuedRef.current) {
-        realtimeMessageQueuedRef.current = false
-        refreshRealtimeMessages()
-      }
-    }
-  }, [appendMessages, flashNewMessages, getMessageKey])
-
-  useEffect(() => {
-    if (!isConnected) return
-    if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
-    if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
-    realtimeMessageTimerRef.current = window.setInterval(refreshRealtimeMessages, 5000)
-    realtimeSessionTimerRef.current = window.setInterval(refreshRealtimeSessions, 12000)
-    return () => {
-      if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
-      if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
-      realtimeMessageTimerRef.current = null
-      realtimeSessionTimerRef.current = null
-    }
-  }, [isConnected, refreshRealtimeMessages, refreshRealtimeSessions])
 
   // 格式化会话时间（相对时间）- 与原项目一致
   const formatSessionTime = (timestamp: number): string => {
     if (!timestamp) return ''
-    
+
     const now = Date.now()
     const msgTime = timestamp * 1000
     const diff = now - msgTime
-    
+
     const minutes = Math.floor(diff / 60000)
     const hours = Math.floor(diff / 3600000)
-    
+
     if (minutes < 1) return '刚刚'
     if (minutes < 60) return `${minutes}分钟前`
     if (hours < 24) return `${hours}小时前`
-    
+
     // 超过24小时显示日期
     const date = new Date(msgTime)
     const nowDate = new Date()
-    
+
     if (date.getFullYear() === nowDate.getFullYear()) {
       return `${date.getMonth() + 1}/${date.getDate()}`
     }
-    
+
     return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
   }
 
@@ -555,25 +478,25 @@ function ChatPage(_props: ChatPageProps) {
     const date = new Date(timestamp * 1000)
     const now = new Date()
     const isToday = date.toDateString() === now.toDateString()
-    
+
     if (isToday) return '今天'
-    
+
     const yesterday = new Date(now)
     yesterday.setDate(yesterday.getDate() - 1)
     if (date.toDateString() === yesterday.toDateString()) return '昨天'
-    
-    return date.toLocaleDateString('zh-CN', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     })
   }
 
   return (
     <div className={`chat-page ${isResizing ? 'resizing' : ''}`}>
       {/* 左侧会话列表 */}
-      <div 
-        className="session-sidebar" 
+      <div
+        className="session-sidebar"
         ref={sidebarRef}
         style={{ width: sidebarWidth, minWidth: sidebarWidth, maxWidth: sidebarWidth }}
       >
@@ -671,15 +594,15 @@ function ChatPage(_props: ChatPageProps) {
                 )}
               </div>
               <div className="header-actions">
-                <button 
-                  className="icon-btn refresh-messages-btn" 
-                  onClick={handleRefreshMessages} 
+                <button
+                  className="icon-btn refresh-messages-btn"
+                  onClick={handleRefreshMessages}
                   disabled={isRefreshingMessages || isLoadingMessages}
                   title="刷新消息"
                 >
                   <RefreshCw size={18} className={isRefreshingMessages ? 'spin' : ''} />
                 </button>
-                <button 
+                <button
                   className={`icon-btn detail-btn ${showDetailPanel ? 'active' : ''}`}
                   onClick={toggleDetailPanel}
                   title="会话详情"
@@ -696,8 +619,8 @@ function ChatPage(_props: ChatPageProps) {
                   <span>加载消息中...</span>
                 </div>
               ) : (
-                <div 
-                  className="message-list" 
+                <div
+                  className="message-list"
                   ref={messageListRef}
                   onScroll={handleScroll}
                 >
@@ -716,41 +639,41 @@ function ChatPage(_props: ChatPageProps) {
 
                   {messages.map((msg, index) => {
                     const prevMsg = index > 0 ? messages[index - 1] : undefined
-                  const showDateDivider = shouldShowDateDivider(msg, prevMsg)
-                  
-                  // 显示时间：第一条消息，或者与上一条消息间隔超过5分钟
-                  const showTime = !prevMsg || (msg.createTime - prevMsg.createTime > 300)
-                  const isSent = msg.isSend === 1
-                  const isSystem = msg.localType === 10000
-                  
-                  // 系统消息居中显示
-                  const wrapperClass = isSystem ? 'system' : (isSent ? 'sent' : 'received')
-                  
-                  const messageKey = getMessageKey(msg)
-                  return (
-                    <div key={messageKey} className={`message-wrapper ${wrapperClass} ${highlightedMessageSet.has(messageKey) ? 'new-message' : ''}`}>
-                      {showDateDivider && (
-                        <div className="date-divider">
-                          <span>{formatDateDivider(msg.createTime)}</span>
-                        </div>
-                      )}
-                      <MessageBubble 
-                        message={msg} 
-                        session={currentSession} 
-                        showTime={!showDateDivider && showTime}
-                        myAvatarUrl={myAvatarUrl}
-                        isGroupChat={isGroupChat(currentSession.username)}
-                      />
-                    </div>
-                  )
-                })}
+                    const showDateDivider = shouldShowDateDivider(msg, prevMsg)
 
-                {/* 回到底部按钮 */}
-                <div className={`scroll-to-bottom ${showScrollToBottom ? 'show' : ''}`} onClick={scrollToBottom}>
-                  <ChevronDown size={16} />
-                  <span>回到底部</span>
+                    // 显示时间：第一条消息，或者与上一条消息间隔超过5分钟
+                    const showTime = !prevMsg || (msg.createTime - prevMsg.createTime > 300)
+                    const isSent = msg.isSend === 1
+                    const isSystem = msg.localType === 10000
+
+                    // 系统消息居中显示
+                    const wrapperClass = isSystem ? 'system' : (isSent ? 'sent' : 'received')
+
+                    const messageKey = getMessageKey(msg)
+                    return (
+                      <div key={messageKey} className={`message-wrapper ${wrapperClass} ${highlightedMessageSet.has(messageKey) ? 'new-message' : ''}`}>
+                        {showDateDivider && (
+                          <div className="date-divider">
+                            <span>{formatDateDivider(msg.createTime)}</span>
+                          </div>
+                        )}
+                        <MessageBubble
+                          message={msg}
+                          session={currentSession}
+                          showTime={!showDateDivider && showTime}
+                          myAvatarUrl={myAvatarUrl}
+                          isGroupChat={isGroupChat(currentSession.username)}
+                        />
+                      </div>
+                    )
+                  })}
+
+                  {/* 回到底部按钮 */}
+                  <div className={`scroll-to-bottom ${showScrollToBottom ? 'show' : ''}`} onClick={scrollToBottom}>
+                    <ChevronDown size={16} />
+                    <span>回到底部</span>
+                  </div>
                 </div>
-              </div>
               )}
 
               {/* 会话详情面板 */}
@@ -860,9 +783,9 @@ const emojiDataUrlCache = new Map<string, string>()
 const senderAvatarCache = new Map<string, { avatarUrl?: string; displayName?: string }>()
 
 // 消息气泡组件
-function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }: { 
-  message: Message; 
-  session: ChatSession; 
+function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }: {
+  message: Message;
+  session: ChatSession;
   showTime?: boolean;
   myAvatarUrl?: string;
   isGroupChat?: boolean;
@@ -874,19 +797,19 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   const [senderName, setSenderName] = useState<string | undefined>(undefined)
   const [emojiError, setEmojiError] = useState(false)
   const [emojiLoading, setEmojiLoading] = useState(false)
-  
+
   // 从缓存获取表情包 data URL
   const cacheKey = message.emojiMd5 || message.emojiCdnUrl || ''
   const [emojiLocalPath, setEmojiLocalPath] = useState<string | undefined>(
     () => emojiDataUrlCache.get(cacheKey)
   )
-  
+
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000)
-    return date.toLocaleDateString('zh-CN', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit' 
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     }) + ' ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
 
@@ -900,7 +823,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   // 下载表情包
   const downloadEmoji = () => {
     if (!message.emojiCdnUrl || emojiLoading) return
-    
+
     // 先检查缓存
     const cached = emojiDataUrlCache.get(cacheKey)
     if (cached) {
@@ -908,7 +831,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
       setEmojiError(false)
       return
     }
-    
+
     setEmojiLoading(true)
     setEmojiError(false)
     window.electronAPI.chat.downloadEmoji(message.emojiCdnUrl, message.emojiMd5).then((result: { success: boolean; localPath?: string; error?: string }) => {
@@ -940,7 +863,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
           setSenderAvatarUrl(result.avatarUrl)
           setSenderName(result.displayName)
         }
-      }).catch(() => {})
+      }).catch(() => { })
     }
   }, [isGroupChat, isSent, message.senderUsername])
 
@@ -961,40 +884,68 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   }
 
   const bubbleClass = isSent ? 'sent' : 'received'
-  
+
   // 头像逻辑：
   // - 自己发的：使用 myAvatarUrl
   // - 群聊中对方发的：使用发送者头像
   // - 私聊中对方发的：使用会话头像
-  const avatarUrl = isSent 
-    ? myAvatarUrl 
+  const avatarUrl = isSent
+    ? myAvatarUrl
     : (isGroupChat ? senderAvatarUrl : session.avatarUrl)
-  const avatarLetter = isSent 
-    ? '我' 
+  const avatarLetter = isSent
+    ? '我'
     : getAvatarLetter(isGroupChat ? (senderName || message.senderUsername || '?') : (session.displayName || session.username))
 
   // 是否有引用消息
   const hasQuote = message.quotedContent && message.quotedContent.length > 0
 
+  // 解析混合文本和表情
+  const renderTextWithEmoji = (text: string) => {
+    if (!text) return text
+    const parts = text.split(/\[(.*?)\]/g)
+    return parts.map((part, index) => {
+      // 奇数索引是捕获组的内容（即括号内的文字）
+      if (index % 2 === 1) {
+        // @ts-ignore
+        const path = getEmojiPath(part as any)
+        if (path) {
+          // path 例如 'assets/face/微笑.png'，需要添加 / 前缀
+          return (
+            <img
+              key={index}
+              src={`/${path}`}
+              alt={`[${part}]`}
+              className="inline-emoji"
+              style={{ width: 22, height: 22, verticalAlign: 'bottom', margin: '0 1px' }}
+            />
+          )
+        }
+        return `[${part}]`
+      }
+      return part
+    })
+  }
+
   // 渲染消息内容
   const renderContent = () => {
     // 表情包消息
     if (isEmoji) {
+      // ... (keep existing emoji logic)
       // 没有 cdnUrl 或加载失败，显示占位符
       if (!message.emojiCdnUrl || emojiError) {
         return (
           <div className="emoji-unavailable">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M8 15s1.5 2 4 2 4-2 4-2"/>
-              <line x1="9" y1="9" x2="9.01" y2="9"/>
-              <line x1="15" y1="9" x2="15.01" y2="9"/>
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 15s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
             </svg>
             <span>表情包未缓存</span>
           </div>
         )
       }
-      
+
       // 显示加载中
       if (emojiLoading || !emojiLocalPath) {
         return (
@@ -1003,11 +954,11 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
           </div>
         )
       }
-      
+
       // 显示表情图片
       return (
-        <img 
-          src={emojiLocalPath} 
+        <img
+          src={emojiLocalPath}
           alt="表情"
           className="emoji-image"
           onError={() => setEmojiError(true)}
@@ -1020,14 +971,14 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
         <div className="bubble-content">
           <div className="quoted-message">
             {message.quotedSender && <span className="quoted-sender">{message.quotedSender}</span>}
-            <span className="quoted-text">{message.quotedContent}</span>
+            <span className="quoted-text">{renderTextWithEmoji(message.quotedContent || '')}</span>
           </div>
-          <div className="message-text">{message.parsedContent}</div>
+          <div className="message-text">{renderTextWithEmoji(message.parsedContent)}</div>
         </div>
       )
     }
     // 普通消息
-    return <div className="bubble-content">{message.parsedContent}</div>
+    return <div className="bubble-content">{renderTextWithEmoji(message.parsedContent)}</div>
   }
 
   return (

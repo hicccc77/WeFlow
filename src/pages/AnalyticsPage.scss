@@ -14,15 +14,47 @@
     animation: spin 1s linear infinite;
   }
 
-  p {
+  p.loading-status {
     margin: 0;
     font-size: 14px;
+    color: var(--text-primary);
+  }
+
+  .progress-bar-wrapper {
+    width: 300px;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-color);
+  }
+
+  .progress-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: var(--primary-gradient);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(139, 115, 85, 0.3);
+  }
+
+  .progress-percent {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
   }
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 // 统计卡片

@@ -109,15 +109,33 @@ class AnnualReportService {
     const sessionResult = await wcdbService.getSessions()
     if (!sessionResult.success || !sessionResult.sessions) return []
     const rows = sessionResult.sessions as Record<string, any>[]
+
+    const excludeList = [
+      'weixin', 'qqmail', 'fmessage', 'medianote', 'floatbottle',
+      'newsapp', 'brandsessionholder', 'brandservicesessionholder',
+      'notifymessage', 'opencustomerservicemsg', 'notification_messages',
+      'userexperience_alarm', 'helper_folders', 'placeholder_foldgroup',
+      '@helper_folders', '@placeholder_foldgroup'
+    ]
+
     return rows
       .map((row) => row.username || row.user_name || row.userName || '')
-      .filter((username) =>
-        username &&
-        !username.includes('@chatroom') &&
-        username !== 'filehelper' &&
-        !username.startsWith('gh_') &&
-        username.toLowerCase() !== cleanedWxid.toLowerCase()
-      )
+      .filter((username) => {
+        if (!username) return false
+        if (username.includes('@chatroom')) return false
+        if (username === 'filehelper') return false
+        if (username.startsWith('gh_')) return false
+        if (username.toLowerCase() === cleanedWxid.toLowerCase()) return false
+
+        for (const prefix of excludeList) {
+          if (username.startsWith(prefix) || username === prefix) return false
+        }
+
+        if (username.includes('@kefu.openim') || username.includes('@openim')) return false
+        if (username.includes('service_')) return false
+
+        return true
+      })
   }
 
   private async getEdgeMessageTime(sessionId: string, ascending: boolean): Promise<number | null> {
@@ -254,8 +272,39 @@ class AnnualReportService {
 
       const CONVERSATION_GAP = 3600
 
+      const result = await wcdbService.getAggregateStats(sessionIds, startTime, endTime)
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || '聚合统计失败' }
+      }
+
+      const d = result.data
+      totalMessages = d.total
+
+      // 填充基础统计
+      for (const [sid, stat] of Object.entries(d.sessions)) {
+        const s = stat as any
+        contactStats.set(sid, { sent: s.sent, received: s.received })
+
+        const mMap = new Map<number, number>()
+        for (const [m, c] of Object.entries(s.monthly || {})) {
+          mMap.set(parseInt(m, 10), c as number)
+        }
+        monthlyStats.set(sid, mMap)
+      }
+
+      // 填充全局分布
+      for (const [day, count] of Object.entries(d.daily)) {
+        dailyStats.set(day, count as number)
+      }
+
+      // 注意：原生层目前未返回交叉维度 heatmapData[weekday][hour]，
+      // 这里的 heatmapData 仍然需要通过下面的遍历来精确填充。
+
+      // 考虑到 Annual Report 需要一些复杂的序列特征（响应速度、对话发起）和文本特征（常用语），
+      // 我们仍然保留一次轻量级循环，但因为有了原生统计，我们可以分步进行，或者如果数据量极大则跳过某些步骤。
+      // 为保持功能完整，我们进行深度集成的轻量遍历：
       for (const sessionId of sessionIds) {
-        const cursor = await wcdbService.openMessageCursor(sessionId, 500, true, startTime, endTime)
+        const cursor = await wcdbService.openMessageCursor(sessionId, 1000, true, startTime, endTime)
         if (!cursor.success || !cursor.cursor) continue
 
         try {
@@ -268,25 +317,16 @@ class AnnualReportService {
               const createTime = parseInt(row.create_time || '0', 10)
               if (!createTime) continue
 
-              totalMessages++
-
               const isSendRaw = row.computed_is_send ?? row.is_send ?? '0'
               const isSent = parseInt(isSendRaw, 10) === 1
               const localType = parseInt(row.local_type || row.type || '1', 10)
               const content = this.decodeMessageContent(row.message_content, row.compress_content)
 
-              if (!contactStats.has(sessionId)) {
-                contactStats.set(sessionId, { sent: 0, received: 0 })
-              }
-              const stats = contactStats.get(sessionId)!
-              if (isSent) stats.sent++
-              else stats.received++
-
+              // 响应速度 & 对话发起
               if (!conversationStarts.has(sessionId)) {
                 conversationStarts.set(sessionId, { initiated: 0, received: 0 })
               }
               const convStats = conversationStarts.get(sessionId)!
-
               const lastMsg = lastMessageTime.get(sessionId)
               if (!lastMsg || (createTime - lastMsg.time) > CONVERSATION_GAP) {
                 if (isSent) convStats.initiated++
@@ -295,56 +335,39 @@ class AnnualReportService {
                 if (isSent && !lastMsg.isSent) {
                   const responseTime = createTime - lastMsg.time
                   if (responseTime > 0 && responseTime < 86400) {
-                    if (!responseTimeStats.has(sessionId)) {
-                      responseTimeStats.set(sessionId, [])
-                    }
+                    if (!responseTimeStats.has(sessionId)) responseTimeStats.set(sessionId, [])
                     responseTimeStats.get(sessionId)!.push(responseTime)
                   }
                 }
               }
               lastMessageTime.set(sessionId, { time: createTime, isSent })
 
+              // 常用语
               if ((localType === 1 || localType === 244813135921) && isSent) {
                 const text = String(content).trim()
                 if (text.length >= 2 && text.length <= 20 &&
-                    !text.includes('http') &&
-                    !text.includes('<') &&
-                    !text.startsWith('[') &&
-                    !text.startsWith('<?xml')) {
+                  !text.includes('http') && !text.includes('<') &&
+                  !text.startsWith('[') && !text.startsWith('<?xml')) {
                   phraseCount.set(text, (phraseCount.get(text) || 0) + 1)
                 }
               }
 
-              if (!monthlyStats.has(sessionId)) {
-                monthlyStats.set(sessionId, new Map())
-              }
-              const month = new Date(createTime * 1000).getMonth() + 1
-              const monthMap = monthlyStats.get(sessionId)!
-              monthMap.set(month, (monthMap.get(month) || 0) + 1)
+              // 交叉维度补全
+              const dt = new Date(createTime * 1000)
+              const weekdayIndex = dt.getDay() === 0 ? 6 : dt.getDay() - 1
+              heatmapData[weekdayIndex][dt.getHours()]++
 
-              const d = new Date(createTime * 1000)
-              const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-              dailyStats.set(dayKey, (dailyStats.get(dayKey) || 0) + 1)
-
-              if (!dailyContactStats.has(dayKey)) {
-                dailyContactStats.set(dayKey, new Map())
-              }
-              const dayContactMap = dailyContactStats.get(dayKey)!
-              dayContactMap.set(sessionId, (dayContactMap.get(sessionId) || 0) + 1)
-
-              const weekdayIndex = (() => {
-                const jsWeekday = d.getDay()
-                return jsWeekday === 0 ? 6 : jsWeekday - 1
-              })()
-              heatmapData[weekdayIndex][d.getHours()]++
-
-              const hour = d.getHours()
-              if (hour >= 0 && hour < 6) {
+              if (dt.getHours() >= 0 && dt.getHours() < 6) {
                 midnightStats.set(sessionId, (midnightStats.get(sessionId) || 0) + 1)
               }
-            }
 
+              const dayKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+              if (!dailyContactStats.has(dayKey)) dailyContactStats.set(dayKey, new Map())
+              const dayContactMap = dailyContactStats.get(dayKey)!
+              dayContactMap.set(sessionId, (dayContactMap.get(sessionId) || 0) + 1)
+            }
             hasMore = batch.hasMore === true
+            await new Promise(resolve => setImmediate(resolve))
           }
         } finally {
           await wcdbService.closeMessageCursor(cursor.cursor)

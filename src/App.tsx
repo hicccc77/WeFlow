@@ -28,12 +28,12 @@ function App() {
   const isAgreementWindow = location.pathname === '/agreement-window'
   const isOnboardingWindow = location.pathname === '/onboarding-window'
   const [themeHydrated, setThemeHydrated] = useState(false)
-  
+
   // 协议同意状态
   const [showAgreement, setShowAgreement] = useState(false)
   const [agreementChecked, setAgreementChecked] = useState(false)
   const [agreementLoading, setAgreementLoading] = useState(true)
-  
+
   // 更新提示状态
   const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string } | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -67,7 +67,7 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme)
     document.documentElement.setAttribute('data-mode', themeMode)
-    
+
     // 更新窗口控件颜色以适配主题
     const symbolColor = themeMode === 'dark' ? '#ffffff' : '#1a1a1a'
     if (!isOnboardingWindow) {
@@ -188,7 +188,7 @@ function App() {
           }
           console.log('检测到已保存的配置，正在自动连接...')
           const result = await window.electronAPI.wcdb.testConnection(dbPath, decryptKey, wxid)
-          
+
           if (result.success) {
             console.log('自动连接成功')
             setDbConnected(true, dbPath)
@@ -221,7 +221,7 @@ function App() {
   return (
     <div className="app-container">
       <TitleBar />
-      
+
       {/* 用户协议弹窗 */}
       {showAgreement && !agreementLoading && (
         <div className="agreement-overlay">
@@ -235,23 +235,23 @@ function App() {
               <div className="agreement-text">
                 <h4>1. 数据安全</h4>
                 <p>本软件所有数据处理均在本地完成，不会上传任何聊天记录、个人信息到服务器。您的数据完全由您自己掌控。</p>
-                
+
                 <h4>2. 使用须知</h4>
                 <p>本软件仅供个人学习研究使用，请勿用于任何非法用途。使用本软件解密、查看、分析的数据应为您本人所有或已获得授权。</p>
-                
+
                 <h4>3. 免责声明</h4>
                 <p>因使用本软件产生的任何直接或间接损失，开发者不承担任何责任。请确保您的使用行为符合当地法律法规。</p>
-                
+
                 <h4>4. 隐私保护</h4>
                 <p>本软件不收集任何用户数据。软件更新检测仅获取版本信息，不涉及任何个人隐私。</p>
               </div>
             </div>
             <div className="agreement-footer">
               <label className="agreement-checkbox">
-                <input 
-                  type="checkbox" 
-                  checked={agreementChecked} 
-                  onChange={(e) => setAgreementChecked(e.target.checked)} 
+                <input
+                  type="checkbox"
+                  checked={agreementChecked}
+                  onChange={(e) => setAgreementChecked(e.target.checked)}
                 />
                 <span>我已阅读并同意上述协议</span>
               </label>
@@ -263,7 +263,7 @@ function App() {
           </div>
         </div>
       )}
-      
+
       {/* 更新提示条 */}
       {updateInfo && (
         <div className="update-banner">
@@ -289,13 +289,13 @@ function App() {
           )}
         </div>
       )}
-      
+
       <div className="main-layout">
         <Sidebar />
         <main className="content">
           <RouteGuard>
             <Routes>
-              <Route path="/" element={<WelcomePage />} />
+              <Route path="/" element={<HomePage />} />
               <Route path="/home" element={<HomePage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />

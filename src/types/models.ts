@@ -29,6 +29,7 @@ export interface Message {
   serverId: number
   localType: number
   createTime: number
+  sortSeq: number
   isSend: number | null
   senderUsername: string | null
   parsedContent: string

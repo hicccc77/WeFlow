@@ -3,7 +3,8 @@
 // 配置
 export const config = {
   get: (key: string) => window.electronAPI.config.get(key),
-  set: (key: string, value: unknown) => window.electronAPI.config.set(key, value)
+  set: (key: string, value: unknown) => window.electronAPI.config.set(key, value),
+  clear: () => window.electronAPI.config.clear()
 }
 
 // 对话框

@@ -1,9 +1,16 @@
-import * as fs from 'fs'
+import { join, dirname, basename, extname } from 'path'
+import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from 'fs'
 import * as path from 'path'
+import * as fs from 'fs'
 import * as https from 'https'
 import * as http from 'http'
 import * as fzstd from 'fzstd'
+import * as crypto from 'crypto'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { app } from 'electron'
+
+const execFileAsync = promisify(execFile)
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 
@@ -32,10 +39,15 @@ export interface Message {
   // 表情包相关
   emojiCdnUrl?: string
   emojiMd5?: string
-  emojiLocalPath?: string  // 本地缓存路径
+  emojiLocalPath?: string  // 本地缓存 castle 路径
   // 引用消息相关
   quotedContent?: string
   quotedSender?: string
+  // 图片/视频相关
+  imageMd5?: string
+  aesKey?: string
+  encrypVer?: number
+  cdnThumbUrl?: string
 }
 
 export interface Contact {
@@ -133,7 +145,7 @@ class ChatService {
    */
   async getSessions(): Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }> {
     try {
-      if (!this.connected) {
+      if (!this.connected || !wcdbService.isConnected()) {
         const connectResult = await this.connect()
         if (!connectResult.success) {
           return { success: false, error: connectResult.error }
@@ -167,7 +179,7 @@ class ChatService {
           row.talker_id ||
           row.talkerId ||
           ''
-        
+
         if (!this.shouldKeepSession(username)) continue
 
         const sortTs = parseInt(
@@ -187,14 +199,17 @@ class ChatService {
           10
         )
 
+        const summary = this.cleanString(row.summary || row.digest || row.last_msg || row.lastMsg || '')
+        const lastMsgType = parseInt(row.last_msg_type || row.lastMsgType || '0', 10)
+
         sessions.push({
           username,
           type: parseInt(row.type || '0', 10),
           unreadCount: parseInt(row.unread_count || row.unreadCount || row.unreadcount || '0', 10),
-          summary: this.cleanString(row.summary || row.digest || row.last_msg || row.lastMsg || ''),
+          summary: summary || this.getMessageTypeLabel(lastMsgType),
           sortTimestamp: sortTs,
           lastTimestamp: lastTs,
-          lastMsgType: parseInt(row.last_msg_type || row.lastMsgType || '0', 10),
+          lastMsgType,
           displayName: username
         })
       }
@@ -243,43 +258,110 @@ class ChatService {
     limit: number = 50
   ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
     try {
-      if (!this.connected) {
-        return { success: false, error: '数据库未连接' }
+      if (!this.connected || !wcdbService.isConnected()) {
+        const connectResult = await this.connect()
+        if (!connectResult.success) {
+          return { success: false, error: '数据库未连接' }
+        }
       }
 
       const batchSize = Math.max(1, limit || this.messageBatchDefault)
       let state = this.messageCursors.get(sessionId)
-      if (!state || offset === 0 || state.batchSize !== batchSize || offset !== state.fetched) {
+
+      // 只在以下情况重新创建游标:
+      // 1. 没有游标状态
+      // 2. offset 为 0 (重新加载会话)
+      // 3. batchSize 改变
+      const needNewCursor = !state || offset === 0 || state.batchSize !== batchSize
+
+      if (needNewCursor) {
+        console.log(`[ChatService] 创建新游标: sessionId=${sessionId}, offset=${offset}, batchSize=${batchSize}`)
+
+        // 关闭旧游标
         if (state) {
-          await wcdbService.closeMessageCursor(state.cursor)
-        }
-        const cursorResult = await wcdbService.openMessageCursor(sessionId, batchSize, false, 0, 0)
-        if (!cursorResult.success || !cursorResult.cursor) {
-          return { success: false, error: cursorResult.error || '打开消息游标失败' }
-        }
-        state = { cursor: cursorResult.cursor, fetched: 0, batchSize }
-        this.messageCursors.set(sessionId, state)
-        if (offset > 0) {
-          let skipped = 0
-          while (skipped < offset) {
-            const batch = await wcdbService.fetchMessageBatch(state.cursor)
-            if (!batch.success || !batch.rows || batch.rows.length === 0) break
-            skipped += batch.rows.length
-            state.fetched += batch.rows.length
-            if (!batch.hasMore) break
+          try {
+            await wcdbService.closeMessageCursor(state.cursor)
+          } catch (e) {
+            console.warn('[ChatService] 关闭旧游标失败:', e)
           }
         }
+
+        // 创建新游标
+        const cursorResult = await wcdbService.openMessageCursor(sessionId, batchSize, false, 0, 0)
+        if (!cursorResult.success || !cursorResult.cursor) {
+          console.error('[ChatService] 打开消息游标失败:', cursorResult.error)
+          return { success: false, error: cursorResult.error || '打开消息游标失败' }
+        }
+
+        state = { cursor: cursorResult.cursor, fetched: 0, batchSize }
+        this.messageCursors.set(sessionId, state)
+
+        // 如果需要跳过消息(offset > 0),逐批获取但不返回
+        if (offset > 0) {
+          console.log(`[ChatService] 跳过消息: offset=${offset}`)
+          let skipped = 0
+          while (skipped < offset) {
+            const skipBatch = await wcdbService.fetchMessageBatch(state.cursor)
+            if (!skipBatch.success) {
+              console.error('[ChatService] 跳过消息批次失败:', skipBatch.error)
+              return { success: false, error: skipBatch.error || '跳过消息失败' }
+            }
+            if (!skipBatch.rows || skipBatch.rows.length === 0) {
+              console.log('[ChatService] 跳过时没有更多消息')
+              return { success: true, messages: [], hasMore: false }
+            }
+            skipped += skipBatch.rows.length
+            state.fetched += skipBatch.rows.length
+            if (!skipBatch.hasMore) {
+              console.log('[ChatService] 跳过时已到达末尾')
+              return { success: true, messages: [], hasMore: false }
+            }
+          }
+          console.log(`[ChatService] 跳过完成: skipped=${skipped}, fetched=${state.fetched}`)
+        }
+      } else if (state && offset !== state.fetched) {
+        // offset 与 fetched 不匹配,说明状态不一致
+        console.warn(`[ChatService] 游标状态不一致: offset=${offset}, fetched=${state.fetched}, 继续使用现有游标`)
+        // 不重新创建游标,而是继续使用现有游标
+        // 这样可以避免频繁重建导致的问题
       }
 
+      // 确保 state 已初始化
+      if (!state) {
+        console.error('[ChatService] 游标状态未初始化')
+        return { success: false, error: '游标状态未初始化' }
+      }
+
+      // 获取当前批次的消息
+      console.log(`[ChatService] 获取消息批次: cursor=${state.cursor}, fetched=${state.fetched}`)
       const batch = await wcdbService.fetchMessageBatch(state.cursor)
-      if (!batch.success || !batch.rows) {
+      if (!batch.success) {
+        console.error('[ChatService] 获取消息批次失败:', batch.error)
         return { success: false, error: batch.error || '获取消息失败' }
+      }
+
+      if (!batch.rows) {
+        console.error('[ChatService] 获取消息失败: 返回数据为空')
+        return { success: false, error: '获取消息失败: 返回数据为空' }
       }
 
       const rows = batch.rows as Record<string, any>[]
       const hasMore = batch.hasMore === true
 
       const normalized = this.normalizeMessageOrder(this.mapRowsToMessages(rows))
+
+      // 并发检查并修复缺失 CDN URL 的表情包
+      const fixPromises: Promise<void>[] = []
+      for (const msg of normalized) {
+        if (msg.localType === 47 && !msg.emojiCdnUrl && msg.emojiMd5) {
+          fixPromises.push(this.fallbackEmoticon(msg))
+        }
+      }
+
+      if (fixPromises.length > 0) {
+        await Promise.allSettled(fixPromises)
+      }
+
       state.fetched += rows.length
       return { success: true, messages: normalized, hasMore }
     } catch (e) {
@@ -288,10 +370,68 @@ class ChatService {
     }
   }
 
+  /**
+   * 尝试从 emoticon.db / emotion.db 恢复表情包 CDN URL
+   */
+  private async fallbackEmoticon(msg: Message): Promise<void> {
+    if (!msg.emojiMd5) return
+
+    try {
+      const dbPath = await this.findInternalEmoticonDb()
+      if (!dbPath) {
+        console.warn(`[ChatService] 表情包数据库未找到，无法恢复: md5=${msg.emojiMd5}`)
+        return
+      }
+
+      const urlResult = await wcdbService.getEmoticonCdnUrl(dbPath, msg.emojiMd5)
+      if (!urlResult.success) {
+        console.warn(`[ChatService] 表情包数据库查询失败: md5=${msg.emojiMd5}, db=${dbPath}`, urlResult.error)
+        return
+      }
+      if (urlResult.url) {
+        msg.emojiCdnUrl = urlResult.url
+        return
+      }
+
+      console.warn(`[ChatService] 表情包数据库未命中: md5=${msg.emojiMd5}, db=${dbPath}`)
+
+    } catch (e) {
+      console.error(`[ChatService] 恢复表情包失败: md5=${msg.emojiMd5}`, e)
+    }
+  }
+
+  /**
+   * 查找 emoticon.db 路径
+   */
+  private async findInternalEmoticonDb(): Promise<string | null> {
+    const myWxid = this.configService.get('myWxid')
+    const rootDbPath = this.configService.get('dbPath')
+    if (!myWxid || !rootDbPath) return null
+
+    const accountDir = this.resolveAccountDir(rootDbPath, myWxid)
+    if (!accountDir) return null
+
+    const candidates = [
+      // 1. 标准结构: root/wxid/db_storage/emoticon
+      join(rootDbPath, myWxid, 'db_storage', 'emoticon', 'emoticon.db'),
+      join(rootDbPath, myWxid, 'db_storage', 'emotion', 'emoticon.db'),
+    ]
+
+    for (const p of candidates) {
+      if (existsSync(p)) return p
+    }
+
+    return null
+  }
+
+
   async getLatestMessages(sessionId: string, limit: number = this.messageBatchDefault): Promise<{ success: boolean; messages?: Message[]; error?: string }> {
     try {
-      if (!this.connected) {
-        return { success: false, error: '数据库未连接' }
+      if (!this.connected || !wcdbService.isConnected()) {
+        const connectResult = await this.connect()
+        if (!connectResult.success) {
+          return { success: false, error: '数据库未连接' }
+        }
       }
 
       const batchSize = Math.max(1, limit)
@@ -306,6 +446,18 @@ class ChatService {
           return { success: false, error: batch.error || '获取消息失败' }
         }
         const normalized = this.normalizeMessageOrder(this.mapRowsToMessages(batch.rows as Record<string, any>[]))
+
+        // 并发检查并修复缺失 CDN URL 的表情包
+        const fixPromises: Promise<void>[] = []
+        for (const msg of normalized) {
+          if (msg.localType === 47 && !msg.emojiCdnUrl && msg.emojiMd5) {
+            fixPromises.push(this.fallbackEmoticon(msg))
+          }
+        }
+        if (fixPromises.length > 0) {
+          await Promise.allSettled(fixPromises)
+        }
+
         return { success: true, messages: normalized }
       } finally {
         await wcdbService.closeMessageCursor(cursorResult.cursor)
@@ -354,11 +506,21 @@ class ChatService {
       let emojiMd5: string | undefined
       let quotedContent: string | undefined
       let quotedSender: string | undefined
+      let imageMd5: string | undefined
+      let aesKey: string | undefined
+      let encrypVer: number | undefined
+      let cdnThumbUrl: string | undefined
 
       if (localType === 47 && content) {
         const emojiInfo = this.parseEmojiInfo(content)
         emojiCdnUrl = emojiInfo.cdnUrl
         emojiMd5 = emojiInfo.md5
+      } else if (localType === 3 && content) {
+        const imageInfo = this.parseImageInfo(content)
+        imageMd5 = imageInfo.md5
+        aesKey = imageInfo.aesKey
+        encrypVer = imageInfo.encrypVer
+        cdnThumbUrl = imageInfo.cdnThumbUrl
       } else if (localType === 244813135921 || (content && content.includes('<type>57</type>'))) {
         const quoteInfo = this.parseQuoteMessage(content)
         quotedContent = quoteInfo.content
@@ -378,7 +540,11 @@ class ChatService {
         emojiCdnUrl,
         emojiMd5,
         quotedContent,
-        quotedSender
+        quotedSender,
+        imageMd5,
+        aesKey,
+        encrypVer,
+        cdnThumbUrl
       })
     }
     return messages
@@ -428,12 +594,27 @@ class ChatService {
         // 引用消息，提取 title
         const title = this.extractXmlValue(content, 'title')
         return title || '[引用消息]'
+      case 266287972401:
+        return '[拍一拍]'
+      case 81604378673:
+        return '[聊天记录]'
+      case 8594229559345:
+        return '[红包]'
+      case 8589934592049:
+        return '[转账]'
       default:
         // 检查是否是 type=57 的引用消息
         if (xmlType === '57') {
           const title = this.extractXmlValue(content, 'title')
           return title || '[引用消息]'
         }
+
+        // 尝试从 XML 提取通用 title
+        const genericTitle = this.extractXmlValue(content, 'title')
+        if (genericTitle && genericTitle.length > 0 && genericTitle.length < 100) {
+          return genericTitle
+        }
+
         if (content.length > 200) {
           return this.getMessageTypeLabel(localType)
         }
@@ -444,7 +625,7 @@ class ChatService {
   private parseType49(content: string): string {
     const title = this.extractXmlValue(content, 'title')
     const type = this.extractXmlValue(content, 'type')
-    
+
     if (title) {
       switch (type) {
         case '5':
@@ -472,35 +653,58 @@ class ChatService {
     try {
       // 提取 cdnurl
       let cdnUrl: string | undefined
-      const cdnUrlMatch = /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content)
+      const cdnUrlMatch = /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /cdnurl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
       if (cdnUrlMatch) {
         cdnUrl = cdnUrlMatch[1].replace(/&amp;/g, '&')
         if (cdnUrl.includes('%')) {
           try {
             cdnUrl = decodeURIComponent(cdnUrl)
-          } catch {}
+          } catch { }
         }
       }
 
       // 如果没有 cdnurl，尝试 thumburl
       if (!cdnUrl) {
-        const thumbUrlMatch = /thumburl\s*=\s*['"]([^'"]+)['"]/i.exec(content)
+        const thumbUrlMatch = /thumburl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /thumburl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
         if (thumbUrlMatch) {
           cdnUrl = thumbUrlMatch[1].replace(/&amp;/g, '&')
           if (cdnUrl.includes('%')) {
             try {
               cdnUrl = decodeURIComponent(cdnUrl)
-            } catch {}
+            } catch { }
           }
         }
       }
 
       // 提取 md5
-      const md5Match = /md5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content)
+      const md5Match = /md5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content) || /md5\s*=\s*([a-fA-F0-9]+)/i.exec(content)
       const md5 = md5Match ? md5Match[1] : undefined
 
       // 不构造假 URL，只返回真正的 cdnurl
+      // 没有 cdnUrl 时保持静默，交由后续回退逻辑处理
       return { cdnUrl, md5 }
+    } catch (e) {
+      console.error('[ChatService] 表情包解析失败:', e, { xml: content })
+      return {}
+    }
+  }
+
+  /**
+   * 解析图片信息
+   */
+  private parseImageInfo(content: string): { md5?: string; aesKey?: string; encrypVer?: number; cdnThumbUrl?: string } {
+    try {
+      const md5 = this.extractXmlValue(content, 'md5')
+      const aesKey = this.extractXmlAttribute(content, 'img', 'aeskey')
+      const encrypVerStr = this.extractXmlAttribute(content, 'img', 'encrypver')
+      const cdnThumbUrl = this.extractXmlAttribute(content, 'img', 'cdnthumburl')
+
+      return {
+        md5,
+        aesKey,
+        encrypVer: encrypVerStr ? parseInt(encrypVerStr, 10) : undefined,
+        cdnThumbUrl
+      }
     } catch {
       return {}
     }
@@ -514,24 +718,24 @@ class ChatService {
       // 提取 refermsg 部分
       const referMsgStart = content.indexOf('<refermsg>')
       const referMsgEnd = content.indexOf('</refermsg>')
-      
+
       if (referMsgStart === -1 || referMsgEnd === -1) {
         return {}
       }
 
       const referMsgXml = content.substring(referMsgStart, referMsgEnd + 11)
-      
+
       // 提取发送者名称
       let displayName = this.extractXmlValue(referMsgXml, 'displayname')
       // 过滤掉 wxid
       if (displayName && this.looksLikeWxid(displayName)) {
         displayName = ''
       }
-      
+
       // 提取引用内容
       const referContent = this.extractXmlValue(referMsgXml, 'content')
       const referType = this.extractXmlValue(referMsgXml, 'type')
-      
+
       // 根据类型渲染引用内容
       let displayContent = referContent
       switch (referType) {
@@ -568,8 +772,8 @@ class ChatService {
           }
       }
 
-      return { 
-        content: displayContent, 
+      return {
+        content: displayContent,
         sender: displayName || undefined
       }
     } catch {
@@ -612,11 +816,20 @@ class ChatService {
       34: '[语音]',
       42: '[名片]',
       43: '[视频]',
-      47: '[表情]',
+      47: '[动画表情]',
       48: '[位置]',
       49: '[链接]',
       50: '[通话]',
-      10000: '[系统消息]'
+      10000: '[系统消息]',
+      244813135921: '[引用消息]',
+      266287972401: '[拍一拍]',
+      81604378673: '[聊天记录]',
+      154618822705: '[小程序]',
+      8594229559345: '[红包]',
+      8589934592049: '[转账]',
+      34359738417: '[文件]',
+      103079215153: '[文件]',
+      25769803825: '[文件]'
     }
     return labels[localType] || '[消息]'
   }
@@ -628,6 +841,16 @@ class ChatService {
       return match[1].replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
     }
     return ''
+  }
+
+  private extractXmlAttribute(xml: string, tagName: string, attrName: string): string {
+    const tagRegex = new RegExp(`<${tagName}[^>]*>`, 'i')
+    const tagMatch = tagRegex.exec(xml)
+    if (!tagMatch) return ''
+
+    const attrRegex = new RegExp(`${attrName}\\s*=\\s*['"]([^'"]*)['"]`, 'i')
+    const attrMatch = attrRegex.exec(tagMatch[0])
+    return attrMatch ? attrMatch[1] : ''
   }
 
   private cleanSystemMessage(content: string): string {
@@ -706,16 +929,16 @@ class ChatService {
    */
   private decodeMaybeCompressed(raw: any): string {
     if (!raw) return ''
-    
+
     // 如果是 Buffer/Uint8Array
     if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
       return this.decodeBinaryContent(Buffer.from(raw))
     }
-    
+
     // 如果是字符串
     if (typeof raw === 'string') {
       if (raw.length === 0) return ''
-      
+
       // 检查是否是 hex 编码
       if (this.looksLikeHex(raw)) {
         const bytes = Buffer.from(raw, 'hex')
@@ -723,19 +946,19 @@ class ChatService {
           return this.decodeBinaryContent(bytes)
         }
       }
-      
+
       // 检查是否是 base64 编码
       if (this.looksLikeBase64(raw)) {
         try {
           const bytes = Buffer.from(raw, 'base64')
           return this.decodeBinaryContent(bytes)
-        } catch {}
+        } catch { }
       }
-      
+
       // 普通字符串
       return raw
     }
-    
+
     return ''
   }
 
@@ -744,7 +967,7 @@ class ChatService {
    */
   private decodeBinaryContent(data: Buffer): string {
     if (data.length === 0) return ''
-    
+
     try {
       // 检查是否是 zstd 压缩数据 (magic number: 0xFD2FB528)
       if (data.length >= 4) {
@@ -760,7 +983,7 @@ class ChatService {
           }
         }
       }
-      
+
       // 尝试直接 UTF-8 解码
       const decoded = data.toString('utf-8')
       // 检查是否有太多替换字符
@@ -768,7 +991,7 @@ class ChatService {
       if (replacementCount < decoded.length * 0.2) {
         return decoded.replace(/\uFFFD/g, '')
       }
-      
+
       // 尝试 latin1 解码
       return data.toString('latin1')
     } catch {
@@ -795,14 +1018,15 @@ class ChatService {
   private shouldKeepSession(username: string): boolean {
     if (!username) return false
     if (username.startsWith('gh_')) return false
-    
+
     const excludeList = [
       'weixin', 'qqmail', 'fmessage', 'medianote', 'floatbottle',
       'newsapp', 'brandsessionholder', 'brandservicesessionholder',
       'notifymessage', 'opencustomerservicemsg', 'notification_messages',
-      'userexperience_alarm'
+      'userexperience_alarm', 'helper_folders', 'placeholder_foldgroup',
+      '@helper_folders', '@placeholder_foldgroup'
     ]
-    
+
     for (const prefix of excludeList) {
       if (username.startsWith(prefix) || username === prefix) return false
     }
@@ -887,11 +1111,11 @@ class ChatService {
   private getEmojiCacheDir(): string {
     const cachePath = this.configService.get('cachePath')
     if (cachePath) {
-      return path.join(cachePath, 'Emojis')
+      return join(cachePath, 'Emojis')
     }
     // 回退到默认目录
     const documentsPath = app.getPath('documents')
-    return path.join(documentsPath, 'WeFlow', 'Emojis')
+    return join(documentsPath, 'WeFlow', 'Emojis')
   }
 
   /**
@@ -904,10 +1128,10 @@ class ChatService {
 
     // 生成缓存 key
     const cacheKey = md5 || this.hashString(cdnUrl)
-    
+
     // 检查内存缓存
     const cached = emojiCache.get(cacheKey)
-    if (cached && fs.existsSync(cached)) {
+    if (cached && existsSync(cached)) {
       // 读取文件并转为 data URL
       const dataUrl = this.fileToDataUrl(cached)
       if (dataUrl) {
@@ -930,15 +1154,15 @@ class ChatService {
 
     // 确保缓存目录存在
     const cacheDir = this.getEmojiCacheDir()
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true })
+    if (!existsSync(cacheDir)) {
+      mkdirSync(cacheDir, { recursive: true })
     }
 
     // 检查本地是否已有缓存文件
     const extensions = ['.gif', '.png', '.webp', '.jpg', '.jpeg']
     for (const ext of extensions) {
-      const filePath = path.join(cacheDir, `${cacheKey}${ext}`)
-      if (fs.existsSync(filePath)) {
+      const filePath = join(cacheDir, `${cacheKey}${ext}`)
+      if (existsSync(filePath)) {
         emojiCache.set(cacheKey, filePath)
         const dataUrl = this.fileToDataUrl(filePath)
         if (dataUrl) {
@@ -954,7 +1178,7 @@ class ChatService {
     try {
       const localPath = await downloadPromise
       emojiDownloading.delete(cacheKey)
-      
+
       if (localPath) {
         emojiCache.set(cacheKey, localPath)
         const dataUrl = this.fileToDataUrl(localPath)
@@ -964,6 +1188,7 @@ class ChatService {
       }
       return { success: false, error: '下载失败' }
     } catch (e) {
+      console.error(`[ChatService] 表情包下载异常: url=${cdnUrl}, md5=${md5}`, e)
       emojiDownloading.delete(cacheKey)
       return { success: false, error: String(e) }
     }
@@ -974,7 +1199,7 @@ class ChatService {
    */
   private fileToDataUrl(filePath: string): string | null {
     try {
-      const ext = path.extname(filePath).toLowerCase()
+      const ext = extname(filePath).toLowerCase()
       const mimeTypes: Record<string, string> = {
         '.gif': 'image/gif',
         '.png': 'image/png',
@@ -983,7 +1208,7 @@ class ChatService {
         '.webp': 'image/webp'
       }
       const mimeType = mimeTypes[ext] || 'image/gif'
-      const data = fs.readFileSync(filePath)
+      const data = readFileSync(filePath)
       return `data:${mimeType};base64,${data.toString('base64')}`
     } catch {
       return null
@@ -996,7 +1221,7 @@ class ChatService {
   private doDownloadEmoji(url: string, cacheKey: string, cacheDir: string): Promise<string | null> {
     return new Promise((resolve) => {
       const protocol = url.startsWith('https') ? https : http
-      
+
       const request = protocol.get(url, (response) => {
         // 处理重定向
         if (response.statusCode === 301 || response.statusCode === 302) {
@@ -1023,10 +1248,10 @@ class ChatService {
 
           // 检测文件类型
           const ext = this.detectImageExtension(buffer) || this.getExtFromUrl(url) || '.gif'
-          const filePath = path.join(cacheDir, `${cacheKey}${ext}`)
+          const filePath = join(cacheDir, `${cacheKey}${ext}`)
 
           try {
-            fs.writeFileSync(filePath, buffer)
+            writeFileSync(filePath, buffer)
             resolve(filePath)
           } catch {
             resolve(null)
@@ -1063,7 +1288,7 @@ class ChatService {
     }
     // WEBP
     if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
-        buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
       return '.webp'
     }
 
@@ -1076,11 +1301,11 @@ class ChatService {
   private getExtFromUrl(url: string): string | null {
     try {
       const pathname = new URL(url).pathname
-      const ext = path.extname(pathname).toLowerCase()
+      const ext = extname(pathname).toLowerCase()
       if (['.gif', '.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
         return ext
       }
-    } catch {}
+    } catch { }
     return null
   }
 
@@ -1168,7 +1393,7 @@ class ChatService {
       if (tableStats.success && tableStats.tables) {
         for (const row of tableStats.tables) {
           messageTables.push({
-            dbName: path.basename(row.db_path || ''),
+            dbName: basename(row.db_path || ''),
             tableName: row.table_name || '',
             count: parseInt(row.count || '0', 10)
           })
@@ -1194,6 +1419,305 @@ class ChatService {
       console.error('ChatService: 获取会话详情失败:', e)
       return { success: false, error: String(e) }
     }
+  }
+  /**
+   * 获取图片数据（解密后的）
+   */
+  async getImageData(sessionId: string, msgId: string): Promise<{ success: boolean; data?: string; error?: string }> {
+    try {
+      const localId = parseInt(msgId, 10)
+      if (!this.connected) await this.connect()
+
+      // 1. 获取消息详情以拿到 MD5 和 AES Key
+      const msgResult = await this.getMessageByLocalId(sessionId, localId)
+      if (!msgResult.success || !msgResult.message) {
+        return { success: false, error: '未找到消息' }
+      }
+      const msg = msgResult.message
+
+      // 2. 确定搜索的基础名
+      const baseName = msg.imageMd5 || String(msg.localId)
+
+      // 3. 查找 .dat 文件
+      const myWxid = this.configService.get('myWxid')
+      const dbPath = this.configService.get('dbPath')
+      if (!myWxid || !dbPath) return { success: false, error: '配置缺失' }
+
+      const accountDir = dirname(dirname(dbPath)) // dbPath 是 db_storage 里面的路径或同级
+      // 实际上 dbPath 指向 db_storage，accountDir 应该是其父目录
+      const actualAccountDir = this.resolveAccountDir(dbPath, myWxid)
+      if (!actualAccountDir) return { success: false, error: '无法定位账号目录' }
+
+      const datPath = await this.findDatFile(actualAccountDir, baseName)
+      if (!datPath) return { success: false, error: '未找到图片源文件 (.dat)' }
+
+      // 4. 获取解密密钥
+      const xorKeyHex = this.configService.get('imageXorKey')
+      const aesKeyHex = this.configService.get('imageAesKey') || msg.aesKey
+
+      if (!xorKeyHex) return { success: false, error: '未配置图片 XOR 密钥，请在设置中自动获取' }
+
+      const xorKey = parseInt(String(xorKeyHex), 16)
+      const data = readFileSync(datPath)
+
+      // 5. 解密
+      let decrypted: Buffer
+      const version = this.getDatVersion(data)
+
+      if (version === 0) {
+        decrypted = this.decryptDatV3(data, xorKey)
+      } else {
+        if (!aesKeyHex) return { success: false, error: '该图片需要 AES 密钥，请在设置中自动获取' }
+        const aesKey = Buffer.from(aesKeyHex, 'hex')
+        decrypted = this.decryptDatV4(data, xorKey, aesKey)
+      }
+
+      // 返回 base64
+      return { success: true, data: decrypted.toString('base64') }
+    } catch (e) {
+      console.error('ChatService: getImageData 失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getVoiceData(sessionId: string, msgId: string): Promise<{ success: boolean; data?: string; error?: string }> {
+    try {
+      // 1. 获取消息
+      const msgResult = await this.getMessages(sessionId, 0, 500) // 简单查找
+      if (!msgResult.success || !msgResult.messages) return { success: false, error: '消息库读取失败' }
+      const msg = msgResult.messages.find(m => String(m.localId) === msgId)
+      if (!msg) return { success: false, error: '未找到该消息' }
+
+      // 2. 查找所有的 media_*.db
+      const mediaDbs = await wcdbService.listMediaDbs()
+      if (!mediaDbs.success || !mediaDbs.data) return { success: false, error: '获取媒体库失败' }
+
+      // 3. 在所有媒体库中查找该消息的语音数据
+      let silkData: Buffer | null = null
+      for (const dbPath of mediaDbs.data) {
+        const sql = `SELECT Buf FROM VoiceInfo WHERE MsgLocalId = ${msg.localId}`
+        const result = await wcdbService.execQuery('media', dbPath, sql)
+        if (result.success && result.rows && result.rows.length > 0) {
+          const hex = result.rows[0].Buf
+          if (hex) {
+            silkData = Buffer.from(hex, 'hex')
+            break
+          }
+        }
+      }
+
+      if (!silkData) return { success: false, error: '未找到语音数据' }
+
+      // 4. 解码 Silk -> PCM -> WAV
+      const resourcesPath = app.isPackaged
+        ? join(process.resourcesPath, 'resources')
+        : join(app.getAppPath(), 'resources')
+      const decoderPath = join(resourcesPath, 'silk_v3_decoder.exe')
+
+      if (!existsSync(decoderPath)) {
+        return { success: false, error: '找不到语音解码器 (silk_v3_decoder.exe)' }
+      }
+
+      const tempDir = app.getPath('temp')
+      const silkFile = join(tempDir, `voice_${msgId}.silk`)
+      const pcmFile = join(tempDir, `voice_${msgId}.pcm`)
+
+      try {
+        writeFileSync(silkFile, silkData)
+        // 执行解码: silk_v3_decoder.exe <silk> <pcm>
+        await execFileAsync(decoderPath, [silkFile, pcmFile])
+
+        if (!existsSync(pcmFile)) {
+          return { success: false, error: '语音解码失败' }
+        }
+
+        const pcmData = readFileSync(pcmFile)
+        const wavHeader = this.createWavHeader(pcmData.length, 24000, 1) // 微信语音通常 24kHz
+        const wavData = Buffer.concat([wavHeader, pcmData])
+
+        return { success: true, data: wavData.toString('base64') }
+      } finally {
+        // 清理临时文件
+        try { if (existsSync(silkFile)) unlinkSync(silkFile) } catch { }
+        try { if (existsSync(pcmFile)) unlinkSync(pcmFile) } catch { }
+      }
+    } catch (e) {
+      console.error('ChatService: getVoiceData 失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  private createWavHeader(pcmLength: number, sampleRate: number = 24000, channels: number = 1): Buffer {
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0)
+    header.writeUInt32LE(36 + pcmLength, 4)
+    header.write('WAVE', 8)
+    header.write('fmt ', 12)
+    header.writeUInt32LE(16, 16)
+    header.writeUInt16LE(1, 20)
+    header.writeUInt16LE(channels, 22)
+    header.writeUInt32LE(sampleRate, 24)
+    header.writeUInt32LE(sampleRate * channels * 2, 28)
+    header.writeUInt16LE(channels * 2, 32)
+    header.writeUInt16LE(16, 34)
+    header.write('data', 36)
+    header.writeUInt32LE(pcmLength, 40)
+    return header
+  }
+
+  async getMessageById(sessionId: string, localId: number): Promise<{ success: boolean; message?: Message; error?: string }> {
+    try {
+      const result = await wcdbService.getMessageById(sessionId, localId)
+      if (!result.success || !result.message) {
+        return { success: false, error: result.error || '未找到消息' }
+      }
+      const message = this.parseMessage(result.message)
+      return { success: true, message }
+    } catch (e) {
+      console.error('ChatService: getMessageById 失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  private parseMessage(row: any): Message {
+    const rawContent = row.content || ''
+    // 这里复用 parseMessagesBatch 里面的解析逻辑，为了简单我这里先写个基础的
+    // 实际项目中建议抽取 parseRawMessage(row) 供多处使用
+    const msg: Message = {
+      localId: parseInt(row.local_id || '0', 10),
+      serverId: parseInt(row.server_id || '0', 10),
+      localType: parseInt(row.type || '0', 10),
+      createTime: parseInt(row.create_time || '0', 10),
+      sortSeq: parseInt(row.create_time || '0', 10),
+      isSend: row.computed_is_send === '1' ? 1 : 0,
+      senderUsername: row.sender_username || null,
+      rawContent: rawContent,
+      parsedContent: rawContent
+    }
+
+    // 图片/语音解析逻辑 (简化示例，实际应调用现有解析方法)
+    if (msg.localType === 3) { // Image
+      const imgInfo = this.parseImageInfo(rawContent)
+      Object.assign(msg, imgInfo)
+    }
+
+    return msg
+  }
+
+  private async getMessageByLocalId(sessionId: string, localId: number): Promise<{ success: boolean; message?: Message; error?: string }> {
+    return this.getMessageById(sessionId, localId)
+  }
+
+  private resolveAccountDir(dbPath: string, wxid: string): string | null {
+    const normalized = dbPath.replace(/[\\\\/]+$/, '')
+    const dir = dirname(normalized)
+    if (basename(normalized).toLowerCase() === 'db_storage') return dir
+    if (basename(dir).toLowerCase() === 'db_storage') return dirname(dir)
+    return dir // 兜底
+  }
+
+  private async findDatFile(accountDir: string, baseName: string): Promise<string | null> {
+    const searchPaths = [
+      join(accountDir, 'FileStorage', 'Image'),
+      join(accountDir, 'FileStorage', 'Image2'),
+      join(accountDir, 'FileStorage', 'MsgImg'),
+      join(accountDir, 'FileStorage', 'Video')
+    ]
+
+    for (const searchPath of searchPaths) {
+      if (!existsSync(searchPath)) continue
+      const found = this.recursiveSearch(searchPath, baseName.toLowerCase(), 3)
+      if (found) return found
+    }
+    return null
+  }
+
+  private recursiveSearch(dir: string, pattern: string, maxDepth: number): string | null {
+    if (maxDepth < 0) return null
+    try {
+      const entries = readdirSync(dir)
+      // 优先匹配当前目录文件
+      for (const entry of entries) {
+        const fullPath = join(dir, entry)
+        const stats = statSync(fullPath)
+        if (stats.isFile()) {
+          const lowerEntry = entry.toLowerCase()
+          if (lowerEntry.includes(pattern) && lowerEntry.endsWith('.dat')) {
+            return fullPath
+          }
+        }
+      }
+      // 递归子目录
+      for (const entry of entries) {
+        const fullPath = join(dir, entry)
+        const stats = statSync(fullPath)
+        if (stats.isDirectory()) {
+          const found = this.recursiveSearch(fullPath, pattern, maxDepth - 1)
+          if (found) return found
+        }
+      }
+    } catch { }
+    return null
+  }
+
+  private getDatVersion(data: Buffer): number {
+    if (data.length < 6) return 0
+    const sigV1 = Buffer.from([0x07, 0x08, 0x56, 0x31, 0x08, 0x07])
+    const sigV2 = Buffer.from([0x07, 0x08, 0x56, 0x32, 0x08, 0x07])
+    if (data.subarray(0, 6).equals(sigV1)) return 1
+    if (data.subarray(0, 6).equals(sigV2)) return 2
+    return 0
+  }
+
+  private decryptDatV3(data: Buffer, xorKey: number): Buffer {
+    const result = Buffer.alloc(data.length)
+    for (let i = 0; i < data.length; i++) {
+      result[i] = data[i] ^ xorKey
+    }
+    return result
+  }
+
+  private decryptDatV4(data: Buffer, xorKey: number, aesKey: Buffer): Buffer {
+    if (data.length < 15) throw new Error('Data too small for V4')
+    const aesSize = data.readInt32LE(6)
+    const xorSize = data.readInt32LE(10)
+
+    const payload = data.subarray(15)
+    // AES 部分需要对齐
+    const alignedAesSize = Math.ceil(aesSize / 16) * 16
+
+    let decryptedAes: any = Buffer.alloc(0)
+    if (aesSize > 0) {
+      const aesPart = payload.subarray(0, alignedAesSize)
+      const decipher = crypto.createDecipheriv('aes-128-ecb', aesKey, Buffer.alloc(0))
+      decipher.setAutoPadding(false)
+      const chunk1 = decipher.update(aesPart)
+      const chunk2 = decipher.final()
+      decryptedAes = Buffer.concat([chunk1, chunk2])
+      decryptedAes = this.removePkcs7Padding(decryptedAes)
+    }
+
+    const remaining = payload.subarray(alignedAesSize)
+    const rawSize = remaining.length - xorSize
+    const rawPart = remaining.subarray(0, rawSize)
+    const xorPart = remaining.subarray(rawSize)
+
+    const xoredPart = Buffer.alloc(xorPart.length)
+    for (let i = 0; i < xorPart.length; i++) {
+      xoredPart[i] = xorPart[i] ^ xorKey
+    }
+
+    return Buffer.concat([decryptedAes, rawPart, xoredPart])
+  }
+
+  private removePkcs7Padding(data: Buffer): Buffer {
+    if (data.length === 0) return data
+    const padLen = data[data.length - 1]
+    if (padLen <= 0 || padLen > 16 || padLen > data.length) return data
+    for (let i = data.length - padLen; i < data.length; i++) {
+      if (data[i] !== padLen) return data // Invalid padding
+    }
+    return data.subarray(0, data.length - padLen)
   }
 }
 

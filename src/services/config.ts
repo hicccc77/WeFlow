@@ -132,6 +132,11 @@ export async function setLogEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.LOG_ENABLED, enabled)
 }
 
+// 清除所有配置
+export async function clearConfig(): Promise<void> {
+  await config.clear()
+}
+
 // 获取图片 XOR 密钥
 export async function getImageXorKey(): Promise<number | null> {
   const value = await config.get(CONFIG_KEYS.IMAGE_XOR_KEY)

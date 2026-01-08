@@ -26,6 +26,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.1.1",
+    "wechat-emojis": "^1.0.2",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

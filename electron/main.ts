@@ -71,7 +71,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
   // 开发环境加载 vite 服务器
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
-    
+
     // 开发环境下按 F12 或 Ctrl+Shift+I 打开开发者工具
     win.webContents.on('before-input-event', (event, input) => {
       if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
@@ -212,6 +212,11 @@ function registerIpcHandlers() {
     return configService?.set(key as any, value)
   })
 
+  ipcMain.handle('config:clear', async () => {
+    configService?.clear()
+    return true
+  })
+
   // 文件对话框
   ipcMain.handle('dialog:openFile', async (_, options) => {
     const { dialog } = await import('electron')
@@ -284,7 +289,7 @@ function registerIpcHandlers() {
       throw new Error('自动更新已暂时禁用')
     }
     const win = BrowserWindow.fromWebContents(event.sender)
-    
+
     // 监听下载进度
     autoUpdater.on('download-progress', (progress) => {
       win?.webContents.send('app:downloadProgress', progress.percent)
@@ -404,6 +409,18 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:getSessionDetail', async (_, sessionId: string) => {
     return chatService.getSessionDetail(sessionId)
+  })
+
+  ipcMain.handle('chat:getImageData', async (_, sessionId: string, msgId: string) => {
+    return chatService.getImageData(sessionId, msgId)
+  })
+
+  ipcMain.handle('chat:getVoiceData', async (_, sessionId: string, msgId: string) => {
+    return chatService.getVoiceData(sessionId, msgId)
+  })
+
+  ipcMain.handle('chat:getMessageById', async (_, sessionId: string, localId: number) => {
+    return chatService.getMessageById(sessionId, localId)
   })
 
   // 导出相关
@@ -528,13 +545,13 @@ app.whenReady().then(() => {
   configService = new ConfigService()
   registerIpcHandlers()
   const onboardingDone = configService.get('onboardingDone')
-  shouldShowMain = onboardingDone
-  mainWindow = createWindow({ autoShow: onboardingDone })
+  shouldShowMain = true
+  mainWindow = createWindow({ autoShow: true })
 
   if (!onboardingDone) {
     createOnboardingWindow()
   }
-  
+
   // 启动时检测更新
   checkForUpdatesOnStartup()
 

@@ -9,13 +9,21 @@ function AnalyticsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
 
   const { statistics, rankings, timeDistribution, isLoaded, setStatistics, setRankings, setTimeDistribution, markLoaded } = useAnalyticsStore()
-
   const loadData = async (forceRefresh = false) => {
     if (isLoaded && !forceRefresh) return
     setIsLoading(true)
     setError(null)
+    setProgress(0)
+
+    // 监听后台推送的进度
+    const removeListener = window.electronAPI.analytics.onProgress?.((payload: { status: string; progress: number }) => {
+      setLoadingStatus(payload.status)
+      setProgress(payload.progress)
+    })
+
     try {
       setLoadingStatus('正在统计消息数据...')
       const statsResult = await window.electronAPI.analytics.getOverallStatistics()
@@ -41,6 +49,7 @@ function AnalyticsPage() {
       setError(String(e))
     } finally {
       setIsLoading(false)
+      if (removeListener) removeListener()
     }
   }
 
@@ -80,10 +89,12 @@ function AnalyticsPage() {
     if (!statistics) return {}
     return {
       tooltip: { trigger: 'item' },
-      series: [{ type: 'pie', radius: ['50%', '70%'], data: [
-        { name: '发送', value: statistics.sentMessages, itemStyle: { color: '#07c160' } },
-        { name: '接收', value: statistics.receivedMessages, itemStyle: { color: '#1989fa' } }
-      ], label: { show: true, formatter: '{b}: {c}' } }]
+      series: [{
+        type: 'pie', radius: ['50%', '70%'], data: [
+          { name: '发送', value: statistics.sentMessages, itemStyle: { color: '#07c160' } },
+          { name: '接收', value: statistics.receivedMessages, itemStyle: { color: '#1989fa' } }
+        ], label: { show: true, formatter: '{b}: {c}' }
+      }]
     }
   }
 
@@ -100,7 +111,16 @@ function AnalyticsPage() {
   }
 
   if (isLoading && !isLoaded) {
-    return (<div className="loading-container"><Loader2 size={48} className="spin" /><p>{loadingStatus}</p></div>)
+    return (
+      <div className="loading-container">
+        <Loader2 size={48} className="spin" />
+        <p className="loading-status">{loadingStatus}</p>
+        <div className="progress-bar-wrapper">
+          <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
+        </div>
+        <span className="progress-percent">{progress}%</span>
+      </div>
+    )
   }
 
   if (error && !isLoaded) {

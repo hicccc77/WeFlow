@@ -12,6 +12,7 @@ export interface ElectronAPI {
   config: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+    clear: () => Promise<boolean>
   }
   dialog: {
     openFile: (options?: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>
@@ -52,11 +53,11 @@ export interface ElectronAPI {
   chat: {
     connect: () => Promise<{ success: boolean; error?: string }>
     getSessions: () => Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }>
-    getMessages: (sessionId: string, offset?: number, limit?: number) => Promise<{ 
-      success: boolean; 
-      messages?: Message[]; 
-      hasMore?: boolean; 
-      error?: string 
+    getMessages: (sessionId: string, offset?: number, limit?: number) => Promise<{
+      success: boolean;
+      messages?: Message[];
+      hasMore?: boolean;
+      error?: string
     }>
     getLatestMessages: (sessionId: string, limit?: number) => Promise<{
       success: boolean
@@ -86,7 +87,7 @@ export interface ElectronAPI {
     }>
   }
   analytics: {
-    getOverallStatistics: () => Promise<{ 
+    getOverallStatistics: () => Promise<{
       success: boolean
       data?: {
         totalMessages: number
@@ -103,7 +104,7 @@ export interface ElectronAPI {
         activeDays: number
         messageTypeCounts: Record<number, number>
       }
-      error?: string 
+      error?: string
     }>
     getContactRankings: (limit?: number) => Promise<{
       success: boolean
@@ -127,6 +128,7 @@ export interface ElectronAPI {
       }
       error?: string
     }>
+    onProgress: (callback: (payload: { status: string; progress: number }) => void) => () => void
   }
   groupAnalytics: {
     getGroupChats: () => Promise<{
@@ -282,7 +284,7 @@ declare global {
   interface Window {
     electronAPI: ElectronAPI
   }
-  
+
   // Electron 类型声明
   namespace Electron {
     interface OpenDialogOptions {
@@ -307,4 +309,4 @@ declare global {
   }
 }
 
-export {}
+export { }

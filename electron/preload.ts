@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置
   config: {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
-    set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value)
+    set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
+    clear: () => ipcRenderer.invoke('config:clear')
   },
 
 
@@ -62,9 +63,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // WCDB 数据库
   wcdb: {
-    testConnection: (dbPath: string, hexKey: string, wxid: string) => 
+    testConnection: (dbPath: string, hexKey: string, wxid: string) =>
       ipcRenderer.invoke('wcdb:testConnection', dbPath, hexKey, wxid),
-    open: (dbPath: string, hexKey: string, wxid: string) => 
+    open: (dbPath: string, hexKey: string, wxid: string) =>
       ipcRenderer.invoke('wcdb:open', dbPath, hexKey, wxid),
     close: () => ipcRenderer.invoke('wcdb:close')
   },
@@ -88,7 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chat: {
     connect: () => ipcRenderer.invoke('chat:connect'),
     getSessions: () => ipcRenderer.invoke('chat:getSessions'),
-    getMessages: (sessionId: string, offset?: number, limit?: number) => 
+    getMessages: (sessionId: string, offset?: number, limit?: number) =>
       ipcRenderer.invoke('chat:getMessages', sessionId, offset, limit),
     getLatestMessages: (sessionId: string, limit?: number) =>
       ipcRenderer.invoke('chat:getLatestMessages', sessionId, limit),
@@ -104,7 +105,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analytics: {
     getOverallStatistics: () => ipcRenderer.invoke('analytics:getOverallStatistics'),
     getContactRankings: (limit?: number) => ipcRenderer.invoke('analytics:getContactRankings', limit),
-    getTimeDistribution: () => ipcRenderer.invoke('analytics:getTimeDistribution')
+    getTimeDistribution: () => ipcRenderer.invoke('analytics:getTimeDistribution'),
+    onProgress: (callback: (payload: { status: string; progress: number }) => void) => {
+      ipcRenderer.on('analytics:progress', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('analytics:progress')
+    }
   },
 
   // 群聊分析
@@ -124,9 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 导出
   export: {
-    exportSessions: (sessionIds: string[], outputDir: string, options: any) => 
+    exportSessions: (sessionIds: string[], outputDir: string, options: any) =>
       ipcRenderer.invoke('export:exportSessions', sessionIds, outputDir, options),
-    exportSession: (sessionId: string, outputPath: string, options: any) => 
+    exportSession: (sessionId: string, outputPath: string, options: any) =>
       ipcRenderer.invoke('export:exportSession', sessionId, outputPath, options)
   }
 })

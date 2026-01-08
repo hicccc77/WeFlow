@@ -136,49 +136,42 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
-      const cursor = await wcdbService.openMessageCursor(
-        chatroomId,
-        500,
-        true,
-        startTime || 0,
-        endTime || 0
-      )
-      if (!cursor.success || !cursor.cursor) {
-        return { success: false, error: cursor.error || '创建游标失败' }
-      }
+      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
 
-      const counts = new Map<string, number>()
-      try {
-        let hasMore = true
-        while (hasMore) {
-          const batch = await wcdbService.fetchMessageBatch(cursor.cursor)
-          if (!batch.success || !batch.rows) break
-          for (const row of batch.rows) {
-            const sender = row.sender_username || ''
-            if (!sender) continue
-            counts.set(sender, (counts.get(sender) || 0) + 1)
+      const d = result.data
+      const sessionData = d.sessions[chatroomId]
+      if (!sessionData || !sessionData.senders) return { success: true, data: [] }
+
+      const idMap = d.idMap || {}
+      const senderEntries = Object.entries(sessionData.senders as Record<string, number>)
+
+      const rankings: GroupMessageRank[] = senderEntries
+        .map(([id, count]) => {
+          const username = idMap[id] || id
+          return {
+            member: { username, displayName: username }, // Display name will be resolved below
+            messageCount: count
           }
-          hasMore = batch.hasMore === true
-        }
-      } finally {
-        await wcdbService.closeMessageCursor(cursor.cursor)
-      }
-
-      const membersResult = await this.getGroupMembers(chatroomId)
-      const memberMap = new Map<string, GroupMember>()
-      if (membersResult.success && membersResult.data) {
-        for (const member of membersResult.data) {
-          memberMap.set(member.username, member)
-        }
-      }
-
-      const rankings: GroupMessageRank[] = Array.from(counts.entries())
-        .map(([username, count]) => ({
-          member: memberMap.get(username) || { username, displayName: username },
-          messageCount: count
-        }))
+        })
         .sort((a, b) => b.messageCount - a.messageCount)
         .slice(0, limit)
+
+      // 批量获取显示名称和头像
+      const usernames = rankings.map(r => r.member.username)
+      const [names, avatars] = await Promise.all([
+        wcdbService.getDisplayNames(usernames),
+        wcdbService.getAvatarUrls(usernames)
+      ])
+
+      for (const rank of rankings) {
+        if (names.success && names.map && names.map[rank.member.username]) {
+          rank.member.displayName = names.map[rank.member.username]
+        }
+        if (avatars.success && avatars.map && avatars.map[rank.member.username]) {
+          rank.member.avatarUrl = avatars.map[rank.member.username]
+        }
+      }
 
       return { success: true, data: rankings }
     } catch (e) {
@@ -191,35 +184,12 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
+      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
+
       const hourlyDistribution: Record<number, number> = {}
-      for (let i = 0; i < 24; i++) hourlyDistribution[i] = 0
-
-      const cursor = await wcdbService.openMessageCursor(
-        chatroomId,
-        500,
-        true,
-        startTime || 0,
-        endTime || 0
-      )
-      if (!cursor.success || !cursor.cursor) {
-        return { success: false, error: cursor.error || '创建游标失败' }
-      }
-
-      try {
-        let hasMore = true
-        while (hasMore) {
-          const batch = await wcdbService.fetchMessageBatch(cursor.cursor)
-          if (!batch.success || !batch.rows) break
-          for (const row of batch.rows) {
-            const createTime = parseInt(row.create_time || '0', 10)
-            if (!createTime) continue
-            const hour = new Date(createTime * 1000).getHours()
-            hourlyDistribution[hour] = (hourlyDistribution[hour] || 0) + 1
-          }
-          hasMore = batch.hasMore === true
-        }
-      } finally {
-        await wcdbService.closeMessageCursor(cursor.cursor)
+      for (let i = 0; i < 24; i++) {
+        hourlyDistribution[i] = result.data.hourly[i] || 0
       }
 
       return { success: true, data: { hourlyDistribution } }
@@ -233,58 +203,43 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
-      const typeCounts = new Map<number, number>()
-      const mainTypes = new Set([1, 3, 34, 43, 47, 49])
+      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
+
+      const typeCountsRaw = result.data.typeCounts as Record<string, number>
+      const mainTypes = [1, 3, 34, 43, 47, 49]
       const typeNames: Record<number, string> = {
-        1: '文本',
-        3: '图片',
-        34: '语音',
-        43: '视频',
-        47: '表情包',
-        49: '链接/文件'
+        1: '文本', 3: '图片', 34: '语音', 43: '视频', 47: '表情包', 49: '链接/文件'
       }
 
-      const cursor = await wcdbService.openMessageCursor(
-        chatroomId,
-        500,
-        true,
-        startTime || 0,
-        endTime || 0
-      )
-      if (!cursor.success || !cursor.cursor) {
-        return { success: false, error: cursor.error || '创建游标失败' }
-      }
+      const countsMap = new Map<number, number>()
+      let othersCount = 0
 
-      try {
-        let hasMore = true
-        while (hasMore) {
-          const batch = await wcdbService.fetchMessageBatch(cursor.cursor)
-          if (!batch.success || !batch.rows) break
-          for (const row of batch.rows) {
-            const localType = parseInt(row.local_type || row.type || '1', 10)
-            if (mainTypes.has(localType)) {
-              typeCounts.set(localType, (typeCounts.get(localType) || 0) + 1)
-            } else {
-              typeCounts.set(-1, (typeCounts.get(-1) || 0) + 1)
-            }
-          }
-          hasMore = batch.hasMore === true
+      for (const [typeStr, count] of Object.entries(typeCountsRaw)) {
+        const type = parseInt(typeStr, 10)
+        if (mainTypes.includes(type)) {
+          countsMap.set(type, (countsMap.get(type) || 0) + count)
+        } else {
+          othersCount += count
         }
-      } finally {
-        await wcdbService.closeMessageCursor(cursor.cursor)
       }
 
-      const result: MediaTypeCount[] = Array.from(typeCounts.entries())
-        .filter(([, count]) => count > 0)
-        .map(([type, count]) => ({
+      const mediaCounts: MediaTypeCount[] = mainTypes
+        .map(type => ({
           type,
-          name: type === -1 ? '其他' : (typeNames[type] || '其他'),
-          count
+          name: typeNames[type],
+          count: countsMap.get(type) || 0
         }))
-        .sort((a, b) => b.count - a.count)
+        .filter(item => item.count > 0)
 
-      const total = result.reduce((sum, item) => sum + item.count, 0)
-      return { success: true, data: { typeCounts: result, total } }
+      if (othersCount > 0) {
+        mediaCounts.push({ type: -1, name: '其他', count: othersCount })
+      }
+
+      mediaCounts.sort((a, b) => b.count - a.count)
+      const total = mediaCounts.reduce((sum, item) => sum + item.count, 0)
+
+      return { success: true, data: { typeCounts: mediaCounts, total } }
     } catch (e) {
       return { success: false, error: String(e) }
     }

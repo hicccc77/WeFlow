@@ -7,7 +7,7 @@ interface RouteGuardProps {
 }
 
 // 不需要数据库连接的页面
-const PUBLIC_ROUTES = ['/', '/settings', '/data-management']
+const PUBLIC_ROUTES = ['/', '/home', '/settings', '/data-management']
 
 function RouteGuard({ children }: RouteGuardProps) {
   const navigate = useNavigate()
@@ -16,7 +16,7 @@ function RouteGuard({ children }: RouteGuardProps) {
 
   useEffect(() => {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
-    
+
     // 未连接数据库且不在公开页面，跳转到欢迎页
     if (!isDbConnected && !isPublicRoute) {
       navigate('/', { replace: true })

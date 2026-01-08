@@ -441,6 +441,29 @@
   font-size: 13px;
 }
 
+.manual-prompt {
+  background: rgba(139, 115, 85, 0.1);
+  border: 1px dashed rgba(139, 115, 85, 0.3);
+  padding: 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0;
+
+  .prompt-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 @media (max-width: 900px) {
   .welcome-shell {
     grid-template-columns: 1fr;
