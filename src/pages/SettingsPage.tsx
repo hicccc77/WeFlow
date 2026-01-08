@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../stores/appStore'
 import { useThemeStore, themes } from '../stores/themeStore'
 import { dialog } from '../services/ipc'
@@ -22,7 +21,6 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
 ]
 
 function SettingsPage() {
-  const navigate = useNavigate()
   const { setDbConnected, setLoading, reset } = useAppStore()
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
 
@@ -328,7 +326,6 @@ function SettingsPage() {
     if (decryptKey.length !== 64) { showMessage('密钥长度必须为64个字符', false); return }
     if (!dbPath) { showMessage('请选择数据库目录', false); return }
     if (!wxid) { showMessage('请输入 wxid', false); return }
-    if (!cachePath) { showMessage('请选择缓存目录', false); return }
 
     setIsLoadingState(true)
     setLoading(true, '正在保存配置...')
@@ -388,7 +385,7 @@ function SettingsPage() {
       setExportPath('')
       setLogEnabled(false)
       setDbConnected(false)
-      navigate('/onboarding-window')
+      await window.electronAPI.window.openOnboardingWindow()
     } catch (e) {
       showMessage(`清除配置失败: ${e}`, false)
     } finally {
@@ -500,12 +497,12 @@ function SettingsPage() {
       </div>
 
       <div className="form-group">
-        <label>缓存目录</label>
-        <span className="form-hint">用于头像、表情与图片缓存</span>
-        <input type="text" placeholder="例如: D:\\WeFlow\\cache" value={cachePath} onChange={(e) => setCachePath(e.target.value)} />
+        <label>缓存目录 <span className="optional">(可选)</span></label>
+        <span className="form-hint">留空使用默认目录</span>
+        <input type="text" placeholder="留空使用默认目录" value={cachePath} onChange={(e) => setCachePath(e.target.value)} />
         <div className="btn-row">
           <button className="btn btn-secondary" onClick={handleSelectCachePath}><FolderOpen size={16} /> 浏览选择</button>
-          <button className="btn btn-secondary" onClick={() => setCachePath('')}><RotateCcw size={16} /> 清空</button>
+          <button className="btn btn-secondary" onClick={() => setCachePath('')}><RotateCcw size={16} /> 恢复默认</button>
         </div>
       </div>
 

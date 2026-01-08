@@ -7,6 +7,7 @@ export interface ElectronAPI {
     close: () => void
     openAgreementWindow: () => Promise<boolean>
     completeOnboarding: () => Promise<boolean>
+    openOnboardingWindow: () => Promise<boolean>
     setTitleBarOverlay: (options: { symbolColor: string }) => void
   }
   config: {

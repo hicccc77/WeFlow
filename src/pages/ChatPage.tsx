@@ -470,135 +470,10 @@ function ChatPage(_props: ChatPageProps) {
     setFilteredSessions(filtered)
   }, [sessions, searchKeyword, setFilteredSessions])
 
-  const refreshRealtimeSessions = useCallback(async () => {
-    if (!isConnectedRef.current) return
-    if (realtimeSessionBusyRef.current) {
-      realtimeSessionQueuedRef.current = true
-      return
-    }
-    realtimeSessionBusyRef.current = true
-    try {
-      const result = await window.electronAPI.chat.getSessions()
-      if (result.success && result.sessions) {
-        const prevMap = sessionMapRef.current
-        const prevSessions = sessionsRef.current
-        let changed = prevMap.size !== result.sessions.length
-        const nextSessions = result.sessions.map((session) => {
-          const prev = prevMap.get(session.username)
-          if (prev && isSameSession(prev, session)) {
-            return prev
-          }
-          changed = true
-          return prev ? { ...prev, ...session } : session
-        })
-
-        if (!changed) {
-          const sameOrder = prevSessions.length === nextSessions.length &&
-            prevSessions.every((prev, index) => prev.username === nextSessions[index]?.username)
-          if (sameOrder) {
-            return
-          }
-        }
-
-        setSessions(nextSessions)
-        const keyword = searchKeywordRef.current.trim()
-        if (keyword) {
-          const lower = keyword.toLowerCase()
-          const filtered = nextSessions.filter(s =>
-            s.displayName?.toLowerCase().includes(lower) ||
-            s.username.toLowerCase().includes(lower) ||
-            s.summary.toLowerCase().includes(lower)
-          )
-          setFilteredSessions(filtered)
-        }
-      } else if (!result.success) {
-        setConnectionError(result.error || '实时刷新会话失败')
-      }
-    } catch (e) {
-      console.error('实时刷新会话失败:', e)
-    } finally {
-      realtimeSessionBusyRef.current = false
-      if (realtimeSessionQueuedRef.current) {
-        realtimeSessionQueuedRef.current = false
-        refreshRealtimeSessions()
-      }
-    }
-  }, [setSessions, setFilteredSessions, setConnectionError, isSameSession])
-
-  const refreshRealtimeMessages = useCallback(async () => {
-    if (!isConnectedRef.current) return
-    const sessionId = currentSessionRef.current
-    if (!sessionId) return
-    if (isLoadingMessagesRef.current || isLoadingMoreRef.current) return
-    if (realtimeMessageBusyRef.current) {
-      realtimeMessageQueuedRef.current = true
-      return
-    }
-    realtimeMessageBusyRef.current = true
-    try {
-      const session = sessionMapRef.current.get(sessionId)
-      const unreadCount = session?.unreadCount ?? 0
-      const messageLimit = unreadCount > 99 ? 30 : 50
-      const result = await window.electronAPI.chat.getLatestMessages(sessionId, messageLimit)
-      if (!result.success || !result.messages) {
-        return
-      }
-      const existing = messageKeySetRef.current
-      const lastTime = lastMessageTimeRef.current
-      const newMessages = result.messages.filter((msg) => {
-        const key = getMessageKey(msg)
-        if (existing.has(key)) return false
-        if (lastTime > 0 && msg.createTime < lastTime) return false
-        return true
-      })
-      if (newMessages.length > 0) {
-        for (const msg of newMessages) {
-          existing.add(getMessageKey(msg))
-        }
-        const lastNew = newMessages[newMessages.length - 1]
-        if (lastNew?.createTime) {
-          lastMessageTimeRef.current = Math.max(lastMessageTimeRef.current, lastNew.createTime)
-        }
-        appendMessages(newMessages, false)
-        flashNewMessages(newMessages.map(getMessageKey))
-        const listEl = messageListRef.current
-        if (listEl) {
-          const distance = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight
-          if (distance < 80) {
-            requestAnimationFrame(() => {
-              listEl.scrollTop = listEl.scrollHeight
-            })
-          }
-        }
-      }
-    } catch (e) {
-      console.error('实时刷新消息失败:', e)
-    } finally {
-      realtimeMessageBusyRef.current = false
-      if (realtimeMessageQueuedRef.current) {
-        realtimeMessageQueuedRef.current = false
-        refreshRealtimeMessages()
-      }
-    }
-  }, [appendMessages, flashNewMessages, getMessageKey])
-
-  useEffect(() => {
-    if (!isConnected) return
-    if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
-    if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
-    realtimeMessageTimerRef.current = window.setInterval(refreshRealtimeMessages, 5000)
-    realtimeSessionTimerRef.current = window.setInterval(refreshRealtimeSessions, 12000)
-    return () => {
-      if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
-      if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
-      realtimeMessageTimerRef.current = null
-      realtimeSessionTimerRef.current = null
-    }
-  }, [isConnected, refreshRealtimeMessages, refreshRealtimeSessions])
 
   // 格式化会话时间（相对时间）- 与原项目一致
   const formatSessionTime = (timestamp: number): string => {
-    if (!timestamp) return ''
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return ''
 
     const now = Date.now()
     const msgTime = timestamp * 1000
@@ -637,6 +512,7 @@ function ChatPage(_props: ChatPageProps) {
   }
 
   const formatDateDivider = (timestamp: number): string => {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知时间'
     const date = new Date(timestamp * 1000)
     const now = new Date()
     const isToday = date.toDateString() === now.toDateString()
@@ -887,25 +763,37 @@ function ChatPage(_props: ChatPageProps) {
                         </div>
                         <div className="detail-item">
                           <span className="label">消息总数</span>
-                          <span className="value highlight">{sessionDetail.messageCount.toLocaleString()}</span>
+                          <span className="value highlight">
+                            {Number.isFinite(sessionDetail.messageCount)
+                              ? sessionDetail.messageCount.toLocaleString()
+                              : '—'}
+                          </span>
                         </div>
                         {sessionDetail.firstMessageTime && (
                           <div className="detail-item">
                             <Calendar size={14} />
                             <span className="label">首条消息</span>
-                            <span className="value">{new Date(sessionDetail.firstMessageTime * 1000).toLocaleDateString('zh-CN')}</span>
+                            <span className="value">
+                              {Number.isFinite(sessionDetail.firstMessageTime)
+                                ? new Date(sessionDetail.firstMessageTime * 1000).toLocaleDateString('zh-CN')
+                                : '—'}
+                            </span>
                           </div>
                         )}
                         {sessionDetail.latestMessageTime && (
                           <div className="detail-item">
                             <Calendar size={14} />
                             <span className="label">最新消息</span>
-                            <span className="value">{new Date(sessionDetail.latestMessageTime * 1000).toLocaleDateString('zh-CN')}</span>
+                            <span className="value">
+                              {Number.isFinite(sessionDetail.latestMessageTime)
+                                ? new Date(sessionDetail.latestMessageTime * 1000).toLocaleDateString('zh-CN')
+                                : '—'}
+                            </span>
                           </div>
                         )}
                       </div>
 
-                      {sessionDetail.messageTables.length > 0 && (
+                      {Array.isArray(sessionDetail.messageTables) && sessionDetail.messageTables.length > 0 && (
                         <div className="detail-section">
                           <div className="section-title">
                             <Database size={14} />
@@ -968,6 +856,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   )
 
   const formatTime = (timestamp: number): string => {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知时间'
     const date = new Date(timestamp * 1000)
     return date.toLocaleDateString('zh-CN', {
       year: 'numeric',

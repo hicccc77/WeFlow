@@ -176,6 +176,7 @@ export class KeyService {
 
   private decodeCString(ptr: any): string {
     try {
+      if (typeof ptr === 'string') return ptr
       return this.koffi.decode(ptr, 'char', -1)
     } catch {
       return ''
@@ -307,7 +308,7 @@ export class KeyService {
       if (pid) return pid
     }
 
-    const fallbackPid = await this.waitForWeChatWindowReady(5000)
+    const fallbackPid = await this.waitForWeChatWindow(5000)
     return fallbackPid ?? null
   }
 
@@ -337,48 +338,30 @@ export class KeyService {
     return buf.toString('ucs2', 0, len * 2)
   }
 
-  private async waitForWeChatWindowReady(timeoutMs = 25000): Promise<number | null> {
+  private isWeChatWindowTitle(title: string): boolean {
+    const normalized = title.trim()
+    if (!normalized) return false
+    const lower = normalized.toLowerCase()
+    return normalized === '微信' || lower === 'wechat' || lower === 'weixin'
+  }
+
+  private async waitForWeChatWindow(timeoutMs = 25000): Promise<number | null> {
     if (!this.ensureUser32()) return null
-
     const startTime = Date.now()
-    const readyComponents = ['登录', '聊天', '账号', '进入微信']
-    const readyClasses = ['WeChat', 'Weixin', 'TXGuiFoundation', 'Qt5', 'ChatList', 'MainWnd']
-
     while (Date.now() - startTime < timeoutMs) {
       let foundPid: number | null = null
 
       const enumWindowsCallback = this.koffi.register((hWnd: any, lParam: any) => {
         if (!this.IsWindowVisible(hWnd)) return true
-
         const title = this.getWindowTitle(hWnd)
-        // Match contains logic from wx_key
-        if (title.includes('微信') || title.includes('Weixin') || title.toLowerCase().includes('wechat')) {
-          const pidBuf = Buffer.alloc(4)
-          this.GetWindowThreadProcessId(hWnd, pidBuf)
-          const pid = pidBuf.readUInt32LE(0)
+        if (!this.isWeChatWindowTitle(title)) return true
 
-          // Enum children to check if it's "ready" (but be lenient like wx_key)
-          let childCount = 0
-          let matchedComponent = false
-
-          const enumChildCallback = this.koffi.register((hChild: any, lp: any) => {
-            childCount++
-            const childTitle = this.getWindowTitle(hChild)
-            const childClass = this.getClassName(hChild)
-            if (readyComponents.some(c => childTitle.includes(c))) matchedComponent = true
-            if (readyClasses.some(c => childClass.includes(c))) matchedComponent = true
-            return !matchedComponent // stop if found
-          }, this.WNDENUMPROC_PTR)
-
-          this.EnumChildWindows(hWnd, enumChildCallback, 0)
-          this.koffi.unregister(enumChildCallback)
-
-          // Lenient condition matching wx_key's fallback logic
-          // If we found any component OR class OR just a reasonable amount of children
-          if (matchedComponent || childCount >= 5 || childCount === 0) {
-            foundPid = pid
-            return false // Stop enumeration
-          }
+        const pidBuf = Buffer.alloc(4)
+        this.GetWindowThreadProcessId(hWnd, pidBuf)
+        const pid = pidBuf.readUInt32LE(0)
+        if (pid) {
+          foundPid = pid
+          return false
         }
         return true
       }, this.WNDENUMPROC_PTR)
@@ -387,10 +370,92 @@ export class KeyService {
       this.koffi.unregister(enumWindowsCallback)
 
       if (foundPid) return foundPid
-      await new Promise(r => setTimeout(r, 1000))
+      await new Promise(r => setTimeout(r, 500))
+    }
+    return null
+  }
+
+  private collectChildWindowInfos(parent: any): Array<{ title: string; className: string }> {
+    const children: Array<{ title: string; className: string }> = []
+    const enumChildCallback = this.koffi.register((hChild: any, lp: any) => {
+      const title = this.getWindowTitle(hChild).trim()
+      const className = this.getClassName(hChild).trim()
+      children.push({ title, className })
+      return true
+    }, this.WNDENUMPROC_PTR)
+    this.EnumChildWindows(parent, enumChildCallback, 0)
+    this.koffi.unregister(enumChildCallback)
+    return children
+  }
+
+  private hasReadyComponents(children: Array<{ title: string; className: string }>): boolean {
+    if (children.length === 0) return false
+
+    const readyTexts = ['聊天', '登录', '账号']
+    const readyClassMarkers = ['WeChat', 'Weixin', 'TXGuiFoundation', 'Qt5', 'ChatList', 'MainWnd', 'BrowserWnd', 'ListView']
+    const readyChildCountThreshold = 14
+
+    let classMatchCount = 0
+    let titleMatchCount = 0
+    let hasValidClassName = false
+
+    for (const child of children) {
+      const normalizedTitle = child.title.replace(/\s+/g, '')
+      if (normalizedTitle) {
+        if (readyTexts.some(marker => normalizedTitle.includes(marker))) {
+          return true
+        }
+        titleMatchCount += 1
+      }
+
+      const className = child.className
+      if (className) {
+        if (readyClassMarkers.some(marker => className.includes(marker))) {
+          return true
+        }
+        if (className.length > 5) {
+          classMatchCount += 1
+          hasValidClassName = true
+        }
+      }
     }
 
-    return null
+    if (classMatchCount >= 3 || titleMatchCount >= 2) return true
+    if (children.length >= readyChildCountThreshold) return true
+    if (hasValidClassName && children.length >= 5) return true
+    return false
+  }
+
+  private async waitForWeChatWindowComponents(pid: number, timeoutMs = 15000): Promise<boolean> {
+    if (!this.ensureUser32()) return true
+    const startTime = Date.now()
+    while (Date.now() - startTime < timeoutMs) {
+      let ready = false
+      const enumWindowsCallback = this.koffi.register((hWnd: any, lParam: any) => {
+        if (!this.IsWindowVisible(hWnd)) return true
+        const title = this.getWindowTitle(hWnd)
+        if (!this.isWeChatWindowTitle(title)) return true
+
+        const pidBuf = Buffer.alloc(4)
+        this.GetWindowThreadProcessId(hWnd, pidBuf)
+        const windowPid = pidBuf.readUInt32LE(0)
+        if (windowPid !== pid) return true
+
+        const children = this.collectChildWindowInfos(hWnd)
+        if (this.hasReadyComponents(children)) {
+          ready = true
+          return false
+        }
+        return true
+      }, this.WNDENUMPROC_PTR)
+
+      this.EnumWindows(enumWindowsCallback, 0)
+      this.koffi.unregister(enumWindowsCallback)
+
+      if (ready) return true
+      await new Promise(r => setTimeout(r, 500))
+    }
+    return true
   }
 
   // --- Main Methods ---
@@ -425,18 +490,28 @@ export class KeyService {
 
     // 4. Wait for Window & Get PID (Crucial change: discover PID from window)
     onStatus?.('等待微信界面就绪...', 0)
-    const pid = await this.waitForWeChatWindowReady()
+    const pid = await this.waitForWeChatWindow()
     if (!pid) {
       return { success: false, error: '启动微信失败或等待界面就绪超时' }
     }
 
     onStatus?.(`检测到微信窗口 (PID: ${pid})，正在获取...`, 0)
+    onStatus?.('正在检测微信界面组件...', 0)
+    await this.waitForWeChatWindowComponents(pid, 15000)
 
     // 5. Inject
     const ok = this.initHook(pid)
     if (!ok) {
-      const error = this.getLastErrorMsg ? this.decodeCString(this.getLastErrorMsg()) : '初始化失败'
-      return { success: false, error }
+      const error = this.getLastErrorMsg ? this.decodeCString(this.getLastErrorMsg()) : ''
+      if (error) {
+        return { success: false, error }
+      }
+      const statusBuffer = Buffer.alloc(256)
+      const levelOut = [0]
+      const status = this.getStatusMessage && this.getStatusMessage(statusBuffer, statusBuffer.length, levelOut)
+        ? this.decodeUtf8(statusBuffer)
+        : ''
+      return { success: false, error: status || '初始化失败' }
     }
 
     const keyBuffer = Buffer.alloc(128)

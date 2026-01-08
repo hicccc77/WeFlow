@@ -6,14 +6,14 @@ import * as configService from '../services/config'
 import {
   ArrowLeft, ArrowRight, CheckCircle2, Database, Eye, EyeOff,
   FolderOpen, FolderSearch, KeyRound, ShieldCheck, Sparkles,
-  UserRound, Wand2, Minus, X, HardDrive
+  UserRound, Wand2, Minus, X, HardDrive, RotateCcw
 } from 'lucide-react'
 import './WelcomePage.scss'
 
 const steps = [
   { id: 'intro', title: '欢迎', desc: '准备开始你的本地数据探索' },
   { id: 'db', title: '数据库目录', desc: '定位 xwechat_files 目录' },
-  { id: 'cache', title: '缓存目录', desc: '设置本地缓存存储位置' },
+  { id: 'cache', title: '缓存目录', desc: '设置本地缓存存储位置（可选）' },
   { id: 'key', title: '解密密钥', desc: '获取密钥与自动识别账号' },
   { id: 'image', title: '图片密钥', desc: '获取 XOR 与 AES 密钥' }
 ]
@@ -224,7 +224,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   const canGoNext = () => {
     if (currentStep.id === 'intro') return true
     if (currentStep.id === 'db') return Boolean(dbPath)
-    if (currentStep.id === 'cache') return Boolean(cachePath)
+    if (currentStep.id === 'cache') return true
     if (currentStep.id === 'key') return decryptKey.length === 64 && Boolean(wxid)
     if (currentStep.id === 'image') return true
     return false
@@ -233,7 +233,6 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   const handleNext = () => {
     if (!canGoNext()) {
       if (currentStep.id === 'db' && !dbPath) setError('请先选择数据库目录')
-      if (currentStep.id === 'cache' && !cachePath) setError('请先选择缓存目录')
       if (currentStep.id === 'key') {
         if (decryptKey.length !== 64) setError('密钥长度必须为 64 个字符')
         else if (!wxid) setError('未能自动识别 wxid，请尝试重新获取或检查目录')
@@ -251,7 +250,6 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
   const handleConnect = async () => {
     if (!dbPath) { setError('请先选择数据库目录'); return }
-    if (!cachePath) { setError('请先选择缓存目录'); return }
     if (!wxid) { setError('请填写微信ID'); return }
     if (!decryptKey || decryptKey.length !== 64) { setError('请填写 64 位解密密钥'); return }
 
@@ -453,7 +451,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
               <input
                 type="text"
                 className="field-input"
-                placeholder="例如：D:\\WeFlow\\cache"
+                placeholder="留空使用默认目录"
                 value={cachePath}
                 onChange={(e) => setCachePath(e.target.value)}
               />
@@ -461,8 +459,11 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                 <button className="btn btn-primary" onClick={handleSelectCachePath}>
                   <FolderOpen size={16} /> 浏览选择
                 </button>
+                <button className="btn btn-secondary" onClick={() => setCachePath('')}>
+                  <RotateCcw size={16} /> 使用默认
+                </button>
               </div>
-              <div className="field-hint">用于头像、表情与图片缓存，请选择磁盘空间充足的位置</div>
+              <div className="field-hint">用于头像、表情与图片缓存，留空使用默认目录</div>
             </div>
           )}
 

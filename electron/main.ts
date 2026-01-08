@@ -488,6 +488,16 @@ function registerIpcHandlers() {
     return true
   })
 
+  // 重新打开首次引导窗口，并隐藏主窗口
+  ipcMain.handle('window:openOnboardingWindow', async () => {
+    shouldShowMain = false
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide()
+    }
+    createOnboardingWindow()
+    return true
+  })
+
   // 年度报告相关
   ipcMain.handle('annualReport:getAvailableYears', async () => {
     return annualReportService.getAvailableYears()
@@ -546,8 +556,8 @@ app.whenReady().then(() => {
   configService = new ConfigService()
   registerIpcHandlers()
   const onboardingDone = configService.get('onboardingDone')
-  shouldShowMain = true
-  mainWindow = createWindow({ autoShow: true })
+  shouldShowMain = onboardingDone === true
+  mainWindow = createWindow({ autoShow: shouldShowMain })
 
   if (!onboardingDone) {
     createOnboardingWindow()

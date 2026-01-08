@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => ipcRenderer.send('window:close'),
     openAgreementWindow: () => ipcRenderer.invoke('window:openAgreementWindow'),
     completeOnboarding: () => ipcRenderer.invoke('window:completeOnboarding'),
+    openOnboardingWindow: () => ipcRenderer.invoke('window:openOnboardingWindow'),
     setTitleBarOverlay: (options: { symbolColor: string }) => ipcRenderer.send('window:setTitleBarOverlay', options)
   },
 
