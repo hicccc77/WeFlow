@@ -120,7 +120,10 @@ function ChatPage(_props: ChatPageProps) {
 
 
   const highlightedMessageSet = useMemo(() => new Set(highlightedMessageKeys), [highlightedMessageKeys])
-  const messagesRef = useRef<Message[]>([])
+  const messageKeySetRef = useRef<Set<string>>(new Set())
+  const lastMessageTimeRef = useRef(0)
+  const sessionMapRef = useRef<Map<string, ChatSession>>(new Map())
+  const sessionsRef = useRef<ChatSession[]>([])
   const currentSessionRef = useRef<string | null>(null)
   const isLoadingMessagesRef = useRef(false)
   const isLoadingMoreRef = useRef(false)
@@ -245,7 +248,10 @@ function ChatPage(_props: ChatPageProps) {
   // 加载消息
   const loadMessages = async (sessionId: string, offset = 0) => {
     const listEl = messageListRef.current
-
+    const session = sessionMapRef.current.get(sessionId)
+    const unreadCount = session?.unreadCount ?? 0
+    const messageLimit = offset === 0 && unreadCount > 99 ? 30 : 50
+    
     if (offset === 0) {
       setLoadingMessages(true)
       setMessages([])
@@ -257,7 +263,7 @@ function ChatPage(_props: ChatPageProps) {
     const firstMsgEl = listEl?.querySelector('.message-wrapper') as HTMLElement | null
 
     try {
-      const result = await window.electronAPI.chat.getMessages(sessionId, offset, 50)
+      const result = await window.electronAPI.chat.getMessages(sessionId, offset, messageLimit)
       if (result.success && result.messages) {
         if (offset === 0) {
           setMessages(result.messages)
@@ -351,6 +357,20 @@ function ChatPage(_props: ChatPageProps) {
     return `t:${msg.createTime}:${msg.sortSeq || 0}:${msg.serverId || 0}`
   }, [])
 
+  const isSameSession = useCallback((prev: ChatSession, next: ChatSession): boolean => {
+    return (
+      prev.username === next.username &&
+      prev.type === next.type &&
+      prev.unreadCount === next.unreadCount &&
+      prev.summary === next.summary &&
+      prev.sortTimestamp === next.sortTimestamp &&
+      prev.lastTimestamp === next.lastTimestamp &&
+      prev.lastMsgType === next.lastMsgType &&
+      prev.displayName === next.displayName &&
+      prev.avatarUrl === next.avatarUrl
+    )
+  }, [])
+
   const flashNewMessages = useCallback((keys: string[]) => {
     if (keys.length === 0) return
     setHighlightedMessageKeys((prev) => [...prev, ...keys])
@@ -401,12 +421,30 @@ function ChatPage(_props: ChatPageProps) {
   }, [])
 
   useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+    const nextSet = new Set<string>()
+    for (const msg of messages) {
+      nextSet.add(getMessageKey(msg))
+    }
+    messageKeySetRef.current = nextSet
+    const lastMsg = messages[messages.length - 1]
+    lastMessageTimeRef.current = lastMsg?.createTime ?? 0
+  }, [messages, getMessageKey])
 
   useEffect(() => {
     currentSessionRef.current = currentSessionId
   }, [currentSessionId])
+
+  useEffect(() => {
+    const nextMap = new Map<string, ChatSession>()
+    for (const session of sessions) {
+      nextMap.set(session.username, session)
+    }
+    sessionMapRef.current = nextMap
+  }, [sessions])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
 
   useEffect(() => {
     isLoadingMessagesRef.current = isLoadingMessages
@@ -432,7 +470,131 @@ function ChatPage(_props: ChatPageProps) {
     setFilteredSessions(filtered)
   }, [sessions, searchKeyword, setFilteredSessions])
 
+  const refreshRealtimeSessions = useCallback(async () => {
+    if (!isConnectedRef.current) return
+    if (realtimeSessionBusyRef.current) {
+      realtimeSessionQueuedRef.current = true
+      return
+    }
+    realtimeSessionBusyRef.current = true
+    try {
+      const result = await window.electronAPI.chat.getSessions()
+      if (result.success && result.sessions) {
+        const prevMap = sessionMapRef.current
+        const prevSessions = sessionsRef.current
+        let changed = prevMap.size !== result.sessions.length
+        const nextSessions = result.sessions.map((session) => {
+          const prev = prevMap.get(session.username)
+          if (prev && isSameSession(prev, session)) {
+            return prev
+          }
+          changed = true
+          return prev ? { ...prev, ...session } : session
+        })
 
+        if (!changed) {
+          const sameOrder = prevSessions.length === nextSessions.length &&
+            prevSessions.every((prev, index) => prev.username === nextSessions[index]?.username)
+          if (sameOrder) {
+            return
+          }
+        }
+
+        setSessions(nextSessions)
+        const keyword = searchKeywordRef.current.trim()
+        if (keyword) {
+          const lower = keyword.toLowerCase()
+          const filtered = nextSessions.filter(s =>
+            s.displayName?.toLowerCase().includes(lower) ||
+            s.username.toLowerCase().includes(lower) ||
+            s.summary.toLowerCase().includes(lower)
+          )
+          setFilteredSessions(filtered)
+        }
+      } else if (!result.success) {
+        setConnectionError(result.error || '实时刷新会话失败')
+      }
+    } catch (e) {
+      console.error('实时刷新会话失败:', e)
+    } finally {
+      realtimeSessionBusyRef.current = false
+      if (realtimeSessionQueuedRef.current) {
+        realtimeSessionQueuedRef.current = false
+        refreshRealtimeSessions()
+      }
+    }
+  }, [setSessions, setFilteredSessions, setConnectionError, isSameSession])
+
+  const refreshRealtimeMessages = useCallback(async () => {
+    if (!isConnectedRef.current) return
+    const sessionId = currentSessionRef.current
+    if (!sessionId) return
+    if (isLoadingMessagesRef.current || isLoadingMoreRef.current) return
+    if (realtimeMessageBusyRef.current) {
+      realtimeMessageQueuedRef.current = true
+      return
+    }
+    realtimeMessageBusyRef.current = true
+    try {
+      const session = sessionMapRef.current.get(sessionId)
+      const unreadCount = session?.unreadCount ?? 0
+      const messageLimit = unreadCount > 99 ? 30 : 50
+      const result = await window.electronAPI.chat.getLatestMessages(sessionId, messageLimit)
+      if (!result.success || !result.messages) {
+        return
+      }
+      const existing = messageKeySetRef.current
+      const lastTime = lastMessageTimeRef.current
+      const newMessages = result.messages.filter((msg) => {
+        const key = getMessageKey(msg)
+        if (existing.has(key)) return false
+        if (lastTime > 0 && msg.createTime < lastTime) return false
+        return true
+      })
+      if (newMessages.length > 0) {
+        for (const msg of newMessages) {
+          existing.add(getMessageKey(msg))
+        }
+        const lastNew = newMessages[newMessages.length - 1]
+        if (lastNew?.createTime) {
+          lastMessageTimeRef.current = Math.max(lastMessageTimeRef.current, lastNew.createTime)
+        }
+        appendMessages(newMessages, false)
+        flashNewMessages(newMessages.map(getMessageKey))
+        const listEl = messageListRef.current
+        if (listEl) {
+          const distance = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight
+          if (distance < 80) {
+            requestAnimationFrame(() => {
+              listEl.scrollTop = listEl.scrollHeight
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.error('实时刷新消息失败:', e)
+    } finally {
+      realtimeMessageBusyRef.current = false
+      if (realtimeMessageQueuedRef.current) {
+        realtimeMessageQueuedRef.current = false
+        refreshRealtimeMessages()
+      }
+    }
+  }, [appendMessages, flashNewMessages, getMessageKey])
+
+  useEffect(() => {
+    if (!isConnected) return
+    if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
+    if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
+    realtimeMessageTimerRef.current = window.setInterval(refreshRealtimeMessages, 5000)
+    realtimeSessionTimerRef.current = window.setInterval(refreshRealtimeSessions, 12000)
+    return () => {
+      if (realtimeMessageTimerRef.current) window.clearInterval(realtimeMessageTimerRef.current)
+      if (realtimeSessionTimerRef.current) window.clearInterval(realtimeSessionTimerRef.current)
+      realtimeMessageTimerRef.current = null
+      realtimeSessionTimerRef.current = null
+    }
+  }, [isConnected, refreshRealtimeMessages, refreshRealtimeSessions])
 
   // 格式化会话时间（相对时间）- 与原项目一致
   const formatSessionTime = (timestamp: number): string => {
@@ -781,6 +943,7 @@ function ChatPage(_props: ChatPageProps) {
 // 前端表情包缓存
 const emojiDataUrlCache = new Map<string, string>()
 const senderAvatarCache = new Map<string, { avatarUrl?: string; displayName?: string }>()
+const senderAvatarLoading = new Map<string, Promise<{ avatarUrl?: string; displayName?: string } | null>>()
 
 // 消息气泡组件
 function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }: {
@@ -851,19 +1014,34 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   // 群聊中获取发送者信息
   useEffect(() => {
     if (isGroupChat && !isSent && message.senderUsername) {
-      const cached = senderAvatarCache.get(message.senderUsername)
+      const sender = message.senderUsername
+      const cached = senderAvatarCache.get(sender)
       if (cached) {
         setSenderAvatarUrl(cached.avatarUrl)
         setSenderName(cached.displayName)
         return
       }
-      window.electronAPI.chat.getContactAvatar(message.senderUsername).then((result: { avatarUrl?: string; displayName?: string } | null) => {
+      const pending = senderAvatarLoading.get(sender)
+      if (pending) {
+        pending.then((result) => {
+          if (result) {
+            setSenderAvatarUrl(result.avatarUrl)
+            setSenderName(result.displayName)
+          }
+        })
+        return
+      }
+      const request = window.electronAPI.chat.getContactAvatar(sender)
+      senderAvatarLoading.set(sender, request)
+      request.then((result: { avatarUrl?: string; displayName?: string } | null) => {
         if (result) {
-          senderAvatarCache.set(message.senderUsername!, result)
+          senderAvatarCache.set(sender, result)
           setSenderAvatarUrl(result.avatarUrl)
           setSenderName(result.displayName)
         }
-      }).catch(() => { })
+      }).catch(() => {}).finally(() => {
+        senderAvatarLoading.delete(sender)
+      })
     }
   }, [isGroupChat, isSent, message.senderUsername])
 

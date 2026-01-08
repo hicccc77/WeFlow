@@ -378,6 +378,10 @@ export class WcdbService {
     return this.initialized && this.handle !== null
   }
 
+  isReady(): boolean {
+    return this.ensureReady()
+  }
+
   /**
    * 打开数据库
    */

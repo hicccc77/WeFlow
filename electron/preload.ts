@@ -101,6 +101,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSessionDetail: (sessionId: string) => ipcRenderer.invoke('chat:getSessionDetail', sessionId)
   },
 
+  // 图片解密
+  image: {
+    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) =>
+      ipcRenderer.invoke('image:decrypt', payload)
+  },
+
   // 数据分析
   analytics: {
     getOverallStatistics: () => ipcRenderer.invoke('analytics:getOverallStatistics'),

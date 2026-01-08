@@ -97,6 +97,9 @@ class ChatService {
    */
   async connect(): Promise<{ success: boolean; error?: string }> {
     try {
+      if (this.connected && wcdbService.isReady()) {
+        return { success: true }
+      }
       const wxid = this.configService.get('myWxid')
       const dbPath = this.configService.get('dbPath')
       const decryptKey = this.configService.get('decryptKey')
@@ -124,6 +127,18 @@ class ChatService {
     }
   }
 
+  private async ensureConnected(): Promise<{ success: boolean; error?: string }> {
+    if (this.connected && wcdbService.isReady()) {
+      return { success: true }
+    }
+    const result = await this.connect()
+    if (!result.success) {
+      this.connected = false
+      return { success: false, error: result.error }
+    }
+    return { success: true }
+  }
+
   /**
    * 关闭数据库连接
    */
@@ -145,11 +160,9 @@ class ChatService {
    */
   async getSessions(): Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }> {
     try {
-      if (!this.connected || !wcdbService.isConnected()) {
-        const connectResult = await this.connect()
-        if (!connectResult.success) {
-          return { success: false, error: connectResult.error }
-        }
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error }
       }
 
       const result = await wcdbService.getSessions()
@@ -230,19 +243,38 @@ class ChatService {
   private async enrichSessionsWithContacts(sessions: ChatSession[]): Promise<void> {
     if (sessions.length === 0) return
     try {
-      const usernames = sessions.map(s => s.username)
+      const now = Date.now()
+      const missing: string[] = []
+
+      for (const session of sessions) {
+        const cached = this.avatarCache.get(session.username)
+        if (cached && now - cached.updatedAt < this.avatarCacheTtlMs) {
+          if (cached.displayName) session.displayName = cached.displayName
+          if (cached.avatarUrl) session.avatarUrl = cached.avatarUrl
+        } else {
+          missing.push(session.username)
+        }
+      }
+
+      if (missing.length === 0) return
+      const missingSet = new Set(missing)
+
       const [displayNames, avatarUrls] = await Promise.all([
-        wcdbService.getDisplayNames(usernames),
-        wcdbService.getAvatarUrls(usernames)
+        wcdbService.getDisplayNames(missing),
+        wcdbService.getAvatarUrls(missing)
       ])
 
       for (const session of sessions) {
-        if (displayNames.success && displayNames.map && displayNames.map[session.username]) {
-          session.displayName = displayNames.map[session.username]
-        }
-        if (avatarUrls.success && avatarUrls.map && avatarUrls.map[session.username]) {
-          session.avatarUrl = avatarUrls.map[session.username]
-        }
+        if (!missingSet.has(session.username)) continue
+        const displayName = displayNames.success && displayNames.map ? displayNames.map[session.username] : undefined
+        const avatarUrl = avatarUrls.success && avatarUrls.map ? avatarUrls.map[session.username] : undefined
+        if (displayName) session.displayName = displayName
+        if (avatarUrl) session.avatarUrl = avatarUrl
+        this.avatarCache.set(session.username, {
+          displayName: session.displayName,
+          avatarUrl: session.avatarUrl,
+          updatedAt: now
+        })
       }
     } catch (e) {
       console.error('ChatService: 获取联系人信息失败:', e)
@@ -258,11 +290,9 @@ class ChatService {
     limit: number = 50
   ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
     try {
-      if (!this.connected || !wcdbService.isConnected()) {
-        const connectResult = await this.connect()
-        if (!connectResult.success) {
-          return { success: false, error: '数据库未连接' }
-        }
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
       }
 
       const batchSize = Math.max(1, limit || this.messageBatchDefault)
@@ -427,11 +457,9 @@ class ChatService {
 
   async getLatestMessages(sessionId: string, limit: number = this.messageBatchDefault): Promise<{ success: boolean; messages?: Message[]; error?: string }> {
     try {
-      if (!this.connected || !wcdbService.isConnected()) {
-        const connectResult = await this.connect()
-        if (!connectResult.success) {
-          return { success: false, error: '数据库未连接' }
-        }
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
       }
 
       const batchSize = Math.max(1, limit)
@@ -1017,6 +1045,8 @@ class ChatService {
 
   private shouldKeepSession(username: string): boolean {
     if (!username) return false
+    const lowered = username.toLowerCase()
+    if (lowered.includes('@placeholder') || lowered.includes('foldgroup')) return false
     if (username.startsWith('gh_')) return false
 
     const excludeList = [
@@ -1039,6 +1069,8 @@ class ChatService {
 
   async getContact(username: string): Promise<Contact | null> {
     try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) return null
       const result = await wcdbService.getContact(username)
       if (!result.success || !result.contact) return null
       return {
@@ -1059,6 +1091,8 @@ class ChatService {
     if (!username) return null
 
     try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) return null
       const cached = this.avatarCache.get(username)
       if (cached && Date.now() - cached.updatedAt < this.avatarCacheTtlMs) {
         return { avatarUrl: cached.avatarUrl, displayName: cached.displayName }
@@ -1080,11 +1114,9 @@ class ChatService {
    */
   async getMyAvatarUrl(): Promise<{ success: boolean; avatarUrl?: string; error?: string }> {
     try {
-      if (!this.connected) {
-        const connectResult = await this.connect()
-        if (!connectResult.success) {
-          return { success: false, error: connectResult.error }
-        }
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error }
       }
 
       const myWxid = this.configService.get('myWxid')
@@ -1342,8 +1374,9 @@ class ChatService {
     error?: string
   }> {
     try {
-      if (!this.connected) {
-        return { success: false, error: '数据库未连接' }
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
       }
 
       let displayName = sessionId
