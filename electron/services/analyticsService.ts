@@ -35,6 +35,9 @@ export interface ContactRanking {
 
 class AnalyticsService {
   private configService: ConfigService
+  private fallbackAggregateCache: { key: string; data: any; updatedAt: number } | null = null
+  private aggregateCache: { key: string; data: any; updatedAt: number } | null = null
+  private aggregatePromise: { key: string; promise: Promise<{ success: boolean; data?: any; source?: string; error?: string }> } | null = null
 
   constructor() {
     this.configService = new ConfigService()
@@ -90,24 +93,41 @@ class AnalyticsService {
     return { success: true, cleanedWxid }
   }
 
-  private async getPrivateSessions(cleanedWxid: string): Promise<string[]> {
+  private async getPrivateSessions(
+    cleanedWxid: string
+  ): Promise<{ usernames: string[]; numericIds: string[] }> {
     const sessionResult = await wcdbService.getSessions()
     if (!sessionResult.success || !sessionResult.sessions) {
-      console.log('[私聊分析] getSessions 失败:', sessionResult.error)
-      return []
+      return { usernames: [], numericIds: [] }
     }
     const rows = sessionResult.sessions as Record<string, any>[]
-    console.log('[私聊分析] 总会话数:', rows.length)
-    console.log('[私聊分析] cleanedWxid:', cleanedWxid)
 
-    const usernames = rows.map((row) => row.username || row.user_name || row.userName || '')
-    console.log('[私聊分析] 会话列表示例 (前10个):', usernames.slice(0, 10))
+    const sample = rows[0]
+    void sample
 
-    const privateSessions = usernames.filter((username) => this.isPrivateSession(username, cleanedWxid))
-    console.log('[私聊分析] 过滤后的私聊会话数:', privateSessions.length)
-    console.log('[私聊分析] 私聊会话示例 (前10个):', privateSessions.slice(0, 10))
-
-    return privateSessions
+    const sessions = rows.map((row) => {
+      const username = row.username || row.user_name || row.userName || ''
+      const idValue =
+        row.id ??
+        row.session_id ??
+        row.sessionId ??
+        row.sid ??
+        row.local_id ??
+        row.user_id ??
+        row.userId ??
+        row.chatroom_id ??
+        row.chatroomId ??
+        null
+      return { username, idValue }
+    })
+    const usernames = sessions.map((s) => s.username)
+    const privateSessions = sessions.filter((s) => this.isPrivateSession(s.username, cleanedWxid))
+    const privateUsernames = privateSessions.map((s) => s.username)
+    const numericIds = privateSessions
+      .map((s) => s.idValue)
+      .filter((id) => typeof id === 'number' || (typeof id === 'string' && /^\d+$/.test(id)))
+      .map((id) => String(id))
+    return { usernames: privateUsernames, numericIds }
   }
 
   private async iterateSessionMessages(
@@ -153,15 +173,166 @@ class AnalyticsService {
     }
   }
 
+  private buildAggregateCacheKey(sessionIds: string[], beginTimestamp: number, endTimestamp: number): string {
+    const sample = sessionIds.slice(0, 5).join(',')
+    return `${beginTimestamp}-${endTimestamp}-${sessionIds.length}-${sample}`
+  }
+
+  private async computeAggregateByCursor(sessionIds: string[], beginTimestamp = 0, endTimestamp = 0): Promise<any> {
+    const aggregate = {
+      total: 0,
+      sent: 0,
+      received: 0,
+      firstTime: 0,
+      lastTime: 0,
+      typeCounts: {} as Record<number, number>,
+      hourly: {} as Record<number, number>,
+      weekday: {} as Record<number, number>,
+      daily: {} as Record<string, number>,
+      monthly: {} as Record<string, number>,
+      sessions: {} as Record<string, { total: number; sent: number; received: number; lastTime: number }>,
+      idMap: {}
+    }
+
+    for (const sessionId of sessionIds) {
+      const sessionStat = { total: 0, sent: 0, received: 0, lastTime: 0 }
+      await this.iterateSessionMessages(sessionId, (row) => {
+        const createTime = parseInt(row.create_time || row.createTime || row.create_time_ms || '0', 10)
+        if (!createTime) return
+        if (beginTimestamp > 0 && createTime < beginTimestamp) return
+        if (endTimestamp > 0 && createTime > endTimestamp) return
+
+        const localType = parseInt(row.local_type || row.type || '1', 10)
+        const isSendRaw = row.computed_is_send ?? row.is_send ?? row.isSend ?? 0
+        const isSend = String(isSendRaw) === '1' || isSendRaw === 1 || isSendRaw === true
+
+        aggregate.total += 1
+        sessionStat.total += 1
+
+        aggregate.typeCounts[localType] = (aggregate.typeCounts[localType] || 0) + 1
+
+        if (isSend) {
+          aggregate.sent += 1
+          sessionStat.sent += 1
+        } else {
+          aggregate.received += 1
+          sessionStat.received += 1
+        }
+
+        if (aggregate.firstTime === 0 || createTime < aggregate.firstTime) {
+          aggregate.firstTime = createTime
+        }
+        if (createTime > aggregate.lastTime) {
+          aggregate.lastTime = createTime
+        }
+        if (createTime > sessionStat.lastTime) {
+          sessionStat.lastTime = createTime
+        }
+
+        const date = new Date(createTime * 1000)
+        const hour = date.getHours()
+        const weekday = date.getDay()
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const dayKey = `${monthKey}-${String(date.getDate()).padStart(2, '0')}`
+
+        aggregate.hourly[hour] = (aggregate.hourly[hour] || 0) + 1
+        aggregate.weekday[weekday] = (aggregate.weekday[weekday] || 0) + 1
+        aggregate.monthly[monthKey] = (aggregate.monthly[monthKey] || 0) + 1
+        aggregate.daily[dayKey] = (aggregate.daily[dayKey] || 0) + 1
+      }, beginTimestamp, endTimestamp)
+
+      if (sessionStat.total > 0) {
+        aggregate.sessions[sessionId] = sessionStat
+      }
+    }
+
+    return aggregate
+  }
+
+  private async getAggregateWithFallback(
+    sessionIds: string[],
+    beginTimestamp = 0,
+    endTimestamp = 0,
+    window?: any
+  ): Promise<{ success: boolean; data?: any; source?: string; error?: string }> {
+    const cacheKey = this.buildAggregateCacheKey(sessionIds, beginTimestamp, endTimestamp)
+    if (this.aggregateCache && this.aggregateCache.key === cacheKey) {
+      if (Date.now() - this.aggregateCache.updatedAt < 5 * 60 * 1000) {
+        return { success: true, data: this.aggregateCache.data, source: 'cache' }
+      }
+    }
+
+    if (this.aggregatePromise && this.aggregatePromise.key === cacheKey) {
+      return this.aggregatePromise.promise
+    }
+
+    const promise = (async () => {
+      const result = await wcdbService.getAggregateStats(sessionIds, beginTimestamp, endTimestamp)
+      if (result.success && result.data && result.data.total > 0) {
+        this.aggregateCache = { key: cacheKey, data: result.data, updatedAt: Date.now() }
+        return { success: true, data: result.data, source: 'dll' }
+      }
+
+      if (this.fallbackAggregateCache && this.fallbackAggregateCache.key === cacheKey) {
+        if (Date.now() - this.fallbackAggregateCache.updatedAt < 5 * 60 * 1000) {
+          return { success: true, data: this.fallbackAggregateCache.data, source: 'cursor-cache' }
+        }
+      }
+
+      if (window) {
+        this.setProgress(window, '原生聚合为0，使用游标统计...', 45)
+      }
+
+      const data = await this.computeAggregateByCursor(sessionIds, beginTimestamp, endTimestamp)
+      this.fallbackAggregateCache = { key: cacheKey, data, updatedAt: Date.now() }
+      this.aggregateCache = { key: cacheKey, data, updatedAt: Date.now() }
+      return { success: true, data, source: 'cursor' }
+    })()
+
+    this.aggregatePromise = { key: cacheKey, promise }
+    try {
+      return await promise
+    } finally {
+      if (this.aggregatePromise && this.aggregatePromise.key === cacheKey) {
+        this.aggregatePromise = null
+      }
+    }
+  }
+
+  private normalizeAggregateSessions(
+    sessions: Record<string, any> | undefined,
+    idMap: Record<string, string> | undefined
+  ): Record<string, any> {
+    if (!sessions) return {}
+    if (!idMap) return sessions
+    const keys = Object.keys(sessions)
+    if (keys.length === 0) return sessions
+    const numericKeys = keys.every((k) => /^\d+$/.test(k))
+    if (!numericKeys) return sessions
+    const remapped: Record<string, any> = {}
+    for (const [id, stat] of Object.entries(sessions)) {
+      const username = idMap[id] || id
+      remapped[username] = stat
+    }
+    return remapped
+  }
+
+  private async logAggregateDiagnostics(sessionIds: string[]): Promise<void> {
+    const samples = sessionIds.slice(0, 5)
+    const results = await Promise.all(samples.map(async (sessionId) => {
+      const countResult = await wcdbService.getMessageCount(sessionId)
+      return { sessionId, success: countResult.success, count: countResult.count, error: countResult.error }
+    }))
+    void results
+  }
+
   async getOverallStatistics(): Promise<{ success: boolean; data?: ChatStatistics; error?: string }> {
     try {
       const conn = await this.ensureConnected()
       if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
 
-      const sessionIds = await this.getPrivateSessions(conn.cleanedWxid)
-      console.log('[私聊分析] getPrivateSessions 返回会话数:', sessionIds.length)
-
-      if (sessionIds.length === 0) {
+      const sessionInfo = await this.getPrivateSessions(conn.cleanedWxid)
+      if (sessionInfo.usernames.length === 0) {
         return { success: false, error: '未找到消息会话' }
       }
 
@@ -169,22 +340,17 @@ class AnalyticsService {
       const win = BrowserWindow.getAllWindows()[0]
       this.setProgress(win, '正在执行原生数据聚合...', 30)
 
-      console.log('[私聊分析] 调用 getAggregateStats, sessionIds数量:', sessionIds.length)
-      const result = await wcdbService.getAggregateStats(sessionIds, 0, 0)
-      console.log('[私聊分析] getAggregateStats 返回:', {
-        success: result.success,
-        hasData: !!result.data,
-        error: result.error,
-        dataKeys: result.data ? Object.keys(result.data) : []
-      })
+      const result = await this.getAggregateWithFallback(sessionInfo.usernames, 0, 0, win)
 
       if (!result.success || !result.data) {
-        console.error('[私聊分析] 聚合统计失败:', result.error)
         return { success: false, error: result.error || '聚合统计失败' }
       }
 
       this.setProgress(win, '同步分析结果...', 90)
       const d = result.data
+      if (d.total === 0 && sessionInfo.usernames.length > 0) {
+        await this.logAggregateDiagnostics(sessionInfo.usernames)
+      }
 
       const textTypes = [1, 244813135921]
       let textMessages = 0
@@ -229,18 +395,19 @@ class AnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
 
-      const sessionIds = await this.getPrivateSessions(conn.cleanedWxid)
-      if (sessionIds.length === 0) {
+      const sessionInfo = await this.getPrivateSessions(conn.cleanedWxid)
+      if (sessionInfo.usernames.length === 0) {
         return { success: false, error: '未找到消息会话' }
       }
 
-      const result = await wcdbService.getAggregateStats(sessionIds, 0, 0)
+      const result = await this.getAggregateWithFallback(sessionInfo.usernames, 0, 0)
       if (!result.success || !result.data) {
         return { success: false, error: result.error || '聚合统计失败' }
       }
 
       const d = result.data
-      const usernames = Object.keys(d.sessions)
+      const sessions = this.normalizeAggregateSessions(d.sessions, d.idMap)
+      const usernames = Object.keys(sessions)
       const [displayNames, avatarUrls] = await Promise.all([
         wcdbService.getDisplayNames(usernames),
         wcdbService.getAvatarUrls(usernames)
@@ -248,7 +415,7 @@ class AnalyticsService {
 
       const rankings: ContactRanking[] = usernames
         .map((username) => {
-          const stat = d.sessions[username]
+          const stat = sessions[username]
           const displayName = displayNames.success && displayNames.map
             ? (displayNames.map[username] || username)
             : username
@@ -279,12 +446,12 @@ class AnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
 
-      const sessionIds = await this.getPrivateSessions(conn.cleanedWxid)
-      if (sessionIds.length === 0) {
+      const sessionInfo = await this.getPrivateSessions(conn.cleanedWxid)
+      if (sessionInfo.usernames.length === 0) {
         return { success: false, error: '未找到消息会话' }
       }
 
-      const result = await wcdbService.getAggregateStats(sessionIds, 0, 0)
+      const result = await this.getAggregateWithFallback(sessionInfo.usernames, 0, 0)
       if (!result.success || !result.data) {
         return { success: false, error: result.error || '聚合统计失败' }
       }

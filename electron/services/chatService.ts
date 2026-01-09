@@ -45,6 +45,7 @@ export interface Message {
   quotedSender?: string
   // 图片/视频相关
   imageMd5?: string
+  imageDatName?: string
   aesKey?: string
   encrypVer?: number
   cdnThumbUrl?: string
@@ -68,6 +69,7 @@ class ChatService {
   private readonly messageBatchDefault = 50
   private avatarCache: Map<string, { avatarUrl?: string; displayName?: string; updatedAt: number }> = new Map()
   private readonly avatarCacheTtlMs = 10 * 60 * 1000
+  private readonly defaultV1AesKey = 'cfcd208495d565ef'
 
   constructor() {
     this.configService = new ConfigService()
@@ -510,6 +512,66 @@ class ChatService {
     return messages
   }
 
+  private getRowField(row: Record<string, any>, keys: string[]): any {
+    for (const key of keys) {
+      if (row[key] !== undefined && row[key] !== null) return row[key]
+    }
+    const lowerMap = new Map<string, string>()
+    for (const actual of Object.keys(row)) {
+      lowerMap.set(actual.toLowerCase(), actual)
+    }
+    for (const key of keys) {
+      const actual = lowerMap.get(key.toLowerCase())
+      if (actual && row[actual] !== undefined && row[actual] !== null) {
+        return row[actual]
+      }
+    }
+    return undefined
+  }
+
+  private getRowInt(row: Record<string, any>, keys: string[], fallback = 0): number {
+    const raw = this.getRowField(row, keys)
+    if (raw === undefined || raw === null || raw === '') return fallback
+    const parsed = this.coerceRowNumber(raw)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  private coerceRowNumber(raw: any): number {
+    if (raw === undefined || raw === null) return NaN
+    if (typeof raw === 'number') return raw
+    if (typeof raw === 'bigint') return Number(raw)
+    if (Buffer.isBuffer(raw)) {
+      return parseInt(raw.toString('utf-8'), 10)
+    }
+    if (raw instanceof Uint8Array) {
+      return parseInt(Buffer.from(raw).toString('utf-8'), 10)
+    }
+    if (Array.isArray(raw)) {
+      return parseInt(Buffer.from(raw).toString('utf-8'), 10)
+    }
+    if (typeof raw === 'object') {
+      if ('value' in raw) return this.coerceRowNumber(raw.value)
+      if ('intValue' in raw) return this.coerceRowNumber(raw.intValue)
+      if ('low' in raw && 'high' in raw) {
+        try {
+          const low = BigInt(raw.low >>> 0)
+          const high = BigInt(raw.high >>> 0)
+          return Number((high << 32n) + low)
+        } catch {
+          return NaN
+        }
+      }
+      const text = raw.toString ? String(raw) : ''
+      if (text && text !== '[object Object]') {
+        const parsed = parseInt(text, 10)
+        return Number.isFinite(parsed) ? parsed : NaN
+      }
+      return NaN
+    }
+    const parsed = parseInt(String(raw), 10)
+    return Number.isFinite(parsed) ? parsed : NaN
+  }
+
   private mapRowsToMessages(rows: Record<string, any>[]): Message[] {
     const myWxid = this.configService.get('myWxid')
     const cleanedWxid = myWxid ? this.cleanAccountDirName(myWxid) : null
@@ -518,11 +580,29 @@ class ChatService {
 
     const messages: Message[] = []
     for (const row of rows) {
-      const content = this.decodeMessageContent(row.message_content, row.compress_content)
-      const localType = parseInt(row.local_type || row.type || '1', 10)
-      const isSendRaw = row.computed_is_send ?? row.is_send ?? null
+      const content = this.decodeMessageContent(
+        this.getRowField(row, [
+          'message_content',
+          'messageContent',
+          'content',
+          'msg_content',
+          'msgContent',
+          'WCDB_CT_message_content',
+          'WCDB_CT_messageContent'
+        ]),
+        this.getRowField(row, [
+          'compress_content',
+          'compressContent',
+          'compressed_content',
+          'WCDB_CT_compress_content',
+          'WCDB_CT_compressContent'
+        ])
+      )
+      const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 1)
+      const isSendRaw = this.getRowField(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send'])
       let isSend = isSendRaw === null ? null : parseInt(isSendRaw, 10)
-      const senderUsername = row.sender_username || null
+      const senderUsername = this.getRowField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username']) || null
+      const createTime = this.getRowInt(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'], 0)
 
       if (senderUsername && (myWxidLower || cleanedWxidLower)) {
         const senderLower = String(senderUsername).toLowerCase()
@@ -537,9 +617,11 @@ class ChatService {
       let quotedContent: string | undefined
       let quotedSender: string | undefined
       let imageMd5: string | undefined
+      let imageDatName: string | undefined
       let aesKey: string | undefined
       let encrypVer: number | undefined
       let cdnThumbUrl: string | undefined
+      let voiceDurationSeconds: number | undefined
 
       if (localType === 47 && content) {
         const emojiInfo = this.parseEmojiInfo(content)
@@ -551,6 +633,9 @@ class ChatService {
         aesKey = imageInfo.aesKey
         encrypVer = imageInfo.encrypVer
         cdnThumbUrl = imageInfo.cdnThumbUrl
+        imageDatName = this.parseImageDatNameFromRow(row)
+      } else if (localType === 34 && content) {
+        voiceDurationSeconds = this.parseVoiceDurationSeconds(content)
       } else if (localType === 244813135921 || (content && content.includes('<type>57</type>'))) {
         const quoteInfo = this.parseQuoteMessage(content)
         quotedContent = quoteInfo.content
@@ -558,11 +643,11 @@ class ChatService {
       }
 
       messages.push({
-        localId: parseInt(row.local_id || '0', 10),
-        serverId: parseInt(row.server_id || '0', 10),
+        localId: this.getRowInt(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'], 0),
+        serverId: this.getRowInt(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id'], 0),
         localType,
-        createTime: parseInt(row.create_time || '0', 10),
-        sortSeq: parseInt(row.sort_seq || '0', 10),
+        createTime,
+        sortSeq: this.getRowInt(row, ['sort_seq', 'sortSeq', 'seq', 'sequence', 'WCDB_CT_sort_seq'], createTime),
         isSend,
         senderUsername,
         parsedContent: this.parseMessageContent(content, localType),
@@ -572,10 +657,21 @@ class ChatService {
         quotedContent,
         quotedSender,
         imageMd5,
+        imageDatName,
+        voiceDurationSeconds,
         aesKey,
         encrypVer,
         cdnThumbUrl
       })
+      const last = messages[messages.length - 1]
+      if ((last.localType === 3 || last.localType === 34) && (last.localId === 0 || last.createTime === 0)) {
+        console.warn('[ChatService] message key missing', {
+          localType: last.localType,
+          localId: last.localId,
+          createTime: last.createTime,
+          rowKeys: Object.keys(row)
+        })
+      }
     }
     return messages
   }
@@ -724,10 +820,13 @@ class ChatService {
    */
   private parseImageInfo(content: string): { md5?: string; aesKey?: string; encrypVer?: number; cdnThumbUrl?: string } {
     try {
-      const md5 = this.extractXmlValue(content, 'md5')
-      const aesKey = this.extractXmlAttribute(content, 'img', 'aeskey')
-      const encrypVerStr = this.extractXmlAttribute(content, 'img', 'encrypver')
-      const cdnThumbUrl = this.extractXmlAttribute(content, 'img', 'cdnthumburl')
+      const md5 =
+        this.extractXmlValue(content, 'md5') ||
+        this.extractXmlAttribute(content, 'img', 'md5') ||
+        undefined
+      const aesKey = this.extractXmlAttribute(content, 'img', 'aeskey') || undefined
+      const encrypVerStr = this.extractXmlAttribute(content, 'img', 'encrypver') || undefined
+      const cdnThumbUrl = this.extractXmlAttribute(content, 'img', 'cdnthumburl') || undefined
 
       return {
         md5,
@@ -738,6 +837,68 @@ class ChatService {
     } catch {
       return {}
     }
+  }
+
+  private parseImageDatNameFromRow(row: Record<string, any>): string | undefined {
+    const packed = this.getRowField(row, [
+      'packed_info_data',
+      'packed_info',
+      'packedInfoData',
+      'packedInfo',
+      'PackedInfoData',
+      'PackedInfo',
+      'WCDB_CT_packed_info_data',
+      'WCDB_CT_packed_info',
+      'WCDB_CT_PackedInfoData',
+      'WCDB_CT_PackedInfo'
+    ])
+    const buffer = this.decodePackedInfo(packed)
+    if (!buffer || buffer.length === 0) return undefined
+    const printable: number[] = []
+    for (const byte of buffer) {
+      if (byte >= 0x20 && byte <= 0x7e) {
+        printable.push(byte)
+      } else {
+        printable.push(0x20)
+      }
+    }
+    const text = Buffer.from(printable).toString('utf-8')
+    const match = /([0-9a-fA-F]{8,})(?:\.t)?\.dat/.exec(text)
+    if (match?.[1]) return match[1].toLowerCase()
+    const hexMatch = /([0-9a-fA-F]{16,})/.exec(text)
+    return hexMatch?.[1]?.toLowerCase()
+  }
+
+  private decodePackedInfo(raw: any): Buffer | null {
+    if (!raw) return null
+    if (Buffer.isBuffer(raw)) return raw
+    if (raw instanceof Uint8Array) return Buffer.from(raw)
+    if (Array.isArray(raw)) return Buffer.from(raw)
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (/^[a-fA-F0-9]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+        try {
+          return Buffer.from(trimmed, 'hex')
+        } catch {}
+      }
+      try {
+        return Buffer.from(trimmed, 'base64')
+      } catch {}
+    }
+    if (typeof raw === 'object' && Array.isArray(raw.data)) {
+      return Buffer.from(raw.data)
+    }
+    return null
+  }
+
+  private parseVoiceDurationSeconds(content: string): number | undefined {
+    if (!content) return undefined
+    const match = /(voicelength|length|time|playlength)\s*=\s*['"]?([0-9]+(?:\.[0-9]+)?)['"]?/i.exec(content)
+    if (!match) return undefined
+    const raw = parseFloat(match[2])
+    if (!Number.isFinite(raw) || raw <= 0) return undefined
+    if (raw > 1000) return Math.round(raw / 1000)
+    return Math.round(raw)
   }
 
   /**
@@ -809,6 +970,108 @@ class ChatService {
     } catch {
       return {}
     }
+  }
+
+  private getVoiceLookupCandidates(sessionId: string, msg: Message): string[] {
+    const candidates: string[] = []
+    const add = (value?: string | null) => {
+      const trimmed = value?.trim()
+      if (!trimmed) return
+      if (!candidates.includes(trimmed)) candidates.push(trimmed)
+    }
+    add(sessionId)
+    add(msg.senderUsername)
+    add(this.configService.get('myWxid'))
+    return candidates
+  }
+
+  private async resolveChatNameId(dbPath: string, senderWxid: string): Promise<number | null> {
+    const escaped = this.escapeSqlString(senderWxid)
+    const name2IdTable = await this.resolveName2IdTableName(dbPath)
+    if (!name2IdTable) return null
+    const info = await wcdbService.execQuery('media', dbPath, `PRAGMA table_info('${name2IdTable}')`)
+    if (!info.success || !info.rows) return null
+    const columns = info.rows.map((row) => String(row.name || row.Name || row.column || '')).filter(Boolean)
+    const lower = new Map(columns.map((col) => [col.toLowerCase(), col]))
+    const column = lower.get('name_id') || lower.get('id') || 'rowid'
+    const sql = `SELECT ${column} AS id FROM ${name2IdTable} WHERE user_name = '${escaped}' LIMIT 1`
+    const result = await wcdbService.execQuery('media', dbPath, sql)
+    if (!result.success || !result.rows || result.rows.length === 0) return null
+    const value = result.rows[0]?.id
+    if (value === null || value === undefined) return null
+    const parsed = typeof value === 'number' ? value : parseInt(String(value), 10)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  private decodeVoiceBlob(raw: any): Buffer | null {
+    if (!raw) return null
+    if (Buffer.isBuffer(raw)) return raw
+    if (raw instanceof Uint8Array) return Buffer.from(raw)
+    if (Array.isArray(raw)) return Buffer.from(raw)
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (/^[a-fA-F0-9]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+        try {
+          return Buffer.from(trimmed, 'hex')
+        } catch {}
+      }
+      try {
+        return Buffer.from(trimmed, 'base64')
+      } catch {}
+    }
+    if (typeof raw === 'object' && Array.isArray(raw.data)) {
+      return Buffer.from(raw.data)
+    }
+    return null
+  }
+
+  private async resolveVoiceInfoColumns(dbPath: string, tableName: string): Promise<{
+    dataColumn: string;
+    chatNameIdColumn?: string;
+    createTimeColumn?: string;
+    msgLocalIdColumn?: string;
+  } | null> {
+    const info = await wcdbService.execQuery('media', dbPath, `PRAGMA table_info('${tableName}')`)
+    if (!info.success || !info.rows) return null
+    const columns = info.rows.map((row) => String(row.name || row.Name || row.column || '')).filter(Boolean)
+    if (columns.length === 0) return null
+    const lower = new Map(columns.map((col) => [col.toLowerCase(), col]))
+    const dataColumn =
+      lower.get('voice_data') ||
+      lower.get('buf') ||
+      lower.get('voicebuf') ||
+      lower.get('data')
+    if (!dataColumn) return null
+    return {
+      dataColumn,
+      chatNameIdColumn: lower.get('chat_name_id') || lower.get('chatnameid') || lower.get('chat_nameid'),
+      createTimeColumn: lower.get('create_time') || lower.get('createtime') || lower.get('time'),
+      msgLocalIdColumn: lower.get('msg_local_id') || lower.get('msglocalid') || lower.get('localid')
+    }
+  }
+
+  private escapeSqlString(value: string): string {
+    return value.replace(/'/g, "''")
+  }
+
+  private async resolveVoiceInfoTableName(dbPath: string): Promise<string | null> {
+    const result = await wcdbService.execQuery(
+      'media',
+      dbPath,
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'VoiceInfo%' ORDER BY name DESC LIMIT 1"
+    )
+    if (!result.success || !result.rows || result.rows.length === 0) return null
+    return result.rows[0]?.name || null
+  }
+
+  private async resolveName2IdTableName(dbPath: string): Promise<string | null> {
+    const result = await wcdbService.execQuery(
+      'media',
+      dbPath,
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Name2Id%' ORDER BY name DESC LIMIT 1"
+    )
+    if (!result.success || !result.rows || result.rows.length === 0) return null
+    return result.rows[0]?.name || null
   }
 
   /**
@@ -1469,9 +1732,15 @@ class ChatService {
         return { success: false, error: '未找到消息' }
       }
       const msg = msgResult.message
+      console.info('[ChatService][Image] request', {
+        sessionId,
+        localId: msg.localId,
+        imageMd5: msg.imageMd5,
+        imageDatName: msg.imageDatName
+      })
 
       // 2. 确定搜索的基础名
-      const baseName = msg.imageMd5 || String(msg.localId)
+      const baseName = msg.imageMd5 || msg.imageDatName || String(msg.localId)
 
       // 3. 查找 .dat 文件
       const myWxid = this.configService.get('myWxid')
@@ -1485,14 +1754,15 @@ class ChatService {
 
       const datPath = await this.findDatFile(actualAccountDir, baseName)
       if (!datPath) return { success: false, error: '未找到图片源文件 (.dat)' }
+      console.info('[ChatService][Image] dat path', datPath)
 
       // 4. 获取解密密钥
-      const xorKeyHex = this.configService.get('imageXorKey')
-      const aesKeyHex = this.configService.get('imageAesKey') || msg.aesKey
+      const xorKeyRaw = this.configService.get('imageXorKey')
+      const aesKeyRaw = this.configService.get('imageAesKey') || msg.aesKey
 
-      if (!xorKeyHex) return { success: false, error: '未配置图片 XOR 密钥，请在设置中自动获取' }
+      if (!xorKeyRaw) return { success: false, error: '未配置图片 XOR 密钥，请在设置中自动获取' }
 
-      const xorKey = parseInt(String(xorKeyHex), 16)
+      const xorKey = this.parseXorKey(xorKeyRaw)
       const data = readFileSync(datPath)
 
       // 5. 解密
@@ -1501,11 +1771,18 @@ class ChatService {
 
       if (version === 0) {
         decrypted = this.decryptDatV3(data, xorKey)
+      } else if (version === 1) {
+        const aesKey = this.asciiKey16(this.defaultV1AesKey)
+        decrypted = this.decryptDatV4(data, xorKey, aesKey)
       } else {
-        if (!aesKeyHex) return { success: false, error: '该图片需要 AES 密钥，请在设置中自动获取' }
-        const aesKey = Buffer.from(aesKeyHex, 'hex')
+        const trimmed = String(aesKeyRaw ?? '').trim()
+        if (!trimmed || trimmed.length < 16) {
+          return { success: false, error: 'V4版本需要16字节AES密钥' }
+        }
+        const aesKey = this.asciiKey16(trimmed)
         decrypted = this.decryptDatV4(data, xorKey, aesKey)
       }
+      console.info('[ChatService][Image] decrypted bytes', decrypted.length)
 
       // 返回 base64
       return { success: true, data: decrypted.toString('base64') }
@@ -1517,28 +1794,67 @@ class ChatService {
 
   async getVoiceData(sessionId: string, msgId: string): Promise<{ success: boolean; data?: string; error?: string }> {
     try {
-      // 1. 获取消息
-      const msgResult = await this.getMessages(sessionId, 0, 500) // 简单查找
-      if (!msgResult.success || !msgResult.messages) return { success: false, error: '消息库读取失败' }
-      const msg = msgResult.messages.find(m => String(m.localId) === msgId)
-      if (!msg) return { success: false, error: '未找到该消息' }
+      const localId = parseInt(msgId, 10)
+      const msgResult = await this.getMessageByLocalId(sessionId, localId)
+      if (!msgResult.success || !msgResult.message) return { success: false, error: '未找到该消息' }
+      const msg = msgResult.message
+      if (msg.isSend === 1) {
+        return { success: false, error: '暂不支持解密自己发送的语音' }
+      }
+
+      const candidates = this.getVoiceLookupCandidates(sessionId, msg)
+      if (candidates.length === 0) {
+        return { success: false, error: '未找到语音关联账号' }
+      }
+      console.info('[ChatService][Voice] request', {
+        sessionId,
+        localId: msg.localId,
+        createTime: msg.createTime,
+        candidates
+      })
 
       // 2. 查找所有的 media_*.db
       const mediaDbs = await wcdbService.listMediaDbs()
       if (!mediaDbs.success || !mediaDbs.data) return { success: false, error: '获取媒体库失败' }
+      console.info('[ChatService][Voice] media dbs', mediaDbs.data)
 
       // 3. 在所有媒体库中查找该消息的语音数据
       let silkData: Buffer | null = null
       for (const dbPath of mediaDbs.data) {
-        const sql = `SELECT Buf FROM VoiceInfo WHERE MsgLocalId = ${msg.localId}`
-        const result = await wcdbService.execQuery('media', dbPath, sql)
-        if (result.success && result.rows && result.rows.length > 0) {
-          const hex = result.rows[0].Buf
-          if (hex) {
-            silkData = Buffer.from(hex, 'hex')
-            break
+        const voiceTable = await this.resolveVoiceInfoTableName(dbPath)
+        if (!voiceTable) {
+          console.warn('[ChatService][Voice] voice table not found', dbPath)
+          continue
+        }
+        const columns = await this.resolveVoiceInfoColumns(dbPath, voiceTable)
+        if (!columns) {
+          console.warn('[ChatService][Voice] voice columns not found', { dbPath, voiceTable })
+          continue
+        }
+        for (const candidate of candidates) {
+          const chatNameId = await this.resolveChatNameId(dbPath, candidate)
+          if (!chatNameId) continue
+          let whereClause = ''
+          if (columns.chatNameIdColumn && columns.createTimeColumn) {
+            whereClause = `${columns.chatNameIdColumn} = ${chatNameId} AND ${columns.createTimeColumn} = ${msg.createTime}`
+          } else if (columns.msgLocalIdColumn) {
+            whereClause = `${columns.msgLocalIdColumn} = ${msg.localId}`
+          } else {
+            continue
+          }
+          const sql = `SELECT ${columns.dataColumn} AS data FROM ${voiceTable} WHERE ${whereClause} LIMIT 1`
+          const result = await wcdbService.execQuery('media', dbPath, sql)
+          if (result.success && result.rows && result.rows.length > 0) {
+            const raw = result.rows[0]?.data
+            const decoded = this.decodeVoiceBlob(raw)
+            if (decoded && decoded.length > 0) {
+              console.info('[ChatService][Voice] hit', { dbPath, voiceTable, whereClause, bytes: decoded.length })
+              silkData = decoded
+              break
+            }
           }
         }
+        if (silkData) break
       }
 
       if (!silkData) return { success: false, error: '未找到语音数据' }
@@ -1552,6 +1868,7 @@ class ChatService {
       if (!existsSync(decoderPath)) {
         return { success: false, error: '找不到语音解码器 (silk_v3_decoder.exe)' }
       }
+      console.info('[ChatService][Voice] decoder path', decoderPath)
 
       const tempDir = app.getPath('temp')
       const silkFile = join(tempDir, `voice_${msgId}.silk`)
@@ -1559,8 +1876,14 @@ class ChatService {
 
       try {
         writeFileSync(silkFile, silkData)
-        // 执行解码: silk_v3_decoder.exe <silk> <pcm>
-        await execFileAsync(decoderPath, [silkFile, pcmFile])
+        // 执行解码: silk_v3_decoder.exe <silk> <pcm> -Fs_API 24000
+        const { stdout, stderr } = await execFileAsync(
+          decoderPath,
+          [silkFile, pcmFile, '-Fs_API', '24000'],
+          { cwd: dirname(decoderPath) }
+        )
+        if (stdout) console.info('[ChatService][Voice] decoder stdout', stdout)
+        if (stderr) console.warn('[ChatService][Voice] decoder stderr', stderr)
 
         if (!existsSync(pcmFile)) {
           return { success: false, error: '语音解码失败' }
@@ -1607,6 +1930,15 @@ class ChatService {
         return { success: false, error: result.error || '未找到消息' }
       }
       const message = this.parseMessage(result.message)
+      if (message.localId === 0 || message.createTime === 0) {
+        console.warn('[ChatService] getMessageById missing keys', {
+          sessionId,
+          localId,
+          parsedLocalId: message.localId,
+          parsedCreateTime: message.createTime,
+          rowKeys: Object.keys(result.message || {})
+        })
+      }
       return { success: true, message }
     } catch (e) {
       console.error('ChatService: getMessageById 失败:', e)
@@ -1615,25 +1947,54 @@ class ChatService {
   }
 
   private parseMessage(row: any): Message {
-    const rawContent = row.content || ''
+    const rawContent = this.decodeMessageContent(
+      this.getRowField(row, [
+        'message_content',
+        'messageContent',
+        'content',
+        'msg_content',
+        'msgContent',
+        'WCDB_CT_message_content',
+        'WCDB_CT_messageContent'
+      ]),
+      this.getRowField(row, [
+        'compress_content',
+        'compressContent',
+        'compressed_content',
+        'WCDB_CT_compress_content',
+        'WCDB_CT_compressContent'
+      ])
+    )
     // 这里复用 parseMessagesBatch 里面的解析逻辑，为了简单我这里先写个基础的
     // 实际项目中建议抽取 parseRawMessage(row) 供多处使用
     const msg: Message = {
-      localId: parseInt(row.local_id || '0', 10),
-      serverId: parseInt(row.server_id || '0', 10),
-      localType: parseInt(row.type || '0', 10),
-      createTime: parseInt(row.create_time || '0', 10),
-      sortSeq: parseInt(row.create_time || '0', 10),
-      isSend: row.computed_is_send === '1' ? 1 : 0,
-      senderUsername: row.sender_username || null,
+      localId: this.getRowInt(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'], 0),
+      serverId: this.getRowInt(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id'], 0),
+      localType: this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 0),
+      createTime: this.getRowInt(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'], 0),
+      sortSeq: this.getRowInt(row, ['sort_seq', 'sortSeq', 'seq', 'sequence', 'WCDB_CT_sort_seq'], this.getRowInt(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'], 0)),
+      isSend: this.getRowInt(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send'], 0),
+      senderUsername: this.getRowField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username']) || null,
       rawContent: rawContent,
-      parsedContent: rawContent
+      parsedContent: this.parseMessageContent(rawContent, this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 0))
+    }
+
+    if (msg.localId === 0 || msg.createTime === 0) {
+      const rawLocalId = this.getRowField(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'])
+      const rawCreateTime = this.getRowField(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'])
+      console.warn('[ChatService] parseMessage raw keys', {
+        rawLocalId,
+        rawLocalIdType: rawLocalId ? typeof rawLocalId : 'null',
+        rawCreateTime,
+        rawCreateTimeType: rawCreateTime ? typeof rawCreateTime : 'null'
+      })
     }
 
     // 图片/语音解析逻辑 (简化示例，实际应调用现有解析方法)
     if (msg.localType === 3) { // Image
       const imgInfo = this.parseImageInfo(rawContent)
       Object.assign(msg, imgInfo)
+      msg.imageDatName = this.parseImageDatNameFromRow(row)
     }
 
     return msg
@@ -1678,6 +2039,8 @@ class ChatService {
         if (stats.isFile()) {
           const lowerEntry = entry.toLowerCase()
           if (lowerEntry.includes(pattern) && lowerEntry.endsWith('.dat')) {
+            const baseLower = lowerEntry.slice(0, -4)
+            if (!this.hasImageVariantSuffix(baseLower)) continue
             return fullPath
           }
         }
@@ -1713,46 +2076,118 @@ class ChatService {
   }
 
   private decryptDatV4(data: Buffer, xorKey: number, aesKey: Buffer): Buffer {
-    if (data.length < 15) throw new Error('Data too small for V4')
-    const aesSize = data.readInt32LE(6)
-    const xorSize = data.readInt32LE(10)
+    if (data.length < 0x0f) {
+      throw new Error('文件太小，无法解析')
+    }
 
-    const payload = data.subarray(15)
-    // AES 部分需要对齐
-    const alignedAesSize = Math.ceil(aesSize / 16) * 16
+    const header = data.subarray(0, 0x0f)
+    const payload = data.subarray(0x0f)
+    const aesSize = this.bytesToInt32(header.subarray(6, 10))
+    const xorSize = this.bytesToInt32(header.subarray(10, 14))
 
-    let decryptedAes: any = Buffer.alloc(0)
-    if (aesSize > 0) {
-      const aesPart = payload.subarray(0, alignedAesSize)
+    const remainder = ((aesSize % 16) + 16) % 16
+    const alignedAesSize = aesSize + (16 - remainder)
+    if (alignedAesSize > payload.length) {
+      throw new Error('文件格式异常：AES 数据长度超过文件实际长度')
+    }
+
+    const aesData = payload.subarray(0, alignedAesSize)
+    let unpadded = Buffer.alloc(0)
+    if (aesData.length > 0) {
       const decipher = crypto.createDecipheriv('aes-128-ecb', aesKey, Buffer.alloc(0))
       decipher.setAutoPadding(false)
-      const chunk1 = decipher.update(aesPart)
-      const chunk2 = decipher.final()
-      decryptedAes = Buffer.concat([chunk1, chunk2])
-      decryptedAes = this.removePkcs7Padding(decryptedAes)
+      const decrypted = Buffer.concat([decipher.update(aesData), decipher.final()])
+      unpadded = this.strictRemovePadding(decrypted)
     }
 
     const remaining = payload.subarray(alignedAesSize)
-    const rawSize = remaining.length - xorSize
-    const rawPart = remaining.subarray(0, rawSize)
-    const xorPart = remaining.subarray(rawSize)
-
-    const xoredPart = Buffer.alloc(xorPart.length)
-    for (let i = 0; i < xorPart.length; i++) {
-      xoredPart[i] = xorPart[i] ^ xorKey
+    if (xorSize < 0 || xorSize > remaining.length) {
+      throw new Error('文件格式异常：XOR 数据长度不合法')
     }
 
-    return Buffer.concat([decryptedAes, rawPart, xoredPart])
+    let rawData = Buffer.alloc(0)
+    let xoredData = Buffer.alloc(0)
+    if (xorSize > 0) {
+      const rawLength = remaining.length - xorSize
+      if (rawLength < 0) {
+        throw new Error('文件格式异常：原始数据长度小于XOR长度')
+      }
+      rawData = remaining.subarray(0, rawLength)
+      const xorData = remaining.subarray(rawLength)
+      xoredData = Buffer.alloc(xorData.length)
+      for (let i = 0; i < xorData.length; i++) {
+        xoredData[i] = xorData[i] ^ xorKey
+      }
+    } else {
+      rawData = remaining
+      xoredData = Buffer.alloc(0)
+    }
+
+    return Buffer.concat([unpadded, rawData, xoredData])
   }
 
-  private removePkcs7Padding(data: Buffer): Buffer {
-    if (data.length === 0) return data
-    const padLen = data[data.length - 1]
-    if (padLen <= 0 || padLen > 16 || padLen > data.length) return data
-    for (let i = data.length - padLen; i < data.length; i++) {
-      if (data[i] !== padLen) return data // Invalid padding
+  private strictRemovePadding(data: Buffer): Buffer {
+    if (!data.length) {
+      throw new Error('解密结果为空，填充非法')
     }
-    return data.subarray(0, data.length - padLen)
+    const paddingLength = data[data.length - 1]
+    if (paddingLength === 0 || paddingLength > 16 || paddingLength > data.length) {
+      throw new Error('PKCS7 填充长度非法')
+    }
+    for (let i = data.length - paddingLength; i < data.length; i++) {
+      if (data[i] !== paddingLength) {
+        throw new Error('PKCS7 填充内容非法')
+      }
+    }
+    return data.subarray(0, data.length - paddingLength)
+  }
+
+  private bytesToInt32(bytes: Buffer): number {
+    if (bytes.length !== 4) {
+      throw new Error('需要4个字节')
+    }
+    return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)
+  }
+
+  private hasImageVariantSuffix(baseLower: string): boolean {
+    const suffixes = [
+      '.b',
+      '.h',
+      '.t',
+      '.c',
+      '.w',
+      '.l',
+      '_b',
+      '_h',
+      '_t',
+      '_c',
+      '_w',
+      '_l'
+    ]
+    return suffixes.some((suffix) => baseLower.endsWith(suffix))
+  }
+
+  private asciiKey16(keyString: string): Buffer {
+    if (keyString.length < 16) {
+      throw new Error('AES密钥至少需要16个字符')
+    }
+    return Buffer.from(keyString, 'ascii').subarray(0, 16)
+  }
+
+  private parseXorKey(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+    const cleanHex = String(value ?? '').toLowerCase().replace(/^0x/, '')
+    if (!cleanHex) {
+      throw new Error('十六进制字符串不能为空')
+    }
+    const hex = cleanHex.length >= 2 ? cleanHex.substring(0, 2) : cleanHex
+    const parsed = parseInt(hex, 16)
+    if (Number.isNaN(parsed)) {
+      throw new Error('十六进制字符串不能为空')
+    }
+    return parsed
   }
 }
 

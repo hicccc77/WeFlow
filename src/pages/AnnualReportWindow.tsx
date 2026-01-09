@@ -290,32 +290,15 @@ function AnnualReportWindow() {
     setIsLoading(true)
     setError(null)
     setLoadingProgress(0)
-    
-    // 模拟加载进度的各个阶段
-    const stages = [
-      { progress: 10, stage: '正在连接数据库...' },
-      { progress: 20, stage: '年度最佳听众' },
-      { progress: 30, stage: '年度倾诉对象' },
-      { progress: 40, stage: '月度好友' },
-      { progress: 50, stage: '双向奔赴' },
-      { progress: 60, stage: '社交主动性' },
-      { progress: 70, stage: '作息规律' },
-      { progress: 80, stage: '年度常用语' },
-      { progress: 90, stage: '生成报告...' },
-    ]
-    
-    let stageIndex = 0
-    const progressInterval = setInterval(() => {
-      if (stageIndex < stages.length) {
-        setLoadingProgress(stages[stageIndex].progress)
-        setLoadingStage(stages[stageIndex].stage)
-        stageIndex++
-      }
-    }, 300)
+
+    const removeProgressListener = window.electronAPI.annualReport.onProgress?.((payload: { status: string; progress: number }) => {
+      setLoadingProgress(payload.progress)
+      setLoadingStage(payload.status)
+    })
     
     try {
       const result = await window.electronAPI.annualReport.generateReport(year)
-      clearInterval(progressInterval)
+      removeProgressListener?.()
       setLoadingProgress(100)
       setLoadingStage('完成')
       
@@ -329,7 +312,7 @@ function AnnualReportWindow() {
         setIsLoading(false)
       }
     } catch (e) {
-      clearInterval(progressInterval)
+      removeProgressListener?.()
       setError(String(e))
       setIsLoading(false)
     }

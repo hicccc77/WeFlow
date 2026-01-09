@@ -799,6 +799,7 @@
   background: var(--bg-secondary);
   border-radius: 16px;
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 .message-header {
@@ -881,6 +882,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 .message-list {
@@ -895,6 +897,7 @@
   background: var(--chat-pattern);
   background-color: var(--bg-tertiary);
   position: relative;
+  -webkit-app-region: no-drag !important;
 
   // 滚动条样式
   &::-webkit-scrollbar {
@@ -913,6 +916,10 @@
       background: rgba(0, 0, 0, 0.3);
     }
   }
+}
+
+.message-list * {
+  -webkit-app-region: no-drag !important;
 }
 
 // 回到底部按钮
@@ -977,6 +984,7 @@
 .message-wrapper {
   display: flex;
   flex-direction: column;
+  -webkit-app-region: no-drag;
 
   &.sent {
     align-items: flex-end;
@@ -1027,6 +1035,7 @@
   gap: 10px;
   max-width: 70%;
   align-items: flex-start;
+  -webkit-app-region: no-drag;
 
   // 自己发送的消息 - 右侧绿色
   &.sent {
@@ -1156,6 +1165,245 @@
   }
 }
 
+// 图片消息
+.message-bubble.image {
+  .bubble-content {
+    background: transparent;
+    padding: 0;
+  }
+}
+
+.image-message {
+  max-width: 260px;
+  max-height: 220px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  -webkit-app-region: no-drag;
+}
+
+.image-message-wrapper {
+  position: relative;
+  display: inline-block;
+  -webkit-app-region: no-drag;
+}
+
+.image-update-button {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.image-update-button:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+.image-loading,
+.image-unavailable {
+  width: 160px;
+  height: 120px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+}
+
+.image-unavailable {
+  border: none;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  text-align: center;
+  -webkit-app-region: no-drag;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  svg {
+    opacity: 0.6;
+  }
+}
+
+.image-unavailable.clicked {
+  transform: scale(0.98);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.image-unavailable:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.image-action {
+  font-size: 11px;
+  color: var(--text-quaternary);
+}
+
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+
+  img {
+    max-width: 88vw;
+    max-height: 88vh;
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  }
+}
+
+.image-preview-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+}
+
+// 语音消息
+.voice-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.04);
+  min-width: 140px;
+  cursor: pointer;
+}
+
+.message-bubble.sent .voice-message {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.voice-play-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.voice-message.playing .voice-play-btn {
+  box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.06);
+}
+
+.voice-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+
+  span {
+    width: 3px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--text-tertiary);
+    opacity: 0.6;
+  }
+}
+
+.voice-message.playing .voice-wave span {
+  animation: voicePulse 0.9s ease-in-out infinite;
+}
+
+.voice-message.playing .voice-wave span:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.voice-message.playing .voice-wave span:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.voice-message.playing .voice-wave span:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+.voice-message.playing .voice-wave span:nth-child(5) {
+  animation-delay: 0.4s;
+}
+
+.voice-hint {
+  font-size: 12px;
+  color: var(--text-quaternary);
+}
+
+.voice-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.voice-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.voice-duration {
+  color: var(--text-tertiary);
+}
+
+.voice-loading,
+.voice-error {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.voice-error {
+  color: #d9480f;
+}
+
+@keyframes voicePulse {
+  0% {
+    height: 6px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 16px;
+    opacity: 1;
+  }
+  100% {
+    height: 6px;
+    opacity: 0.5;
+  }
+}
+
 // 群聊发送者名称
 .sender-name {
   font-size: 12px;
@@ -1208,6 +1456,11 @@
   display: flex;
   flex-direction: column;
   max-width: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.bubble-content {
+  -webkit-app-region: no-drag;
 }
 
 // 时间分隔

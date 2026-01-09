@@ -7,7 +7,7 @@ import { app } from 'electron'
 import { ConfigService } from './config'
 
 export class WcdbService {
-  private configService = new ConfigService()
+  private configService: ConfigService | null = null
   private lib: any = null
   private koffi: any = null
   private initialized = false
@@ -21,6 +21,7 @@ export class WcdbService {
   private wcdbShutdown: any = null
   private wcdbOpenAccount: any = null
   private wcdbCloseAccount: any = null
+  private wcdbSetMyWxid: any = null
   private wcdbFreeString: any = null
   private wcdbGetSessions: any = null
   private wcdbGetMessages: any = null
@@ -28,13 +29,19 @@ export class WcdbService {
   private wcdbGetDisplayNames: any = null
   private wcdbGetAvatarUrls: any = null
   private wcdbGetGroupMemberCount: any = null
+  private wcdbGetGroupMemberCounts: any = null
   private wcdbGetGroupMembers: any = null
   private wcdbGetMessageTables: any = null
   private wcdbGetMessageMeta: any = null
   private wcdbGetContact: any = null
   private wcdbGetMessageTableStats: any = null
   private wcdbGetAggregateStats: any = null
+  private wcdbGetAvailableYears: any = null
+  private wcdbGetAnnualReportStats: any = null
+  private wcdbGetAnnualReportExtras: any = null
+  private wcdbGetGroupStats: any = null
   private wcdbOpenMessageCursor: any = null
+  private wcdbOpenMessageCursorLite: any = null
   private wcdbFetchMessageBatch: any = null
   private wcdbCloseMessageCursor: any = null
   private wcdbGetLogs: any = null
@@ -50,6 +57,16 @@ export class WcdbService {
    * 获取 DLL 路径
    */
   private getDllPath(): string {
+    const envDllPath = process.env.WCDB_DLL_PATH
+    if (envDllPath && envDllPath.length > 0) {
+      return envDllPath
+    }
+
+    const envResourcesPath = process.env.WCDB_RESOURCES_PATH
+    if (envResourcesPath && envResourcesPath.length > 0) {
+      return join(envResourcesPath, 'wcdb_api.dll')
+    }
+
     const resourcesPath = app.isPackaged
       ? join(process.resourcesPath, 'resources')
       : join(app.getAppPath(), 'resources')
@@ -59,6 +76,10 @@ export class WcdbService {
 
   private isLogEnabled(): boolean {
     try {
+      if (process.env.WEFLOW_WORKER === '1') return false
+      if (!this.configService) {
+        this.configService = new ConfigService()
+      }
       return this.configService.get('logEnabled') === true
     } catch {
       return false
@@ -181,6 +202,13 @@ export class WcdbService {
       // 注意：虽然 C 接口是 int64，但 koffi 返回的 handle 是 number 类型
       this.wcdbCloseAccount = this.lib.func('int32 wcdb_close_account(int64 handle)')
 
+      // wcdb_status wcdb_set_my_wxid(wcdb_handle handle, const char* wxid)
+      try {
+        this.wcdbSetMyWxid = this.lib.func('int32 wcdb_set_my_wxid(int64 handle, const char* wxid)')
+      } catch {
+        this.wcdbSetMyWxid = null
+      }
+
       // void wcdb_free_string(char* ptr)
       this.wcdbFreeString = this.lib.func('void wcdb_free_string(void* ptr)')
 
@@ -202,6 +230,13 @@ export class WcdbService {
       // wcdb_status wcdb_get_group_member_count(wcdb_handle handle, const char* chatroom_id, int32_t* out_count)
       this.wcdbGetGroupMemberCount = this.lib.func('int32 wcdb_get_group_member_count(int64 handle, const char* chatroomId, _Out_ int32* outCount)')
 
+      // wcdb_status wcdb_get_group_member_counts(wcdb_handle handle, const char* chatroom_ids_json, char** out_json)
+      try {
+        this.wcdbGetGroupMemberCounts = this.lib.func('int32 wcdb_get_group_member_counts(int64 handle, const char* chatroomIdsJson, _Out_ void** outJson)')
+      } catch {
+        this.wcdbGetGroupMemberCounts = null
+      }
+
       // wcdb_status wcdb_get_group_members(wcdb_handle handle, const char* chatroom_id, char** out_json)
       this.wcdbGetGroupMembers = this.lib.func('int32 wcdb_get_group_members(int64 handle, const char* chatroomId, _Out_ void** outJson)')
 
@@ -220,8 +255,43 @@ export class WcdbService {
       // wcdb_status wcdb_get_aggregate_stats(wcdb_handle handle, const char* session_ids_json, int32_t begin_timestamp, int32_t end_timestamp, char** out_json)
       this.wcdbGetAggregateStats = this.lib.func('int32 wcdb_get_aggregate_stats(int64 handle, const char* sessionIdsJson, int32 begin, int32 end, _Out_ void** outJson)')
 
+      // wcdb_status wcdb_get_available_years(wcdb_handle handle, const char* session_ids_json, char** out_json)
+      try {
+        this.wcdbGetAvailableYears = this.lib.func('int32 wcdb_get_available_years(int64 handle, const char* sessionIdsJson, _Out_ void** outJson)')
+      } catch {
+        this.wcdbGetAvailableYears = null
+      }
+
+      // wcdb_status wcdb_get_annual_report_stats(wcdb_handle handle, const char* session_ids_json, int32_t begin_timestamp, int32_t end_timestamp, char** out_json)
+      try {
+        this.wcdbGetAnnualReportStats = this.lib.func('int32 wcdb_get_annual_report_stats(int64 handle, const char* sessionIdsJson, int32 begin, int32 end, _Out_ void** outJson)')
+      } catch {
+        this.wcdbGetAnnualReportStats = null
+      }
+
+      // wcdb_status wcdb_get_annual_report_extras(wcdb_handle handle, const char* session_ids_json, int32_t begin_timestamp, int32_t end_timestamp, int32_t peak_day_begin, int32_t peak_day_end, char** out_json)
+      try {
+        this.wcdbGetAnnualReportExtras = this.lib.func('int32 wcdb_get_annual_report_extras(int64 handle, const char* sessionIdsJson, int32 begin, int32 end, int32 peakBegin, int32 peakEnd, _Out_ void** outJson)')
+      } catch {
+        this.wcdbGetAnnualReportExtras = null
+      }
+
+      // wcdb_status wcdb_get_group_stats(wcdb_handle handle, const char* chatroom_id, int32_t begin_timestamp, int32_t end_timestamp, char** out_json)
+      try {
+        this.wcdbGetGroupStats = this.lib.func('int32 wcdb_get_group_stats(int64 handle, const char* chatroomId, int32 begin, int32 end, _Out_ void** outJson)')
+      } catch {
+        this.wcdbGetGroupStats = null
+      }
+
       // wcdb_status wcdb_open_message_cursor(wcdb_handle handle, const char* session_id, int32_t batch_size, int32_t ascending, int32_t begin_timestamp, int32_t end_timestamp, wcdb_cursor* out_cursor)
       this.wcdbOpenMessageCursor = this.lib.func('int32 wcdb_open_message_cursor(int64 handle, const char* sessionId, int32 batchSize, int32 ascending, int32 beginTimestamp, int32 endTimestamp, _Out_ int64* outCursor)')
+
+      // wcdb_status wcdb_open_message_cursor_lite(wcdb_handle handle, const char* session_id, int32_t batch_size, int32_t ascending, int32_t begin_timestamp, int32_t end_timestamp, wcdb_cursor* out_cursor)
+      try {
+        this.wcdbOpenMessageCursorLite = this.lib.func('int32 wcdb_open_message_cursor_lite(int64 handle, const char* sessionId, int32 batchSize, int32 ascending, int32 beginTimestamp, int32 endTimestamp, _Out_ int64* outCursor)')
+      } catch {
+        this.wcdbOpenMessageCursorLite = null
+      }
 
       // wcdb_status wcdb_fetch_message_batch(wcdb_handle handle, wcdb_cursor cursor, char** out_json, int32_t* out_has_more)
       this.wcdbFetchMessageBatch = this.lib.func('int32 wcdb_fetch_message_batch(int64 handle, int64 cursor, _Out_ void** outJson, _Out_ int32* outHasMore)')
@@ -349,7 +419,6 @@ export class WcdbService {
       if (result === 0 && outPtr[0]) {
         try {
           const jsonStr = this.koffi.decode(outPtr[0], 'char', -1)
-          console.error('WCDB 内部日志:', jsonStr)
           this.writeLog(`wcdb_logs: ${jsonStr}`)
           this.wcdbFreeString(outPtr[0])
         } catch (e) {
@@ -376,6 +445,28 @@ export class WcdbService {
 
   private ensureReady(): boolean {
     return this.initialized && this.handle !== null
+  }
+
+  private normalizeTimestamp(input: number): number {
+    if (!input || input <= 0) return 0
+    const asNumber = Number(input)
+    if (!Number.isFinite(asNumber)) return 0
+    // Treat >1e12 as milliseconds.
+    const seconds = asNumber > 1e12 ? Math.floor(asNumber / 1000) : Math.floor(asNumber)
+    const maxInt32 = 2147483647
+    return Math.min(Math.max(seconds, 0), maxInt32)
+  }
+
+  private normalizeRange(beginTimestamp: number, endTimestamp: number): { begin: number; end: number } {
+    const normalizedBegin = this.normalizeTimestamp(beginTimestamp)
+    let normalizedEnd = this.normalizeTimestamp(endTimestamp)
+    if (normalizedEnd <= 0) {
+      normalizedEnd = this.normalizeTimestamp(Date.now())
+    }
+    if (normalizedBegin > 0 && normalizedEnd < normalizedBegin) {
+      normalizedEnd = normalizedBegin
+    }
+    return { begin: normalizedBegin, end: normalizedEnd }
   }
 
   isReady(): boolean {
@@ -445,6 +536,13 @@ export class WcdbService {
       this.currentKey = hexKey
       this.currentWxid = wxid
       this.initialized = true
+      if (this.wcdbSetMyWxid && wxid) {
+        try {
+          this.wcdbSetMyWxid(this.handle, wxid)
+        } catch (e) {
+          console.warn('设置 wxid 失败:', e)
+        }
+      }
       this.writeLog(`open ok handle=${handle}`)
       return true
     } catch (e) {
@@ -632,6 +730,36 @@ export class WcdbService {
     }
   }
 
+  async getGroupMemberCounts(chatroomIds: string[]): Promise<{ success: boolean; map?: Record<string, number>; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (chatroomIds.length === 0) return { success: true, map: {} }
+    if (!this.wcdbGetGroupMemberCounts) {
+      const map: Record<string, number> = {}
+      for (const chatroomId of chatroomIds) {
+        const result = await this.getGroupMemberCount(chatroomId)
+        if (result.success && typeof result.count === 'number') {
+          map[chatroomId] = result.count
+        }
+      }
+      return { success: true, map }
+    }
+    try {
+      const outPtr = [null as any]
+      const result = this.wcdbGetGroupMemberCounts(this.handle, JSON.stringify(chatroomIds), outPtr)
+      if (result !== 0 || !outPtr[0]) {
+        return { success: false, error: `获取群成员数量失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) return { success: false, error: '解析群成员数量失败' }
+      const map = JSON.parse(jsonStr)
+      return { success: true, map }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
   async getGroupMembers(chatroomId: string): Promise<{ success: boolean; members?: any[]; error?: string }> {
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
@@ -729,42 +857,165 @@ export class WcdbService {
 
   async getAggregateStats(sessionIds: string[], beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
     if (!this.ensureReady()) {
-      console.log('[WCDB] getAggregateStats: 未连接')
       return { success: false, error: 'WCDB 未连接' }
     }
     try {
-      console.log('[WCDB] getAggregateStats 调用参数:', {
-        sessionCount: sessionIds.length,
-        beginTimestamp,
-        endTimestamp,
-        sessionIdsJson: JSON.stringify(sessionIds).substring(0, 200) + '...'
-      })
+      const normalizedBegin = this.normalizeTimestamp(beginTimestamp)
+      let normalizedEnd = this.normalizeTimestamp(endTimestamp)
+      if (normalizedEnd <= 0) {
+        normalizedEnd = this.normalizeTimestamp(Date.now())
+      }
+      if (normalizedBegin > 0 && normalizedEnd < normalizedBegin) {
+        normalizedEnd = normalizedBegin
+      }
 
+      const callAggregate = (ids: string[]) => {
+        const idsAreNumeric = ids.length > 0 && ids.every((id) => /^\d+$/.test(id))
+        const payloadIds = idsAreNumeric ? ids.map((id) => Number(id)) : ids
+
+        const outPtr = [null as any]
+        const result = this.wcdbGetAggregateStats(this.handle, JSON.stringify(payloadIds), normalizedBegin, normalizedEnd, outPtr)
+
+        if (result !== 0 || !outPtr[0]) {
+          return { success: false, error: `获取聚合统计失败: ${result}` }
+        }
+        const jsonStr = this.decodeJsonPtr(outPtr[0])
+        if (!jsonStr) {
+          return { success: false, error: '解析聚合统计失败' }
+        }
+
+        const data = JSON.parse(jsonStr)
+        return { success: true, data }
+      }
+
+      let result = callAggregate(sessionIds)
+      if (result.success && result.data && result.data.total === 0 && result.data.idMap) {
+        const idMap = result.data.idMap as Record<string, string>
+        const reverseMap: Record<string, string> = {}
+        for (const [id, name] of Object.entries(idMap)) {
+          if (!name) continue
+          reverseMap[name] = id
+        }
+        const numericIds = sessionIds
+          .map((id) => reverseMap[id])
+          .filter((id) => typeof id === 'string' && /^\d+$/.test(id))
+        if (numericIds.length > 0) {
+          const retry = callAggregate(numericIds)
+          if (retry.success && retry.data) {
+            result = retry
+          }
+        }
+      }
+
+      return result
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getAvailableYears(sessionIds: string[]): Promise<{ success: boolean; data?: number[]; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbGetAvailableYears) {
+      return { success: false, error: '未支持获取年度列表' }
+    }
+    if (sessionIds.length === 0) return { success: true, data: [] }
+    try {
       const outPtr = [null as any]
-      const result = this.wcdbGetAggregateStats(this.handle, JSON.stringify(sessionIds), beginTimestamp, endTimestamp, outPtr)
-
-      console.log('[WCDB] wcdbGetAggregateStats 返回码:', result)
-      console.log('[WCDB] outPtr[0] 是否为空:', !outPtr[0])
-
+      const result = this.wcdbGetAvailableYears(this.handle, JSON.stringify(sessionIds), outPtr)
       if (result !== 0 || !outPtr[0]) {
-        console.error('[WCDB] getAggregateStats 失败: result =', result)
-        return { success: false, error: `获取聚合统计失败: ${result}` }
+        return { success: false, error: `获取年度列表失败: ${result}` }
       }
       const jsonStr = this.decodeJsonPtr(outPtr[0])
-      if (!jsonStr) {
-        console.error('[WCDB] getAggregateStats: 解析 JSON 失败')
-        return { success: false, error: '解析聚合统计失败' }
-      }
-
-      console.log('[WCDB] getAggregateStats JSON 长度:', jsonStr.length)
-      console.log('[WCDB] getAggregateStats JSON 预览:', jsonStr.substring(0, 500))
-
+      if (!jsonStr) return { success: false, error: '解析年度列表失败' }
       const data = JSON.parse(jsonStr)
-      console.log('[WCDB] getAggregateStats 解析后的数据键:', Object.keys(data))
-
       return { success: true, data }
     } catch (e) {
-      console.error('[WCDB] getAggregateStats 异常:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getAnnualReportStats(sessionIds: string[], beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbGetAnnualReportStats) {
+      return this.getAggregateStats(sessionIds, beginTimestamp, endTimestamp)
+    }
+    try {
+      const { begin, end } = this.normalizeRange(beginTimestamp, endTimestamp)
+      const outPtr = [null as any]
+      const result = this.wcdbGetAnnualReportStats(this.handle, JSON.stringify(sessionIds), begin, end, outPtr)
+      if (result !== 0 || !outPtr[0]) {
+        return { success: false, error: `获取年度统计失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) return { success: false, error: '解析年度统计失败' }
+      const data = JSON.parse(jsonStr)
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getAnnualReportExtras(
+    sessionIds: string[],
+    beginTimestamp: number = 0,
+    endTimestamp: number = 0,
+    peakDayBegin: number = 0,
+    peakDayEnd: number = 0
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbGetAnnualReportExtras) {
+      return { success: false, error: '未支持年度扩展统计' }
+    }
+    if (sessionIds.length === 0) return { success: true, data: {} }
+    try {
+      const { begin, end } = this.normalizeRange(beginTimestamp, endTimestamp)
+      const outPtr = [null as any]
+      const result = this.wcdbGetAnnualReportExtras(
+        this.handle,
+        JSON.stringify(sessionIds),
+        begin,
+        end,
+        this.normalizeTimestamp(peakDayBegin),
+        this.normalizeTimestamp(peakDayEnd),
+        outPtr
+      )
+      if (result !== 0 || !outPtr[0]) {
+        return { success: false, error: `获取年度扩展统计失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) return { success: false, error: '解析年度扩展统计失败' }
+      const data = JSON.parse(jsonStr)
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getGroupStats(chatroomId: string, beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbGetGroupStats) {
+      return this.getAggregateStats([chatroomId], beginTimestamp, endTimestamp)
+    }
+    try {
+      const { begin, end } = this.normalizeRange(beginTimestamp, endTimestamp)
+      const outPtr = [null as any]
+      const result = this.wcdbGetGroupStats(this.handle, chatroomId, begin, end, outPtr)
+      if (result !== 0 || !outPtr[0]) {
+        return { success: false, error: `获取群聊统计失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) return { success: false, error: '解析群聊统计失败' }
+      const data = JSON.parse(jsonStr)
+      return { success: true, data }
+    } catch (e) {
       return { success: false, error: String(e) }
     }
   }
@@ -776,6 +1027,33 @@ export class WcdbService {
     try {
       const outCursor = [0]
       const result = this.wcdbOpenMessageCursor(
+        this.handle,
+        sessionId,
+        batchSize,
+        ascending ? 1 : 0,
+        beginTimestamp,
+        endTimestamp,
+        outCursor
+      )
+      if (result !== 0 || outCursor[0] <= 0) {
+        return { success: false, error: `创建游标失败: ${result}` }
+      }
+      return { success: true, cursor: outCursor[0] }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async openMessageCursorLite(sessionId: string, batchSize: number, ascending: boolean, beginTimestamp: number, endTimestamp: number): Promise<{ success: boolean; cursor?: number; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbOpenMessageCursorLite) {
+      return this.openMessageCursor(sessionId, batchSize, ascending, beginTimestamp, endTimestamp)
+    }
+    try {
+      const outCursor = [0]
+      const result = this.wcdbOpenMessageCursorLite(
         this.handle,
         sessionId,
         batchSize,

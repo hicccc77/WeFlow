@@ -80,20 +80,22 @@ class GroupAnalyticsService {
         .map((row) => row.username || row.user_name || row.userName || '')
         .filter((username) => username.includes('@chatroom'))
 
-      const [displayNames, avatarUrls] = await Promise.all([
+      const [displayNames, avatarUrls, memberCounts] = await Promise.all([
         wcdbService.getDisplayNames(groupIds),
-        wcdbService.getAvatarUrls(groupIds)
+        wcdbService.getAvatarUrls(groupIds),
+        wcdbService.getGroupMemberCounts(groupIds)
       ])
 
       const groups: GroupChatInfo[] = []
       for (const groupId of groupIds) {
-        const countResult = await wcdbService.getGroupMemberCount(groupId)
         groups.push({
           username: groupId,
           displayName: displayNames.success && displayNames.map
             ? (displayNames.map[groupId] || groupId)
             : groupId,
-          memberCount: countResult.success && countResult.count ? countResult.count : 0,
+          memberCount: memberCounts.success && memberCounts.map && typeof memberCounts.map[groupId] === 'number'
+            ? memberCounts.map[groupId]
+            : 0,
           avatarUrl: avatarUrls.success && avatarUrls.map ? avatarUrls.map[groupId] : undefined
         })
       }
@@ -136,7 +138,7 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
-      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      const result = await wcdbService.getGroupStats(chatroomId, startTime || 0, endTime || 0)
       if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
 
       const d = result.data
@@ -184,7 +186,7 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
-      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      const result = await wcdbService.getGroupStats(chatroomId, startTime || 0, endTime || 0)
       if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
 
       const hourlyDistribution: Record<number, number> = {}
@@ -203,7 +205,7 @@ class GroupAnalyticsService {
       const conn = await this.ensureConnected()
       if (!conn.success) return { success: false, error: conn.error }
 
-      const result = await wcdbService.getAggregateStats([chatroomId], startTime || 0, endTime || 0)
+      const result = await wcdbService.getGroupStats(chatroomId, startTime || 0, endTime || 0)
       if (!result.success || !result.data) return { success: false, error: result.error || '聚合失败' }
 
       const typeCountsRaw = result.data.typeCounts as Record<string, number>

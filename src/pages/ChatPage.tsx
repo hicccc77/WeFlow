@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash } from 'lucide-react'
+import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
 import { getEmojiPath } from 'wechat-emojis'
@@ -117,6 +117,7 @@ function ChatPage(_props: ChatPageProps) {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [highlightedMessageKeys, setHighlightedMessageKeys] = useState<string[]>([])
+  const [isRefreshingSessions, setIsRefreshingSessions] = useState(false)
 
 
   const highlightedMessageSet = useMemo(() => new Set(highlightedMessageKeys), [highlightedMessageKeys])
@@ -186,12 +187,17 @@ function ChatPage(_props: ChatPageProps) {
   }, [loadMyAvatar])
 
   // 加载会话列表
-  const loadSessions = async () => {
-    setLoadingSessions(true)
+  const loadSessions = async (options?: { silent?: boolean }) => {
+    if (options?.silent) {
+      setIsRefreshingSessions(true)
+    } else {
+      setLoadingSessions(true)
+    }
     try {
       const result = await window.electronAPI.chat.getSessions()
       if (result.success && result.sessions) {
-        setSessions(result.sessions)
+        const nextSessions = options?.silent ? mergeSessions(result.sessions) : result.sessions
+        setSessions(nextSessions)
       } else if (!result.success) {
         setConnectionError(result.error || '获取会话失败')
       }
@@ -199,13 +205,17 @@ function ChatPage(_props: ChatPageProps) {
       console.error('加载会话失败:', e)
       setConnectionError('加载会话失败')
     } finally {
-      setLoadingSessions(false)
+      if (options?.silent) {
+        setIsRefreshingSessions(false)
+      } else {
+        setLoadingSessions(false)
+      }
     }
   }
 
   // 刷新会话列表
   const handleRefresh = async () => {
-    await loadSessions()
+    await loadSessions({ silent: true })
   }
 
   // 刷新当前会话消息（增量更新新消息）
@@ -370,6 +380,16 @@ function ChatPage(_props: ChatPageProps) {
       prev.avatarUrl === next.avatarUrl
     )
   }, [])
+
+  const mergeSessions = useCallback((nextSessions: ChatSession[]) => {
+    if (sessionsRef.current.length === 0) return nextSessions
+    const prevMap = new Map(sessionsRef.current.map((s) => [s.username, s]))
+    return nextSessions.map((next) => {
+      const prev = prevMap.get(next.username)
+      if (!prev) return next
+      return isSameSession(prev, next) ? prev : next
+    })
+  }, [isSameSession])
 
   const flashNewMessages = useCallback((keys: string[]) => {
     if (keys.length === 0) return
@@ -555,8 +575,8 @@ function ChatPage(_props: ChatPageProps) {
                 </button>
               )}
             </div>
-            <button className="icon-btn refresh-btn" onClick={handleRefresh} disabled={isLoadingSessions}>
-              <RefreshCw size={16} className={isLoadingSessions ? 'spin' : ''} />
+            <button className="icon-btn refresh-btn" onClick={handleRefresh} disabled={isLoadingSessions || isRefreshingSessions}>
+              <RefreshCw size={16} className={(isLoadingSessions || isRefreshingSessions) ? 'spin' : ''} />
             </button>
           </div>
         </div>
@@ -830,6 +850,8 @@ function ChatPage(_props: ChatPageProps) {
 
 // 前端表情包缓存
 const emojiDataUrlCache = new Map<string, string>()
+const imageDataUrlCache = new Map<string, string>()
+const voiceDataUrlCache = new Map<string, string>()
 const senderAvatarCache = new Map<string, { avatarUrl?: string; displayName?: string }>()
 const senderAvatarLoading = new Map<string, Promise<{ avatarUrl?: string; displayName?: string } | null>>()
 
@@ -843,16 +865,37 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
 }) {
   const isSystem = message.localType === 10000
   const isEmoji = message.localType === 47
+  const isImage = message.localType === 3
+  const isVoice = message.localType === 34
   const isSent = message.isSend === 1
   const [senderAvatarUrl, setSenderAvatarUrl] = useState<string | undefined>(undefined)
   const [senderName, setSenderName] = useState<string | undefined>(undefined)
   const [emojiError, setEmojiError] = useState(false)
   const [emojiLoading, setEmojiLoading] = useState(false)
+  const [imageError, setImageError] = useState(false)
+  const [imageLoading, setImageLoading] = useState(false)
+  const [imageHasUpdate, setImageHasUpdate] = useState(false)
+  const [imageClicked, setImageClicked] = useState(false)
+  const imageUpdateCheckedRef = useRef<string | null>(null)
+  const imageClickTimerRef = useRef<number | null>(null)
+  const [voiceError, setVoiceError] = useState(false)
+  const [voiceLoading, setVoiceLoading] = useState(false)
+  const [isVoicePlaying, setIsVoicePlaying] = useState(false)
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [showImagePreview, setShowImagePreview] = useState(false)
 
   // 从缓存获取表情包 data URL
   const cacheKey = message.emojiMd5 || message.emojiCdnUrl || ''
   const [emojiLocalPath, setEmojiLocalPath] = useState<string | undefined>(
     () => emojiDataUrlCache.get(cacheKey)
+  )
+  const imageCacheKey = message.imageMd5 || message.imageDatName || `local:${message.localId}`
+  const [imageLocalPath, setImageLocalPath] = useState<string | undefined>(
+    () => imageDataUrlCache.get(imageCacheKey)
+  )
+  const voiceCacheKey = `voice:${message.localId}`
+  const [voiceDataUrl, setVoiceDataUrl] = useState<string | undefined>(
+    () => voiceDataUrlCache.get(voiceCacheKey)
   )
 
   const formatTime = (timestamp: number): string => {
@@ -864,6 +907,24 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
       day: '2-digit'
     }) + ' ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
+
+  const detectImageMimeFromBase64 = useCallback((base64: string): string => {
+    try {
+      const head = window.atob(base64.slice(0, 48))
+      const bytes = new Uint8Array(head.length)
+      for (let i = 0; i < head.length; i++) {
+        bytes[i] = head.charCodeAt(i)
+      }
+      if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
+      if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png'
+      if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg'
+      if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+        bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+        return 'image/webp'
+      }
+    } catch {}
+    return 'image/jpeg'
+  }, [])
 
   // 获取头像首字母
   const getAvatarLetter = (name: string): string => {
@@ -942,6 +1003,116 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
     }
   }, [isEmoji, message.emojiCdnUrl, emojiLocalPath, emojiLoading, emojiError])
 
+  const requestImageDecrypt = useCallback(async (forceUpdate = false) => {
+    if (!isImage || imageLoading) return
+    setImageLoading(true)
+    setImageError(false)
+    try {
+      if (message.imageMd5 || message.imageDatName) {
+        const result = await window.electronAPI.image.decrypt({
+          sessionId: session.username,
+          imageMd5: message.imageMd5 || undefined,
+          imageDatName: message.imageDatName,
+          force: forceUpdate
+        })
+        if (result.success && result.localPath) {
+          imageDataUrlCache.set(imageCacheKey, result.localPath)
+          setImageLocalPath(result.localPath)
+          setImageHasUpdate(false)
+          return
+        }
+      }
+
+      const fallback = await window.electronAPI.chat.getImageData(session.username, String(message.localId))
+      if (fallback.success && fallback.data) {
+        const mime = detectImageMimeFromBase64(fallback.data)
+        const dataUrl = `data:${mime};base64,${fallback.data}`
+        imageDataUrlCache.set(imageCacheKey, dataUrl)
+        setImageLocalPath(dataUrl)
+        setImageHasUpdate(false)
+        return
+      }
+      setImageError(true)
+    } catch {
+      setImageError(true)
+    } finally {
+      setImageLoading(false)
+    }
+  }, [isImage, imageLoading, message.imageMd5, message.imageDatName, message.localId, session.username, imageCacheKey, detectImageMimeFromBase64])
+
+  const handleImageClick = useCallback(() => {
+    if (imageClickTimerRef.current) {
+      window.clearTimeout(imageClickTimerRef.current)
+    }
+    setImageClicked(true)
+    imageClickTimerRef.current = window.setTimeout(() => {
+      setImageClicked(false)
+    }, 800)
+    console.info('[UI] image decrypt click', {
+      sessionId: session.username,
+      imageMd5: message.imageMd5,
+      imageDatName: message.imageDatName,
+      localId: message.localId
+    })
+    void requestImageDecrypt()
+  }, [message.imageDatName, message.imageMd5, message.localId, requestImageDecrypt, session.username])
+
+  useEffect(() => {
+    return () => {
+      if (imageClickTimerRef.current) {
+        window.clearTimeout(imageClickTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isImage || imageLoading) return
+    if (!message.imageMd5 && !message.imageDatName) return
+    if (imageUpdateCheckedRef.current === imageCacheKey) return
+    imageUpdateCheckedRef.current = imageCacheKey
+    let cancelled = false
+    window.electronAPI.image.resolveCache({
+      sessionId: session.username,
+      imageMd5: message.imageMd5 || undefined,
+      imageDatName: message.imageDatName
+    }).then((result) => {
+      if (cancelled) return
+      if (result.success && result.localPath) {
+        imageDataUrlCache.set(imageCacheKey, result.localPath)
+        if (!imageLocalPath || imageLocalPath !== result.localPath) {
+          setImageLocalPath(result.localPath)
+          setImageError(false)
+        }
+        setImageHasUpdate(Boolean(result.hasUpdate))
+      }
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isImage, imageLocalPath, imageLoading, message.imageMd5, message.imageDatName, imageCacheKey, session.username])
+
+
+  useEffect(() => {
+    if (!isVoice) return
+    if (!voiceAudioRef.current) {
+      voiceAudioRef.current = new Audio()
+    }
+    const audio = voiceAudioRef.current
+    if (!audio) return
+    const handlePlay = () => setIsVoicePlaying(true)
+    const handlePause = () => setIsVoicePlaying(false)
+    const handleEnded = () => setIsVoicePlaying(false)
+    audio.addEventListener('play', handlePlay)
+    audio.addEventListener('pause', handlePause)
+    audio.addEventListener('ended', handleEnded)
+    return () => {
+      audio.pause()
+      audio.removeEventListener('play', handlePlay)
+      audio.removeEventListener('pause', handlePause)
+      audio.removeEventListener('ended', handleEnded)
+    }
+  }, [isVoice])
+
   if (isSystem) {
     return (
       <div className="message-bubble system">
@@ -995,6 +1166,144 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
 
   // 渲染消息内容
   const renderContent = () => {
+    if (isImage) {
+      if (imageLoading) {
+        return (
+          <div className="image-loading">
+            <Loader2 size={20} className="spin" />
+          </div>
+        )
+      }
+      if (imageError || !imageLocalPath) {
+        return (
+          <button
+            className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
+            onClick={handleImageClick}
+            disabled={imageLoading}
+            type="button"
+          >
+            <ImageIcon size={24} />
+            <span>图片未解密</span>
+            <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
+          </button>
+        )
+      }
+      return (
+        <>
+          <div className="image-message-wrapper">
+            <img
+              src={imageLocalPath}
+              alt="图片"
+              className="image-message"
+              onClick={() => setShowImagePreview(true)}
+              onLoad={() => setImageError(false)}
+              onError={() => setImageError(true)}
+            />
+            {imageHasUpdate && (
+              <button
+                className="image-update-button"
+                type="button"
+                title="发现更高清图片，点击更新"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void requestImageDecrypt(true)
+                }}
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
+          </div>
+          {showImagePreview && (
+            <div className="image-preview-overlay" onClick={() => setShowImagePreview(false)}>
+              <img src={imageLocalPath} alt="图片预览" onClick={(e) => e.stopPropagation()} />
+              <button className="image-preview-close" onClick={() => setShowImagePreview(false)}>
+                <X size={16} />
+              </button>
+            </div>
+          )}
+        </>
+      )
+    }
+
+    if (isVoice) {
+      const durationText = message.voiceDurationSeconds ? `${message.voiceDurationSeconds}"` : ''
+      const handleToggle = async () => {
+        if (voiceLoading) return
+        const audio = voiceAudioRef.current || new Audio()
+        if (!voiceAudioRef.current) {
+          voiceAudioRef.current = audio
+        }
+        if (isVoicePlaying) {
+          audio.pause()
+          audio.currentTime = 0
+          return
+        }
+        if (!voiceDataUrl) {
+          setVoiceLoading(true)
+          setVoiceError(false)
+          try {
+            const result = await window.electronAPI.chat.getVoiceData(session.username, String(message.localId))
+            if (result.success && result.data) {
+              const url = `data:audio/wav;base64,${result.data}`
+              voiceDataUrlCache.set(voiceCacheKey, url)
+              setVoiceDataUrl(url)
+            } else {
+              setVoiceError(true)
+              return
+            }
+          } catch {
+            setVoiceError(true)
+            return
+          } finally {
+            setVoiceLoading(false)
+          }
+        }
+        const source = voiceDataUrlCache.get(voiceCacheKey) || voiceDataUrl
+        if (!source) {
+          setVoiceError(true)
+          return
+        }
+        audio.src = source
+        try {
+          await audio.play()
+        } catch {
+          setVoiceError(true)
+        }
+      }
+
+      const showDecryptHint = !voiceDataUrl && !voiceLoading && !isVoicePlaying
+
+      return (
+        <div className={`voice-message ${isVoicePlaying ? 'playing' : ''}`} onClick={handleToggle}>
+          <button
+            className="voice-play-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleToggle()
+            }}
+            aria-label="播放语音"
+            type="button"
+          >
+            {isVoicePlaying ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <div className="voice-wave">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="voice-info">
+            <span className="voice-label">语音</span>
+            {durationText && <span className="voice-duration">{durationText}</span>}
+            {voiceLoading && <span className="voice-loading">解码中...</span>}
+            {showDecryptHint && <span className="voice-hint">点击解密</span>}
+            {voiceError && <span className="voice-error">播放失败</span>}
+          </div>
+        </div>
+      )
+    }
+
     // 表情包消息
     if (isEmoji) {
       // ... (keep existing emoji logic)
@@ -1055,7 +1364,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
           <span>{formatTime(message.createTime)}</span>
         </div>
       )}
-      <div className={`message-bubble ${bubbleClass} ${isEmoji && message.emojiCdnUrl && !emojiError ? 'emoji' : ''}`}>
+      <div className={`message-bubble ${bubbleClass} ${isEmoji && message.emojiCdnUrl && !emojiError ? 'emoji' : ''} ${isImage ? 'image' : ''} ${isVoice ? 'voice' : ''}`}>
         <div className="bubble-avatar">
           {avatarUrl ? (
             <img src={avatarUrl} alt="" />

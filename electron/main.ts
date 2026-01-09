@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { Worker } from 'worker_threads'
 import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { readFile } from 'fs/promises'
@@ -424,6 +425,13 @@ function registerIpcHandlers() {
     return chatService.getMessageById(sessionId, localId)
   })
 
+  ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => {
+    return imageDecryptService.decryptImage(payload)
+  })
+  ipcMain.handle('image:resolveCache', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => {
+    return imageDecryptService.resolveCachedImage(payload)
+  })
+
   // 导出相关
   ipcMain.handle('export:exportSessions', async (_, sessionIds: string[], outputDir: string, options: ExportOptions) => {
     return exportService.exportSessions(sessionIds, outputDir, options)
@@ -504,7 +512,62 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('annualReport:generateReport', async (_, year: number) => {
-    return annualReportService.generateReport(year)
+    const cfg = configService || new ConfigService()
+    configService = cfg
+
+    const dbPath = cfg.get('dbPath')
+    const decryptKey = cfg.get('decryptKey')
+    const wxid = cfg.get('myWxid')
+
+    const resourcesPath = app.isPackaged
+      ? join(process.resourcesPath, 'resources')
+      : join(app.getAppPath(), 'resources')
+
+    const workerPath = join(__dirname, 'annualReportWorker.js')
+
+    return await new Promise((resolve) => {
+      const worker = new Worker(workerPath, {
+        workerData: { year, dbPath, decryptKey, wxid, resourcesPath }
+      })
+
+      const cleanup = () => {
+        worker.removeAllListeners()
+      }
+
+      worker.on('message', (msg: any) => {
+        if (msg && msg.type === 'progress') {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send('annualReport:progress', { status: msg.status, progress: msg.progress })
+            }
+          }
+          return
+        }
+        if (msg && msg.type === 'done') {
+          cleanup()
+          void worker.terminate()
+          resolve(msg.result)
+          return
+        }
+        if (msg && msg.type === 'error') {
+          cleanup()
+          void worker.terminate()
+          resolve({ success: false, error: msg.error || '年度报告生成失败' })
+        }
+      })
+
+      worker.on('error', (err) => {
+        cleanup()
+        resolve({ success: false, error: String(err) })
+      })
+
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          cleanup()
+          resolve({ success: false, error: `年度报告线程异常退出: ${code}` })
+        }
+      })
+    })
   })
 
   // 密钥获取

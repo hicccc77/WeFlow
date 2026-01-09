@@ -72,10 +72,35 @@ export interface AnnualReportData {
 }
 
 class AnnualReportService {
-  private configService: ConfigService
+  private configService: ConfigService | null = null
 
   constructor() {
-    this.configService = new ConfigService()
+  }
+
+  private getConfigService(): ConfigService {
+    if (!this.configService) {
+      this.configService = new ConfigService()
+    }
+    return this.configService
+  }
+
+  private broadcastProgress(status: string, progress: number) {
+    try {
+      const { BrowserWindow } = require('electron')
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('annualReport:progress', { status, progress })
+        }
+      }
+    } catch { }
+  }
+
+  private reportProgress(status: string, progress: number, onProgress?: (status: string, progress: number) => void) {
+    if (onProgress) {
+      onProgress(status, progress)
+      return
+    }
+    this.broadcastProgress(status, progress)
   }
 
   private cleanAccountDirName(dirName: string): string {
@@ -92,9 +117,25 @@ class AnnualReportService {
   }
 
   private async ensureConnected(): Promise<{ success: boolean; cleanedWxid?: string; rawWxid?: string; error?: string }> {
-    const wxid = this.configService.get('myWxid')
-    const dbPath = this.configService.get('dbPath')
-    const decryptKey = this.configService.get('decryptKey')
+    const cfg = this.getConfigService()
+    const wxid = cfg.get('myWxid')
+    const dbPath = cfg.get('dbPath')
+    const decryptKey = cfg.get('decryptKey')
+    if (!wxid) return { success: false, error: '未配置微信ID' }
+    if (!dbPath) return { success: false, error: '未配置数据库路径' }
+    if (!decryptKey) return { success: false, error: '未配置解密密钥' }
+
+    const cleanedWxid = this.cleanAccountDirName(wxid)
+    const ok = await wcdbService.open(dbPath, decryptKey, cleanedWxid)
+    if (!ok) return { success: false, error: 'WCDB 打开失败' }
+    return { success: true, cleanedWxid, rawWxid: wxid }
+  }
+
+  private async ensureConnectedWithConfig(
+    dbPath: string,
+    decryptKey: string,
+    wxid: string
+  ): Promise<{ success: boolean; cleanedWxid?: string; rawWxid?: string; error?: string }> {
     if (!wxid) return { success: false, error: '未配置微信ID' }
     if (!dbPath) return { success: false, error: '未配置数据库路径' }
     if (!decryptKey) return { success: false, error: '未配置解密密钥' }
@@ -222,6 +263,11 @@ class AnnualReportService {
         return { success: false, error: '未找到消息会话' }
       }
 
+      const fastYears = await wcdbService.getAvailableYears(sessionIds)
+      if (fastYears.success && fastYears.data) {
+        return { success: true, data: fastYears.data }
+      }
+
       const years = new Set<number>()
       for (const sessionId of sessionIds) {
         const first = await this.getEdgeMessageTime(sessionId, true)
@@ -243,8 +289,24 @@ class AnnualReportService {
   }
 
   async generateReport(year: number): Promise<{ success: boolean; data?: AnnualReportData; error?: string }> {
+    const cfg = this.getConfigService()
+    const wxid = cfg.get('myWxid')
+    const dbPath = cfg.get('dbPath')
+    const decryptKey = cfg.get('decryptKey')
+    return this.generateReportWithConfig({ year, wxid, dbPath, decryptKey })
+  }
+
+  async generateReportWithConfig(params: {
+    year: number
+    wxid: string
+    dbPath: string
+    decryptKey: string
+    onProgress?: (status: string, progress: number) => void
+  }): Promise<{ success: boolean; data?: AnnualReportData; error?: string }> {
     try {
-      const conn = await this.ensureConnected()
+      const { year, wxid, dbPath, decryptKey, onProgress } = params
+      this.reportProgress('正在连接数据库...', 5, onProgress)
+      const conn = await this.ensureConnectedWithConfig(dbPath, decryptKey, wxid)
       if (!conn.success || !conn.cleanedWxid || !conn.rawWxid) return { success: false, error: conn.error }
 
       const cleanedWxid = conn.cleanedWxid
@@ -253,6 +315,8 @@ class AnnualReportService {
       if (sessionIds.length === 0) {
         return { success: false, error: '未找到消息会话' }
       }
+
+      this.reportProgress('加载会话列表...', 15, onProgress)
 
       const startTime = Math.floor(new Date(year, 0, 1).getTime() / 1000)
       const endTime = Math.floor(new Date(year, 11, 31, 23, 59, 59).getTime() / 1000)
@@ -272,13 +336,19 @@ class AnnualReportService {
 
       const CONVERSATION_GAP = 3600
 
-      const result = await wcdbService.getAggregateStats(sessionIds, startTime, endTime)
+      const result = await wcdbService.getAnnualReportStats(sessionIds, startTime, endTime)
       if (!result.success || !result.data) {
         return { success: false, error: result.error || '聚合统计失败' }
       }
 
       const d = result.data
       totalMessages = d.total
+      this.reportProgress('汇总基础统计...', 25, onProgress)
+
+      const totalMessagesForProgress = totalMessages > 0 ? totalMessages : sessionIds.length
+      let processedMessages = 0
+      let lastProgressSent = 0
+      let lastProgressAt = 0
 
       // 填充基础统计
       for (const [sid, stat] of Object.entries(d.sessions)) {
@@ -292,87 +362,192 @@ class AnnualReportService {
         monthlyStats.set(sid, mMap)
       }
 
-      // 填充全局分布
+      // 填充全局分布，并锁定峰值日期以减少逐日消息统计
+      let peakDayKey = ''
+      let peakDayCount = 0
       for (const [day, count] of Object.entries(d.daily)) {
-        dailyStats.set(day, count as number)
-      }
-
-      // 注意：原生层目前未返回交叉维度 heatmapData[weekday][hour]，
-      // 这里的 heatmapData 仍然需要通过下面的遍历来精确填充。
-
-      // 考虑到 Annual Report 需要一些复杂的序列特征（响应速度、对话发起）和文本特征（常用语），
-      // 我们仍然保留一次轻量级循环，但因为有了原生统计，我们可以分步进行，或者如果数据量极大则跳过某些步骤。
-      // 为保持功能完整，我们进行深度集成的轻量遍历：
-      for (const sessionId of sessionIds) {
-        const cursor = await wcdbService.openMessageCursor(sessionId, 1000, true, startTime, endTime)
-        if (!cursor.success || !cursor.cursor) continue
-
-        try {
-          let hasMore = true
-          while (hasMore) {
-            const batch = await wcdbService.fetchMessageBatch(cursor.cursor)
-            if (!batch.success || !batch.rows) break
-
-            for (const row of batch.rows) {
-              const createTime = parseInt(row.create_time || '0', 10)
-              if (!createTime) continue
-
-              const isSendRaw = row.computed_is_send ?? row.is_send ?? '0'
-              const isSent = parseInt(isSendRaw, 10) === 1
-              const localType = parseInt(row.local_type || row.type || '1', 10)
-              const content = this.decodeMessageContent(row.message_content, row.compress_content)
-
-              // 响应速度 & 对话发起
-              if (!conversationStarts.has(sessionId)) {
-                conversationStarts.set(sessionId, { initiated: 0, received: 0 })
-              }
-              const convStats = conversationStarts.get(sessionId)!
-              const lastMsg = lastMessageTime.get(sessionId)
-              if (!lastMsg || (createTime - lastMsg.time) > CONVERSATION_GAP) {
-                if (isSent) convStats.initiated++
-                else convStats.received++
-              } else if (lastMsg.isSent !== isSent) {
-                if (isSent && !lastMsg.isSent) {
-                  const responseTime = createTime - lastMsg.time
-                  if (responseTime > 0 && responseTime < 86400) {
-                    if (!responseTimeStats.has(sessionId)) responseTimeStats.set(sessionId, [])
-                    responseTimeStats.get(sessionId)!.push(responseTime)
-                  }
-                }
-              }
-              lastMessageTime.set(sessionId, { time: createTime, isSent })
-
-              // 常用语
-              if ((localType === 1 || localType === 244813135921) && isSent) {
-                const text = String(content).trim()
-                if (text.length >= 2 && text.length <= 20 &&
-                  !text.includes('http') && !text.includes('<') &&
-                  !text.startsWith('[') && !text.startsWith('<?xml')) {
-                  phraseCount.set(text, (phraseCount.get(text) || 0) + 1)
-                }
-              }
-
-              // 交叉维度补全
-              const dt = new Date(createTime * 1000)
-              const weekdayIndex = dt.getDay() === 0 ? 6 : dt.getDay() - 1
-              heatmapData[weekdayIndex][dt.getHours()]++
-
-              if (dt.getHours() >= 0 && dt.getHours() < 6) {
-                midnightStats.set(sessionId, (midnightStats.get(sessionId) || 0) + 1)
-              }
-
-              const dayKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-              if (!dailyContactStats.has(dayKey)) dailyContactStats.set(dayKey, new Map())
-              const dayContactMap = dailyContactStats.get(dayKey)!
-              dayContactMap.set(sessionId, (dayContactMap.get(sessionId) || 0) + 1)
-            }
-            hasMore = batch.hasMore === true
-            await new Promise(resolve => setImmediate(resolve))
-          }
-        } finally {
-          await wcdbService.closeMessageCursor(cursor.cursor)
+        const c = count as number
+        dailyStats.set(day, c)
+        if (c > peakDayCount) {
+          peakDayCount = c
+          peakDayKey = day
         }
       }
+
+      let useSqlExtras = false
+      let responseStatsFromSql: Record<string, { avg?: number; fastest?: number; count?: number }> | null = null
+      let topPhrasesFromSql: { phrase: string; count: number }[] | null = null
+
+      let peakDayBegin = 0
+      let peakDayEnd = 0
+      if (peakDayKey) {
+        const start = new Date(`${peakDayKey}T00:00:00`).getTime()
+        if (!Number.isNaN(start)) {
+          peakDayBegin = Math.floor(start / 1000)
+          peakDayEnd = peakDayBegin + 24 * 3600 - 1
+        }
+      }
+
+      const extras = await wcdbService.getAnnualReportExtras(sessionIds, startTime, endTime, peakDayBegin, peakDayEnd)
+      if (extras.success && extras.data) {
+        const extrasData = extras.data as any
+        const heatmap = extrasData.heatmap as number[][] | undefined
+        if (Array.isArray(heatmap) && heatmap.length === 7) {
+          for (let w = 0; w < 7; w++) {
+            if (Array.isArray(heatmap[w])) {
+              for (let h = 0; h < 24; h++) {
+                heatmapData[w][h] = heatmap[w][h] || 0
+              }
+            }
+          }
+        }
+
+        const midnight = extrasData.midnight as Record<string, number> | undefined
+        if (midnight) {
+          for (const [sid, count] of Object.entries(midnight)) {
+            midnightStats.set(sid, count as number)
+          }
+        }
+
+        const conversation = extrasData.conversation as Record<string, { initiated: number; received: number }> | undefined
+        if (conversation) {
+          for (const [sid, stats] of Object.entries(conversation)) {
+            conversationStarts.set(sid, { initiated: stats.initiated || 0, received: stats.received || 0 })
+          }
+        }
+
+        responseStatsFromSql = extrasData.response || null
+
+        const peakDayCounts = extrasData.peakDay as Record<string, number> | undefined
+        if (peakDayKey && peakDayCounts) {
+          const dayMap = new Map<string, number>()
+          for (const [sid, count] of Object.entries(peakDayCounts)) {
+            dayMap.set(sid, count as number)
+          }
+          if (dayMap.size > 0) {
+            dailyContactStats.set(peakDayKey, dayMap)
+          }
+        }
+
+        const sqlPhrases = extrasData.topPhrases as { phrase: string; count: number }[] | undefined
+        if (Array.isArray(sqlPhrases) && sqlPhrases.length > 0) {
+          topPhrasesFromSql = sqlPhrases
+        }
+
+        useSqlExtras = true
+      }
+
+      if (!useSqlExtras) {
+        // 注意：原生层目前未返回交叉维度 heatmapData[weekday][hour]，
+        // 这里的 heatmapData 仍然需要通过下面的遍历来精确填充。
+
+        // 考虑到 Annual Report 需要一些复杂的序列特征（响应速度、对话发起）和文本特征（常用语），
+        // 我们仍然保留一次轻量级循环，但因为有了原生统计，我们可以分步进行，或者如果数据量极大则跳过某些步骤。
+        // 为保持功能完整，我们进行深度集成的轻量遍历：
+        for (let i = 0; i < sessionIds.length; i++) {
+          const sessionId = sessionIds[i]
+          const cursor = await wcdbService.openMessageCursorLite(sessionId, 1000, true, startTime, endTime)
+          if (!cursor.success || !cursor.cursor) continue
+
+          try {
+            let hasMore = true
+            while (hasMore) {
+              const batch = await wcdbService.fetchMessageBatch(cursor.cursor)
+              if (!batch.success || !batch.rows) break
+
+              for (const row of batch.rows) {
+                const createTime = parseInt(row.create_time || '0', 10)
+                if (!createTime) continue
+
+                const isSendRaw = row.computed_is_send ?? row.is_send ?? '0'
+                const isSent = parseInt(isSendRaw, 10) === 1
+                const localType = parseInt(row.local_type || row.type || '1', 10)
+
+                // 响应速度 & 对话发起
+                if (!conversationStarts.has(sessionId)) {
+                  conversationStarts.set(sessionId, { initiated: 0, received: 0 })
+                }
+                const convStats = conversationStarts.get(sessionId)!
+                const lastMsg = lastMessageTime.get(sessionId)
+                if (!lastMsg || (createTime - lastMsg.time) > CONVERSATION_GAP) {
+                  if (isSent) convStats.initiated++
+                  else convStats.received++
+                } else if (lastMsg.isSent !== isSent) {
+                  if (isSent && !lastMsg.isSent) {
+                    const responseTime = createTime - lastMsg.time
+                    if (responseTime > 0 && responseTime < 86400) {
+                      if (!responseTimeStats.has(sessionId)) responseTimeStats.set(sessionId, [])
+                      responseTimeStats.get(sessionId)!.push(responseTime)
+                    }
+                  }
+                }
+                lastMessageTime.set(sessionId, { time: createTime, isSent })
+
+                // 常用语
+                if ((localType === 1 || localType === 244813135921) && isSent) {
+                  const content = this.decodeMessageContent(row.message_content, row.compress_content)
+                  const text = String(content).trim()
+                  if (text.length >= 2 && text.length <= 20 &&
+                    !text.includes('http') && !text.includes('<') &&
+                    !text.startsWith('[') && !text.startsWith('<?xml')) {
+                    phraseCount.set(text, (phraseCount.get(text) || 0) + 1)
+                  }
+                }
+
+                // 交叉维度补全
+                const dt = new Date(createTime * 1000)
+                const weekdayIndex = dt.getDay() === 0 ? 6 : dt.getDay() - 1
+                heatmapData[weekdayIndex][dt.getHours()]++
+
+                if (dt.getHours() >= 0 && dt.getHours() < 6) {
+                  midnightStats.set(sessionId, (midnightStats.get(sessionId) || 0) + 1)
+                }
+
+                if (peakDayKey) {
+                  const dayKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+                  if (dayKey === peakDayKey) {
+                    if (!dailyContactStats.has(dayKey)) dailyContactStats.set(dayKey, new Map())
+                    const dayContactMap = dailyContactStats.get(dayKey)!
+                    dayContactMap.set(sessionId, (dayContactMap.get(sessionId) || 0) + 1)
+                  }
+                }
+
+                if (totalMessagesForProgress > 0) {
+                  processedMessages++
+                }
+              }
+              hasMore = batch.hasMore === true
+
+              const now = Date.now()
+              if (now - lastProgressAt > 200) {
+                let progress = 30
+                if (totalMessagesForProgress > 0) {
+                  const ratio = Math.min(1, processedMessages / totalMessagesForProgress)
+                  progress = 30 + Math.floor(ratio * 50)
+                } else {
+                  const ratio = Math.min(1, (i + 1) / sessionIds.length)
+                  progress = 30 + Math.floor(ratio * 50)
+                }
+                if (progress > lastProgressSent) {
+                  lastProgressSent = progress
+                  lastProgressAt = now
+                  let label = `${i + 1}/${sessionIds.length}`
+                  if (totalMessagesForProgress > 0) {
+                    const done = Math.min(processedMessages, totalMessagesForProgress)
+                    label = `${done}/${totalMessagesForProgress}`
+                  }
+                  this.reportProgress(`分析聊天记录... (${label})`, progress, onProgress)
+                }
+              }
+              await new Promise(resolve => setImmediate(resolve))
+            }
+          } finally {
+            await wcdbService.closeMessageCursor(cursor.cursor)
+          }
+        }
+      }
+
+      this.reportProgress('整理联系人信息...', 85, onProgress)
 
       const contactIds = Array.from(contactStats.keys())
       const [displayNames, avatarUrls] = await Promise.all([
@@ -519,35 +694,66 @@ class AnnualReportService {
         }
       }
 
+      this.reportProgress('生成报告...', 95, onProgress)
+
       let responseSpeed: AnnualReportData['responseSpeed'] = null
-      const allResponseTimes: number[] = []
-      let fastestFriendId = ''
-      let fastestAvgTime = Infinity
-      for (const [sessionId, times] of responseTimeStats.entries()) {
-        if (times.length >= 10) {
-          allResponseTimes.push(...times)
-          const avgTime = times.reduce((a, b) => a + b, 0) / times.length
-          if (avgTime < fastestAvgTime) {
-            fastestAvgTime = avgTime
+      if (responseStatsFromSql && Object.keys(responseStatsFromSql).length > 0) {
+        let totalSum = 0
+        let totalCount = 0
+        let fastestFriendId = ''
+        let fastestAvgTime = Infinity
+        for (const [sessionId, stats] of Object.entries(responseStatsFromSql)) {
+          const count = stats.count || 0
+          const avg = stats.avg || 0
+          if (count <= 0 || avg <= 0) continue
+          totalSum += avg * count
+          totalCount += count
+          if (avg < fastestAvgTime) {
+            fastestAvgTime = avg
             fastestFriendId = sessionId
           }
         }
-      }
-      if (allResponseTimes.length > 0) {
-        const avgResponseTime = allResponseTimes.reduce((a, b) => a + b, 0) / allResponseTimes.length
-        const fastestInfo = contactInfoMap.get(fastestFriendId)
-        responseSpeed = {
-          avgResponseTime: Math.round(avgResponseTime),
-          fastestFriend: fastestInfo?.displayName || fastestFriendId,
-          fastestTime: Math.round(fastestAvgTime)
+        if (totalCount > 0) {
+          const avgResponseTime = totalSum / totalCount
+          const fastestInfo = contactInfoMap.get(fastestFriendId)
+          responseSpeed = {
+            avgResponseTime: Math.round(avgResponseTime),
+            fastestFriend: fastestInfo?.displayName || fastestFriendId,
+            fastestTime: Math.round(fastestAvgTime)
+          }
+        }
+      } else {
+        const allResponseTimes: number[] = []
+        let fastestFriendId = ''
+        let fastestAvgTime = Infinity
+        for (const [sessionId, times] of responseTimeStats.entries()) {
+          if (times.length >= 10) {
+            allResponseTimes.push(...times)
+            const avgTime = times.reduce((a, b) => a + b, 0) / times.length
+            if (avgTime < fastestAvgTime) {
+              fastestAvgTime = avgTime
+              fastestFriendId = sessionId
+            }
+          }
+        }
+        if (allResponseTimes.length > 0) {
+          const avgResponseTime = allResponseTimes.reduce((a, b) => a + b, 0) / allResponseTimes.length
+          const fastestInfo = contactInfoMap.get(fastestFriendId)
+          responseSpeed = {
+            avgResponseTime: Math.round(avgResponseTime),
+            fastestFriend: fastestInfo?.displayName || fastestFriendId,
+            fastestTime: Math.round(fastestAvgTime)
+          }
         }
       }
 
-      const topPhrases = Array.from(phraseCount.entries())
-        .filter(([_, count]) => count >= 2)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 32)
-        .map(([phrase, count]) => ({ phrase, count }))
+      const topPhrases = topPhrasesFromSql && topPhrasesFromSql.length > 0
+        ? topPhrasesFromSql
+        : Array.from(phraseCount.entries())
+          .filter(([_, count]) => count >= 2)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 32)
+          .map(([phrase, count]) => ({ phrase, count }))
 
       const reportData: AnnualReportData = {
         year,

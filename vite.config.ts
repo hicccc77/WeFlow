@@ -25,6 +25,17 @@ export default defineConfig({
         }
       },
       {
+        entry: 'electron/annualReportWorker.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['koffi']
+            }
+          }
+        }
+      },
+      {
         entry: 'electron/preload.ts',
         onstart(options) {
           options.reload()

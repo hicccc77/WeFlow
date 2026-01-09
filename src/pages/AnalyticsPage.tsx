@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Users, Clock, MessageSquare, Send, Inbox, Calendar, Loader2, RefreshCw, User, Medal } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import { useAnalyticsStore } from '../stores/analyticsStore'
+import { useThemeStore } from '../stores/themeStore'
 import './AnalyticsPage.scss'
 import './DataManagementPage.scss'
 
@@ -11,6 +12,7 @@ function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
 
+  const themeMode = useThemeStore((state) => state.themeMode)
   const { statistics, rankings, timeDistribution, isLoaded, setStatistics, setRankings, setTimeDistribution, markLoaded } = useAnalyticsStore()
   const loadData = async (forceRefresh = false) => {
     if (isLoaded && !forceRefresh) return
@@ -68,6 +70,17 @@ function AnalyticsPage() {
     return num.toLocaleString()
   }
 
+  const getChartLabelColors = () => {
+    if (typeof window === 'undefined') {
+      return { text: '#333333', line: '#999999' }
+    }
+    const styles = getComputedStyle(document.documentElement)
+    const text = styles.getPropertyValue('--text-primary').trim() || '#333333'
+    const line = styles.getPropertyValue('--text-tertiary').trim() || '#999999'
+    return { text, line }
+  }
+
+  const chartLabelColors = getChartLabelColors()
 
   const getTypeChartOption = () => {
     if (!statistics) return {}
@@ -81,7 +94,54 @@ function AnalyticsPage() {
     ].filter(d => d.value > 0)
     return {
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      series: [{ type: 'pie', radius: ['40%', '70%'], avoidLabelOverlap: false, itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 }, label: { show: true, formatter: '{b}\n{d}%' }, data }]
+      series: [{
+        type: 'pie',
+        radius: ['40%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 8, borderColor: 'transparent', borderWidth: 0 },
+        label: {
+          show: true,
+          formatter: '{b}\n{d}%',
+          textStyle: {
+            color: chartLabelColors.text,
+            textShadowBlur: 0,
+            textShadowColor: 'transparent',
+            textShadowOffsetX: 0,
+            textShadowOffsetY: 0,
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
+        },
+        labelLine: {
+          lineStyle: {
+            color: chartLabelColors.line,
+            shadowBlur: 0,
+            shadowColor: 'transparent',
+          },
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 0,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+          },
+          label: {
+            color: chartLabelColors.text,
+            textShadowBlur: 0,
+            textShadowColor: 'transparent',
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
+          labelLine: {
+            lineStyle: {
+              color: chartLabelColors.line,
+              shadowBlur: 0,
+              shadowColor: 'transparent',
+            },
+          },
+        },
+        data,
+      }]
     }
   }
 
@@ -93,7 +153,48 @@ function AnalyticsPage() {
         type: 'pie', radius: ['50%', '70%'], data: [
           { name: '发送', value: statistics.sentMessages, itemStyle: { color: '#07c160' } },
           { name: '接收', value: statistics.receivedMessages, itemStyle: { color: '#1989fa' } }
-        ], label: { show: true, formatter: '{b}: {c}' }
+        ],
+        label: {
+          show: true,
+          formatter: '{b}: {c}',
+          textStyle: {
+            color: chartLabelColors.text,
+            textShadowBlur: 0,
+            textShadowColor: 'transparent',
+            textShadowOffsetX: 0,
+            textShadowOffsetY: 0,
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
+        },
+        labelLine: {
+          lineStyle: {
+            color: chartLabelColors.line,
+            shadowBlur: 0,
+            shadowColor: 'transparent',
+          },
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 0,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+          },
+          label: {
+            color: chartLabelColors.text,
+            textShadowBlur: 0,
+            textShadowColor: 'transparent',
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
+          labelLine: {
+            lineStyle: {
+              color: chartLabelColors.line,
+              shadowBlur: 0,
+              shadowColor: 'transparent',
+            },
+          },
+        },
       }]
     }
   }

@@ -86,9 +86,12 @@ export interface ElectronAPI {
       }
       error?: string
     }>
+    getImageData: (sessionId: string, msgId: string) => Promise<{ success: boolean; data?: string; error?: string }>
+    getVoiceData: (sessionId: string, msgId: string) => Promise<{ success: boolean; data?: string; error?: string }>
   }
   image: {
-    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => Promise<{ success: boolean; localPath?: string; error?: string }>
+    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => Promise<{ success: boolean; localPath?: string; error?: string }>
+    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => Promise<{ success: boolean; localPath?: string; hasUpdate?: boolean; error?: string }>
   }
   analytics: {
     getOverallStatistics: () => Promise<{
@@ -250,13 +253,14 @@ export interface ElectronAPI {
           fastestFriend: string
           fastestTime: number
         } | null
-        topPhrases: Array<{
-          phrase: string
-          count: number
-        }>
-      }
-      error?: string
+      topPhrases: Array<{
+        phrase: string
+        count: number
+      }>
+    }
+    error?: string
     }>
+    onProgress: (callback: (payload: { status: string; progress: number }) => void) => () => void
   }
   export: {
     exportSessions: (sessionIds: string[], outputDir: string, options: ExportOptions) => Promise<{

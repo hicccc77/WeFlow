@@ -1,13 +1,14 @@
 import { app } from 'electron'
-import { dirname, extname, join } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import { pathToFileURL } from 'url'
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs'
-import { readFile, writeFile } from 'fs/promises'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import crypto from 'crypto'
 import Database from 'better-sqlite3'
 import { ConfigService } from './config'
 
 type DecryptResult = { success: boolean; localPath?: string; error?: string }
+type CacheMeta = { sourceDatPath?: string; isThumbnail?: boolean; hasX?: boolean; updatedAt?: number }
 
 type HardlinkState = {
   db: Database.Database
@@ -22,15 +23,60 @@ export class ImageDecryptService {
   private pending = new Map<string, Promise<DecryptResult>>()
   private readonly defaultV1AesKey = 'cfcd208495d565ef'
 
-  async decryptImage(payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }): Promise<DecryptResult> {
+  async resolveCachedImage(payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }): Promise<DecryptResult & { hasUpdate?: boolean }> {
+    const cacheKeys = this.getCacheKeys(payload)
+    const cacheKey = cacheKeys[0]
+    if (!cacheKey) {
+      return { success: false, error: '缺少图片标识' }
+    }
+
+    for (const key of cacheKeys) {
+      const cached = this.resolvedCache.get(key)
+      if (cached && existsSync(cached) && this.isImageFile(cached)) {
+        const dataUrl = this.fileToDataUrl(cached)
+        const hasUpdate = await this.checkHasUpdate(payload, key, cached)
+        return { success: true, localPath: dataUrl || this.filePathToUrl(cached), hasUpdate }
+      }
+      if (cached && !this.isImageFile(cached)) {
+        this.resolvedCache.delete(key)
+      }
+    }
+
+    for (const key of cacheKeys) {
+      const existing = this.findCachedOutput(key)
+      if (existing) {
+        this.cacheResolvedPaths(key, payload.imageMd5, payload.imageDatName, existing)
+        const dataUrl = this.fileToDataUrl(existing)
+        const hasUpdate = await this.checkHasUpdate(payload, key, existing)
+        return { success: true, localPath: dataUrl || this.filePathToUrl(existing), hasUpdate }
+      }
+    }
+
+    return { success: false, error: '未找到缓存图片' }
+  }
+
+  async decryptImage(payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }): Promise<DecryptResult> {
     const cacheKey = payload.imageMd5 || payload.imageDatName
     if (!cacheKey) {
       return { success: false, error: '缺少图片标识' }
     }
 
-    const cached = this.resolvedCache.get(cacheKey)
-    if (cached && existsSync(cached)) {
-      return { success: true, localPath: pathToFileURL(cached).toString() }
+    console.info('[ImageDecrypt] request', {
+      sessionId: payload.sessionId,
+      imageMd5: payload.imageMd5,
+      imageDatName: payload.imageDatName
+    })
+
+    if (!payload.force) {
+      const cached = this.resolvedCache.get(cacheKey)
+      if (cached && existsSync(cached) && this.isImageFile(cached)) {
+        console.info('[ImageDecrypt] cache hit', cached)
+        const dataUrl = this.fileToDataUrl(cached)
+        return { success: true, localPath: dataUrl || this.filePathToUrl(cached) }
+      }
+      if (cached && !this.isImageFile(cached)) {
+        this.resolvedCache.delete(cacheKey)
+      }
     }
 
     const pending = this.pending.get(cacheKey)
@@ -46,7 +92,7 @@ export class ImageDecryptService {
   }
 
   private async decryptImageInternal(
-    payload: { sessionId?: string; imageMd5?: string; imageDatName?: string },
+    payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean },
     cacheKey: string
   ): Promise<DecryptResult> {
     try {
@@ -65,25 +111,47 @@ export class ImageDecryptService {
         accountDir,
         payload.imageMd5,
         payload.imageDatName,
-        payload.sessionId
+        payload.sessionId,
+        { allowThumbnail: !payload.force, skipResolvedCache: Boolean(payload.force) }
       )
+      if (!datPath && payload.force) {
+        const fallback = await this.resolveDatPath(
+          accountDir,
+          payload.imageMd5,
+          payload.imageDatName,
+          payload.sessionId,
+          { allowThumbnail: true, skipResolvedCache: true }
+        )
+        if (fallback) {
+          console.info('[ImageDecrypt] fallback to thumbnail', { cacheKey, path: fallback })
+          return this.decryptImageInternal({ ...payload, force: false }, cacheKey)
+        }
+      }
       if (!datPath) {
+        console.warn('[ImageDecrypt] dat not found', { cacheKey, accountDir })
         return { success: false, error: '未找到图片文件' }
       }
 
       if (!extname(datPath).toLowerCase().includes('dat')) {
-        this.resolvedCache.set(cacheKey, datPath)
-        return { success: true, localPath: pathToFileURL(datPath).toString() }
+        console.info('[ImageDecrypt] direct image hit', datPath)
+        this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, datPath)
+        const dataUrl = this.fileToDataUrl(datPath)
+        return { success: true, localPath: dataUrl || this.filePathToUrl(datPath) }
       }
 
-      const existing = this.findCachedOutput(cacheKey)
-      if (existing) {
-        this.resolvedCache.set(cacheKey, existing)
-        return { success: true, localPath: pathToFileURL(existing).toString() }
+      if (!payload.force) {
+        const existing = this.findCachedOutput(cacheKey)
+        if (existing) {
+          console.info('[ImageDecrypt] cache file hit', existing)
+          this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, existing)
+          const dataUrl = this.fileToDataUrl(existing)
+          return { success: true, localPath: dataUrl || this.filePathToUrl(existing) }
+        }
       }
 
       const xorKey = this.configService.get('imageXorKey')
       if (!xorKey) {
+        console.warn('[ImageDecrypt] missing xor key')
         return { success: false, error: '未配置图片 XOR 密钥' }
       }
 
@@ -93,11 +161,15 @@ export class ImageDecryptService {
       const decrypted = await this.decryptDatAuto(datPath, xorKey, aesKey)
       const ext = this.detectImageExtension(decrypted) || '.jpg'
 
-      const outputPath = join(this.getCacheRoot(), `${cacheKey}${ext}`)
+      const outputPath = this.getCacheOutputPath(cacheKey, ext, this.isThumbnailPath(datPath))
       await writeFile(outputPath, decrypted)
-      this.resolvedCache.set(cacheKey, outputPath)
-      return { success: true, localPath: pathToFileURL(outputPath).toString() }
+      console.info('[ImageDecrypt] decrypted', outputPath)
+      this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, outputPath)
+      await this.writeCacheMeta(cacheKey, datPath)
+      const dataUrl = this.bufferToDataUrl(decrypted, ext)
+      return { success: true, localPath: dataUrl || this.filePathToUrl(outputPath) }
     } catch (e) {
+      console.error('[ImageDecrypt] failed', e)
       return { success: false, error: String(e) }
     }
   }
@@ -164,22 +236,95 @@ export class ImageDecryptService {
     accountDir: string,
     imageMd5?: string,
     imageDatName?: string,
-    sessionId?: string
+    sessionId?: string,
+    options?: { allowThumbnail?: boolean; skipResolvedCache?: boolean }
   ): Promise<string | null> {
+    const allowThumbnail = options?.allowThumbnail ?? true
+    const skipResolvedCache = options?.skipResolvedCache ?? false
     if (imageMd5) {
       const hardlinkPath = this.resolveHardlinkPath(accountDir, imageMd5, sessionId)
-      if (hardlinkPath) return hardlinkPath
+      if (hardlinkPath) {
+        if (allowThumbnail || !this.isThumbnailPath(hardlinkPath)) {
+          console.info('[ImageDecrypt] hardlink hit', { imageMd5, path: hardlinkPath })
+          return hardlinkPath
+        }
+      }
+    }
+
+    if (!imageMd5 && imageDatName && this.looksLikeMd5(imageDatName)) {
+      const hardlinkPath = this.resolveHardlinkPath(accountDir, imageDatName, sessionId)
+      if (hardlinkPath) {
+        if (allowThumbnail || !this.isThumbnailPath(hardlinkPath)) {
+          console.info('[ImageDecrypt] hardlink hit', { imageMd5: imageDatName, path: hardlinkPath })
+          return hardlinkPath
+        }
+      }
     }
 
     if (!imageDatName) return null
-    const cached = this.resolvedCache.get(imageDatName)
-    if (cached && existsSync(cached)) return cached
+    if (!skipResolvedCache) {
+      const cached = this.resolvedCache.get(imageDatName)
+      if (cached && existsSync(cached)) {
+        if (allowThumbnail || !this.isThumbnailPath(cached)) return cached
+      }
+    }
 
-    const datPath = await this.searchDatFile(accountDir, imageDatName)
+    const datPath = await this.searchDatFile(accountDir, imageDatName, allowThumbnail)
     if (datPath) {
       this.resolvedCache.set(imageDatName, datPath)
     }
     return datPath
+  }
+
+  private async resolveThumbnailDatPath(
+    accountDir: string,
+    imageMd5?: string,
+    imageDatName?: string,
+    sessionId?: string
+  ): Promise<string | null> {
+    if (imageMd5) {
+      const hardlinkPath = this.resolveHardlinkPath(accountDir, imageMd5, sessionId)
+      if (hardlinkPath && this.isThumbnailPath(hardlinkPath)) return hardlinkPath
+    }
+
+    if (!imageMd5 && imageDatName && this.looksLikeMd5(imageDatName)) {
+      const hardlinkPath = this.resolveHardlinkPath(accountDir, imageDatName, sessionId)
+      if (hardlinkPath && this.isThumbnailPath(hardlinkPath)) return hardlinkPath
+    }
+
+    if (!imageDatName) return null
+    return this.searchDatFile(accountDir, imageDatName, true, true)
+  }
+
+  private async checkHasUpdate(
+    payload: { sessionId?: string; imageMd5?: string; imageDatName?: string },
+    cacheKey: string,
+    cachedPath: string
+  ): Promise<boolean> {
+    if (!cachedPath || !existsSync(cachedPath)) return false
+    const meta = this.readCacheMeta(cacheKey)
+    const isThumbnail = meta?.isThumbnail ?? this.isThumbnailPath(cachedPath)
+    if (!isThumbnail) return false
+
+    const wxid = this.configService.get('myWxid')
+    const dbPath = this.configService.get('dbPath')
+    if (!wxid || !dbPath) return false
+    const accountDir = this.resolveAccountDir(dbPath, wxid)
+    if (!accountDir) return false
+
+    const preferred = await this.resolveDatPath(
+      accountDir,
+      payload.imageMd5,
+      payload.imageDatName,
+      payload.sessionId,
+      { allowThumbnail: false, skipResolvedCache: true }
+    )
+    if (!preferred) return false
+    return true
+  }
+
+  private looksLikeMd5(value: string): boolean {
+    return /^[a-fA-F0-9]{16,32}$/.test(value)
   }
 
   private resolveHardlinkPath(accountDir: string, md5: string, sessionId?: string): string | null {
@@ -192,20 +337,26 @@ export class ImageDecryptService {
 
       const row = state.db
         .prepare(`SELECT dir1, dir2, file_name FROM ${state.imageTable} WHERE md5 = ? LIMIT 1`)
-        .get(md5)
+        .get(md5) as { dir1?: string; dir2?: string; file_name?: string } | undefined
 
       if (!row) return null
       const dir1 = row.dir1 as string | undefined
       const dir2 = row.dir2 as string | undefined
       const fileName = row.file_name as string | undefined
       if (!dir1 || !dir2 || !fileName) return null
+      const lowerFileName = fileName.toLowerCase()
+      if (lowerFileName.endsWith('.dat')) {
+        const baseLower = lowerFileName.slice(0, -4)
+        if (!this.isLikelyImageDatBase(baseLower)) return null
+        if (!this.hasXVariant(baseLower)) return null
+      }
 
       let dirName = dir2
       if (state.dirTable && sessionId) {
         try {
           const dirRow = state.db
             .prepare(`SELECT dir_name FROM ${state.dirTable} WHERE dir_id = ? AND username = ? LIMIT 1`)
-            .get(dir2, sessionId)
+            .get(dir2, sessionId) as { dir_name?: string } | undefined
           if (dirRow?.dir_name) dirName = dirRow.dir_name as string
         } catch {}
       }
@@ -226,10 +377,10 @@ export class ImageDecryptService {
     const db = new Database(hardlinkPath, { readonly: true, fileMustExist: true })
     const imageRow = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'image_hardlink_info%' ORDER BY name DESC LIMIT 1")
-      .get()
+      .get() as { name?: string } | undefined
     const dirRow = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'dir2id%' LIMIT 1")
-      .get()
+      .get() as { name?: string } | undefined
     const state: HardlinkState = {
       db,
       imageTable: imageRow?.name as string | undefined,
@@ -239,30 +390,39 @@ export class ImageDecryptService {
     return state
   }
 
-  private async searchDatFile(accountDir: string, datName: string): Promise<string | null> {
+  private async searchDatFile(
+    accountDir: string,
+    datName: string,
+    allowThumbnail = true,
+    thumbOnly = false
+  ): Promise<string | null> {
     const key = `${accountDir}|${datName}`
     const cached = this.resolvedCache.get(key)
-    if (cached && existsSync(cached)) return cached
+    if (cached && existsSync(cached)) {
+      if (allowThumbnail || !this.isThumbnailPath(cached)) return cached
+    }
 
-    const roots = [
-      join(accountDir, 'FileStorage', 'Image'),
-      join(accountDir, 'FileStorage', 'Image2')
-    ]
-    for (const root of roots) {
-      if (!existsSync(root)) continue
-      const found = this.walkForDat(root, datName.toLowerCase())
-      if (found) {
-        this.resolvedCache.set(key, found)
-        return found
-      }
+    const root = join(accountDir, 'msg', 'attach')
+    console.info('[ImageDecrypt] search roots', { datName, roots: [root] })
+    if (!existsSync(root)) return null
+    const found = this.walkForDat(root, datName.toLowerCase(), 8, allowThumbnail, thumbOnly)
+    if (found) {
+      console.info('[ImageDecrypt] dat found', { datName, root, path: found })
+      this.resolvedCache.set(key, found)
+      return found
     }
     return null
   }
 
-  private walkForDat(root: string, datName: string): string | null {
+  private walkForDat(
+    root: string,
+    datName: string,
+    maxDepth = 4,
+    allowThumbnail = true,
+    thumbOnly = false
+  ): string | null {
     const stack: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }]
-    const maxDepth = 4
-    let best: { score: number; path: string } | null = null
+    const candidates: Array<{ score: number; path: string; isThumb: boolean; hasX: boolean }> = []
 
     while (stack.length) {
       const current = stack.pop() as { dir: string; depth: number }
@@ -288,25 +448,113 @@ export class ImageDecryptService {
         }
         const lower = entry.toLowerCase()
         if (!lower.endsWith('.dat')) continue
+        const baseLower = lower.slice(0, -4)
+        if (!this.isLikelyImageDatBase(baseLower)) continue
+        if (!this.hasXVariant(baseLower)) continue
         if (!this.matchesDatName(lower, datName)) continue
+        const isThumb = this.isThumbnailDat(lower)
+        if (!allowThumbnail && isThumb) continue
+        if (thumbOnly && !isThumb) continue
         const score = this.scoreDatName(lower)
-        if (!best || score > best.score) {
-          best = { score, path: entryPath }
-        }
+        candidates.push({
+          score,
+          path: entryPath,
+          isThumb,
+          hasX: this.hasXVariant(baseLower)
+        })
+      }
+    }
+    if (!candidates.length) return null
+
+    const withX = candidates.filter((item) => item.hasX)
+    const basePool = withX.length ? withX : candidates
+    const nonThumb = basePool.filter((item) => !item.isThumb)
+    const finalPool = thumbOnly ? basePool : (nonThumb.length ? nonThumb : basePool)
+
+    let best: { score: number; path: string } | null = null
+    for (const item of finalPool) {
+      if (!best || item.score > best.score) {
+        best = { score: item.score, path: item.path }
       }
     }
     return best?.path ?? null
   }
 
   private matchesDatName(fileName: string, datName: string): boolean {
-    const base = fileName.toLowerCase()
+    const lower = fileName.toLowerCase()
+    const base = lower.endsWith('.dat') ? lower.slice(0, -4) : lower
+    const normalizedBase = this.normalizeDatBase(base)
+    const normalizedTarget = this.normalizeDatBase(datName.toLowerCase())
+    if (normalizedBase === normalizedTarget) return true
     const pattern = new RegExp(`^${datName}(?:[._][a-z])?\\.dat$`)
-    return pattern.test(base)
+    if (pattern.test(lower)) return true
+    return lower.endsWith('.dat') && lower.includes(datName)
   }
 
   private scoreDatName(fileName: string): number {
     if (fileName.includes('.t.dat') || fileName.includes('_t.dat')) return 1
+    if (fileName.includes('.c.dat') || fileName.includes('_c.dat')) return 1
     return 2
+  }
+
+  private isThumbnailDat(fileName: string): boolean {
+    return fileName.includes('.t.dat') || fileName.includes('_t.dat')
+  }
+
+  private hasXVariant(baseLower: string): boolean {
+    return /[._][a-z]$/.test(baseLower)
+  }
+
+  private isThumbnailPath(filePath: string): boolean {
+    const lower = basename(filePath).toLowerCase()
+    if (this.isThumbnailDat(lower)) return true
+    const ext = extname(lower)
+    const base = ext ? lower.slice(0, -ext.length) : lower
+    return base.endsWith('_t')
+  }
+
+  private hasImageVariantSuffix(baseLower: string): boolean {
+    const suffixes = [
+      '.b',
+      '.h',
+      '.t',
+      '.c',
+      '.w',
+      '.l',
+      '.x',
+      '_b',
+      '_h',
+      '_t',
+      '_c',
+      '_w',
+      '_l',
+      '_x'
+    ]
+    return suffixes.some((suffix) => baseLower.endsWith(suffix))
+  }
+
+  private isLikelyImageDatBase(baseLower: string): boolean {
+    return this.hasImageVariantSuffix(baseLower) || this.looksLikeMd5(baseLower)
+  }
+
+  private normalizeDatBase(name: string): string {
+    let base = name.toLowerCase()
+    if (base.endsWith('.dat') || base.endsWith('.jpg')) {
+      base = base.slice(0, -4)
+    }
+    let changed = true
+    const suffixes = ['.b', '.h', '.t', '.c', '.w', '.l', '.x', '_b', '_h', '_t', '_c', '_w', '_l', '_x']
+    while (changed) {
+      changed = false
+      for (const suffix of suffixes) {
+        if (base.endsWith(suffix)) {
+          base = base.slice(0, -suffix.length)
+          changed = true
+          break
+        }
+      }
+    }
+    return base
   }
 
   private findCachedOutput(cacheKey: string): string | null {
@@ -316,12 +564,69 @@ export class ImageDecryptService {
       const candidate = join(root, `${cacheKey}${ext}`)
       if (existsSync(candidate)) return candidate
     }
+    for (const ext of extensions) {
+      const candidate = join(root, `${cacheKey}_t${ext}`)
+      if (existsSync(candidate)) return candidate
+    }
     return null
+  }
+
+  private getCacheOutputPath(cacheKey: string, ext: string, isThumbnail: boolean): string {
+    const suffix = isThumbnail ? '_t' : ''
+    return join(this.getCacheRoot(), `${cacheKey}${suffix}${ext}`)
+  }
+
+  private cacheResolvedPaths(cacheKey: string, imageMd5: string | undefined, imageDatName: string | undefined, outputPath: string): void {
+    this.resolvedCache.set(cacheKey, outputPath)
+    if (imageMd5 && imageMd5 !== cacheKey) {
+      this.resolvedCache.set(imageMd5, outputPath)
+    }
+    if (imageDatName && imageDatName !== cacheKey && imageDatName !== imageMd5) {
+      this.resolvedCache.set(imageDatName, outputPath)
+    }
+  }
+
+  private getCacheKeys(payload: { imageMd5?: string; imageDatName?: string }): string[] {
+    const keys: string[] = []
+    if (payload.imageMd5) keys.push(payload.imageMd5)
+    if (payload.imageDatName && payload.imageDatName !== payload.imageMd5) keys.push(payload.imageDatName)
+    return keys
+  }
+
+  private getCacheMetaPath(cacheKey: string): string {
+    return join(this.getCacheRoot(), `${cacheKey}.meta.json`)
+  }
+
+  private readCacheMeta(cacheKey: string): CacheMeta | null {
+    try {
+      const metaPath = this.getCacheMetaPath(cacheKey)
+      if (!existsSync(metaPath)) return null
+      const raw = readFileSync(metaPath, 'utf8')
+      return JSON.parse(raw) as CacheMeta
+    } catch {
+      return null
+    }
+  }
+
+  private async writeCacheMeta(cacheKey: string, datPath: string): Promise<void> {
+    try {
+      const lower = basename(datPath).toLowerCase()
+      const baseLower = lower.endsWith('.dat') ? lower.slice(0, -4) : lower
+      const meta: CacheMeta = {
+        sourceDatPath: datPath,
+        isThumbnail: this.isThumbnailDat(lower),
+        hasX: this.hasXVariant(baseLower),
+        updatedAt: Date.now()
+      }
+      await writeFile(this.getCacheMetaPath(cacheKey), JSON.stringify(meta))
+    } catch {}
   }
 
   private getCacheRoot(): string {
     const configured = this.configService.get('cachePath')
-    const root = configured ? join(configured, 'Images') : join(app.getPath('userData'), 'cache', 'images')
+    const root = configured
+      ? join(configured, 'Images')
+      : join(app.getPath('documents'), 'WeFlow', 'Images')
     if (!existsSync(root)) {
       mkdirSync(root, { recursive: true })
     }
@@ -331,31 +636,30 @@ export class ImageDecryptService {
   private resolveAesKey(aesKeyRaw: string): Buffer | null {
     const trimmed = aesKeyRaw?.trim() ?? ''
     if (!trimmed) return null
-    if (/^[0-9a-fA-F]{32}$/.test(trimmed)) {
-      return Buffer.from(trimmed, 'hex')
-    }
-    if (trimmed.length >= 16) {
-      return Buffer.from(trimmed, 'ascii').subarray(0, 16)
-    }
-    return null
+    return this.asciiKey16(trimmed)
   }
 
   private async decryptDatAuto(datPath: string, xorKey: number, aesKey: Buffer | null): Promise<Buffer> {
-    const bytes = await readFile(datPath)
-    const version = this.getDatVersion(bytes)
-    if (version === 0) return this.decryptDatV3(bytes, xorKey)
+    const version = this.getDatVersion(datPath)
+    if (version === 0) return this.decryptDatV3(datPath, xorKey)
     if (version === 1) {
-      const key = Buffer.from(this.defaultV1AesKey, 'ascii').subarray(0, 16)
-      return this.decryptDatV4(bytes, xorKey, key)
+      const key = this.asciiKey16(this.defaultV1AesKey)
+      return this.decryptDatV4(datPath, xorKey, key)
     }
-    if (!aesKey || aesKey.length < 16) {
-      throw new Error('V4 图片需要 AES 密钥')
+    if (!aesKey || aesKey.length !== 16) {
+      throw new Error('V4版本需要16字节AES密钥')
     }
-    return this.decryptDatV4(bytes, xorKey, aesKey)
+    return this.decryptDatV4(datPath, xorKey, aesKey)
   }
 
-  private getDatVersion(bytes: Buffer): number {
-    if (bytes.length < 6) return 0
+  private getDatVersion(inputPath: string): number {
+    if (!existsSync(inputPath)) {
+      throw new Error('文件不存在')
+    }
+    const bytes = readFileSync(inputPath)
+    if (bytes.length < 6) {
+      return 0
+    }
     const signature = bytes.subarray(0, 6)
     if (this.compareBytes(signature, Buffer.from([0x07, 0x08, 0x56, 0x31, 0x08, 0x07]))) {
       return 1
@@ -366,25 +670,27 @@ export class ImageDecryptService {
     return 0
   }
 
-  private decryptDatV3(bytes: Buffer, xorKey: number): Buffer {
-    const out = Buffer.alloc(bytes.length)
-    for (let i = 0; i < bytes.length; i += 1) {
-      out[i] = bytes[i] ^ xorKey
+  private decryptDatV3(inputPath: string, xorKey: number): Buffer {
+    const data = readFileSync(inputPath)
+    const out = Buffer.alloc(data.length)
+    for (let i = 0; i < data.length; i += 1) {
+      out[i] = data[i] ^ xorKey
     }
     return out
   }
 
-  private decryptDatV4(bytes: Buffer, xorKey: number, aesKey: Buffer): Buffer {
+  private decryptDatV4(inputPath: string, xorKey: number, aesKey: Buffer): Buffer {
+    const bytes = readFileSync(inputPath)
     if (bytes.length < 0x0f) {
       throw new Error('文件太小，无法解析')
     }
 
     const header = bytes.subarray(0, 0x0f)
     const data = bytes.subarray(0x0f)
-    const aesSize = header.readInt32LE(6)
-    const xorSize = header.readInt32LE(10)
+    const aesSize = this.bytesToInt32(header.subarray(6, 10))
+    const xorSize = this.bytesToInt32(header.subarray(10, 14))
 
-    const remainder = aesSize % 16
+    const remainder = ((aesSize % 16) + 16) % 16
     const alignedAesSize = aesSize + (16 - remainder)
     if (alignedAesSize > data.length) {
       throw new Error('文件格式异常：AES 数据长度超过文件实际长度')
@@ -395,7 +701,7 @@ export class ImageDecryptService {
     if (aesData.length > 0) {
       const decipher = crypto.createDecipheriv('aes-128-ecb', aesKey, null)
       decipher.setAutoPadding(false)
-      const decrypted = Buffer.concat([decipher.update(aesData), decipher.final()])
+      const decrypted = Buffer.concat([decipher.update(aesData), decipher.final()]) as Buffer
       unpadded = this.strictRemovePadding(decrypted)
     }
 
@@ -419,9 +725,24 @@ export class ImageDecryptService {
       }
     } else {
       rawData = remaining
+      xoredData = Buffer.alloc(0)
     }
 
     return Buffer.concat([unpadded, rawData, xoredData])
+  }
+
+  private bytesToInt32(bytes: Buffer): number {
+    if (bytes.length !== 4) {
+      throw new Error('需要4个字节')
+    }
+    return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)
+  }
+
+  private asciiKey16(keyString: string): Buffer {
+    if (keyString.length < 16) {
+      throw new Error('AES密钥至少需要16个字符')
+    }
+    return Buffer.from(keyString, 'ascii').subarray(0, 16)
   }
 
   private strictRemovePadding(data: Buffer): Buffer {
@@ -450,6 +771,55 @@ export class ImageDecryptService {
       return '.webp'
     }
     return null
+  }
+
+  private bufferToDataUrl(buffer: Buffer, ext: string): string | null {
+    const mimeType = this.mimeFromExtension(ext)
+    if (!mimeType) return null
+    return `data:${mimeType};base64,${buffer.toString('base64')}`
+  }
+
+  private fileToDataUrl(filePath: string): string | null {
+    try {
+      const ext = extname(filePath).toLowerCase()
+      const mimeType = this.mimeFromExtension(ext)
+      if (!mimeType) return null
+      const data = readFileSync(filePath)
+      return `data:${mimeType};base64,${data.toString('base64')}`
+    } catch {
+      return null
+    }
+  }
+
+  private mimeFromExtension(ext: string): string | null {
+    switch (ext.toLowerCase()) {
+      case '.gif':
+        return 'image/gif'
+      case '.png':
+        return 'image/png'
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg'
+      case '.webp':
+        return 'image/webp'
+      default:
+        return null
+    }
+  }
+
+  private filePathToUrl(filePath: string): string {
+    const url = pathToFileURL(filePath).toString()
+    try {
+      const mtime = statSync(filePath).mtimeMs
+      return `${url}?v=${Math.floor(mtime)}`
+    } catch {
+      return url
+    }
+  }
+
+  private isImageFile(filePath: string): boolean {
+    const ext = extname(filePath).toLowerCase()
+    return ext === '.gif' || ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp'
   }
 
   private compareBytes(a: Buffer, b: Buffer): boolean {

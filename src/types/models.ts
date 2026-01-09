@@ -34,6 +34,7 @@ export interface Message {
   senderUsername: string | null
   parsedContent: string
   imageMd5?: string
+  imageDatName?: string
   emojiCdnUrl?: string
   emojiMd5?: string
   voiceDurationSeconds?: number

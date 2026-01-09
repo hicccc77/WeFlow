@@ -99,13 +99,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMyAvatarUrl: () => ipcRenderer.invoke('chat:getMyAvatarUrl'),
     downloadEmoji: (cdnUrl: string, md5?: string) => ipcRenderer.invoke('chat:downloadEmoji', cdnUrl, md5),
     close: () => ipcRenderer.invoke('chat:close'),
-    getSessionDetail: (sessionId: string) => ipcRenderer.invoke('chat:getSessionDetail', sessionId)
+    getSessionDetail: (sessionId: string) => ipcRenderer.invoke('chat:getSessionDetail', sessionId),
+    getImageData: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:getImageData', sessionId, msgId),
+    getVoiceData: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:getVoiceData', sessionId, msgId)
   },
 
   // 图片解密
   image: {
-    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) =>
-      ipcRenderer.invoke('image:decrypt', payload)
+    decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) =>
+      ipcRenderer.invoke('image:decrypt', payload),
+    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) =>
+      ipcRenderer.invoke('image:resolveCache', payload)
   },
 
   // 数据分析
@@ -131,7 +135,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 年度报告
   annualReport: {
     getAvailableYears: () => ipcRenderer.invoke('annualReport:getAvailableYears'),
-    generateReport: (year: number) => ipcRenderer.invoke('annualReport:generateReport', year)
+    generateReport: (year: number) => ipcRenderer.invoke('annualReport:generateReport', year),
+    onProgress: (callback: (payload: { status: string; progress: number }) => void) => {
+      ipcRenderer.on('annualReport:progress', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('annualReport:progress')
+    }
   },
 
   // 导出
