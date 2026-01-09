@@ -879,11 +879,11 @@ class ChatService {
       if (/^[a-fA-F0-9]+$/.test(trimmed) && trimmed.length % 2 === 0) {
         try {
           return Buffer.from(trimmed, 'hex')
-        } catch {}
+        } catch { }
       }
       try {
         return Buffer.from(trimmed, 'base64')
-      } catch {}
+      } catch { }
     }
     if (typeof raw === 'object' && Array.isArray(raw.data)) {
       return Buffer.from(raw.data)
@@ -1013,11 +1013,11 @@ class ChatService {
       if (/^[a-fA-F0-9]+$/.test(trimmed) && trimmed.length % 2 === 0) {
         try {
           return Buffer.from(trimmed, 'hex')
-        } catch {}
+        } catch { }
       }
       try {
         return Buffer.from(trimmed, 'base64')
-      } catch {}
+      } catch { }
     }
     if (typeof raw === 'object' && Array.isArray(raw.data)) {
       return Buffer.from(raw.data)
@@ -1055,6 +1055,17 @@ class ChatService {
   }
 
   private async resolveVoiceInfoTableName(dbPath: string): Promise<string | null> {
+    // 1. 优先尝试标准表名 'VoiceInfo'
+    const checkStandard = await wcdbService.execQuery(
+      'media',
+      dbPath,
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='VoiceInfo'"
+    )
+    if (checkStandard.success && checkStandard.rows && checkStandard.rows.length > 0) {
+      return 'VoiceInfo'
+    }
+
+    // 2. 只有在找不到标准表时，才尝试模糊匹配 (兼容性)
     const result = await wcdbService.execQuery(
       'media',
       dbPath,
@@ -1833,24 +1844,38 @@ class ChatService {
         }
         for (const candidate of candidates) {
           const chatNameId = await this.resolveChatNameId(dbPath, candidate)
-          if (!chatNameId) continue
-          let whereClause = ''
-          if (columns.chatNameIdColumn && columns.createTimeColumn) {
-            whereClause = `${columns.chatNameIdColumn} = ${chatNameId} AND ${columns.createTimeColumn} = ${msg.createTime}`
-          } else if (columns.msgLocalIdColumn) {
-            whereClause = `${columns.msgLocalIdColumn} = ${msg.localId}`
-          } else {
-            continue
+          // 策略 1: 使用 ChatNameId + CreateTime (最准确)
+          if (chatNameId) {
+            let whereClause = ''
+            if (columns.chatNameIdColumn && columns.createTimeColumn) {
+              whereClause = `${columns.chatNameIdColumn} = ${chatNameId} AND ${columns.createTimeColumn} = ${msg.createTime}`
+              const sql = `SELECT ${columns.dataColumn} AS data FROM ${voiceTable} WHERE ${whereClause} LIMIT 1`
+              const result = await wcdbService.execQuery('media', dbPath, sql)
+              if (result.success && result.rows && result.rows.length > 0) {
+                const raw = result.rows[0]?.data
+                const decoded = this.decodeVoiceBlob(raw)
+                if (decoded && decoded.length > 0) {
+                  console.info('[ChatService][Voice] hit by createTime', { dbPath, voiceTable, whereClause, bytes: decoded.length })
+                  silkData = decoded
+                  break
+                }
+              }
+            }
           }
-          const sql = `SELECT ${columns.dataColumn} AS data FROM ${voiceTable} WHERE ${whereClause} LIMIT 1`
-          const result = await wcdbService.execQuery('media', dbPath, sql)
-          if (result.success && result.rows && result.rows.length > 0) {
-            const raw = result.rows[0]?.data
-            const decoded = this.decodeVoiceBlob(raw)
-            if (decoded && decoded.length > 0) {
-              console.info('[ChatService][Voice] hit', { dbPath, voiceTable, whereClause, bytes: decoded.length })
-              silkData = decoded
-              break
+
+          // 策略 2: 使用 MsgLocalId (兜底，如果表支持)
+          if (columns.msgLocalIdColumn) {
+            const whereClause = `${columns.msgLocalIdColumn} = ${msg.localId}`
+            const sql = `SELECT ${columns.dataColumn} AS data FROM ${voiceTable} WHERE ${whereClause} LIMIT 1`
+            const result = await wcdbService.execQuery('media', dbPath, sql)
+            if (result.success && result.rows && result.rows.length > 0) {
+              const raw = result.rows[0]?.data
+              const decoded = this.decodeVoiceBlob(raw)
+              if (decoded && decoded.length > 0) {
+                console.info('[ChatService][Voice] hit by localId', { dbPath, voiceTable, whereClause, bytes: decoded.length })
+                silkData = decoded
+                break
+              }
             }
           }
         }
@@ -1877,13 +1902,14 @@ class ChatService {
       try {
         writeFileSync(silkFile, silkData)
         // 执行解码: silk_v3_decoder.exe <silk> <pcm> -Fs_API 24000
+        console.info('[ChatService][Voice] executing decoder:', decoderPath, [silkFile, pcmFile])
         const { stdout, stderr } = await execFileAsync(
           decoderPath,
           [silkFile, pcmFile, '-Fs_API', '24000'],
           { cwd: dirname(decoderPath) }
         )
-        if (stdout) console.info('[ChatService][Voice] decoder stdout', stdout)
-        if (stderr) console.warn('[ChatService][Voice] decoder stderr', stderr)
+        if (stdout && stdout.trim()) console.info('[ChatService][Voice] decoder stdout:', stdout)
+        if (stderr && stderr.trim()) console.warn('[ChatService][Voice] decoder stderr:', stderr)
 
         if (!existsSync(pcmFile)) {
           return { success: false, error: '语音解码失败' }
@@ -1925,21 +1951,37 @@ class ChatService {
 
   async getMessageById(sessionId: string, localId: number): Promise<{ success: boolean; message?: Message; error?: string }> {
     try {
-      const result = await wcdbService.getMessageById(sessionId, localId)
-      if (!result.success || !result.message) {
-        return { success: false, error: result.error || '未找到消息' }
+      console.info('[ChatService] getMessageById (SQL)', { sessionId, localId })
+
+      // 1. 获取该会话所在的消息表
+      // 注意：这里使用 getMessageTableStats 而不是 getMessageTables，因为前者包含 db_path
+      const tableStats = await wcdbService.getMessageTableStats(sessionId)
+      if (!tableStats.success || !tableStats.tables || tableStats.tables.length === 0) {
+        return { success: false, error: '未找到会话消息表' }
       }
-      const message = this.parseMessage(result.message)
-      if (message.localId === 0 || message.createTime === 0) {
-        console.warn('[ChatService] getMessageById missing keys', {
-          sessionId,
-          localId,
-          parsedLocalId: message.localId,
-          parsedCreateTime: message.createTime,
-          rowKeys: Object.keys(result.message || {})
-        })
+
+      // 2. 遍历表查找消息 (通常只有一个主表，但可能有归档)
+      for (const tableInfo of tableStats.tables) {
+        const tableName = tableInfo.table_name || tableInfo.name
+        const dbPath = tableInfo.db_path
+        if (!tableName || !dbPath) continue
+
+        // 构造查询
+        const sql = `SELECT * FROM ${tableName} WHERE local_id = ${localId} LIMIT 1`
+        const result = await wcdbService.execQuery('message', dbPath, sql)
+
+        if (result.success && result.rows && result.rows.length > 0) {
+          const row = result.rows[0]
+          const message = this.parseMessage(row)
+
+          if (message.localId !== 0) {
+            console.info('[ChatService] getMessageById hit', { tableName, localId: message.localId })
+            return { success: true, message }
+          }
+        }
       }
-      return { success: true, message }
+
+      return { success: false, error: '未找到消息' }
     } catch (e) {
       console.error('ChatService: getMessageById 失败:', e)
       return { success: false, error: String(e) }
@@ -1985,6 +2027,8 @@ class ChatService {
       console.warn('[ChatService] parseMessage raw keys', {
         rawLocalId,
         rawLocalIdType: rawLocalId ? typeof rawLocalId : 'null',
+        val_local_id: row['local_id'],
+        val_create_time: row['create_time'],
         rawCreateTime,
         rawCreateTimeType: rawCreateTime ? typeof rawCreateTime : 'null'
       })
