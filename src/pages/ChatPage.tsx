@@ -1091,6 +1091,42 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
     }
   }, [isImage, imageLocalPath, imageLoading, message.imageMd5, message.imageDatName, imageCacheKey, session.username])
 
+  useEffect(() => {
+    if (!isImage) return
+    const unsubscribe = window.electronAPI.image.onUpdateAvailable((payload) => {
+      const matchesCacheKey =
+        payload.cacheKey === message.imageMd5 ||
+        payload.cacheKey === message.imageDatName ||
+        (payload.imageMd5 && payload.imageMd5 === message.imageMd5) ||
+        (payload.imageDatName && payload.imageDatName === message.imageDatName)
+      if (matchesCacheKey) {
+        setImageHasUpdate(true)
+      }
+    })
+    return () => {
+      unsubscribe?.()
+    }
+  }, [isImage, message.imageDatName, message.imageMd5])
+
+  useEffect(() => {
+    if (!isImage) return
+    const unsubscribe = window.electronAPI.image.onCacheResolved((payload) => {
+      const matchesCacheKey =
+        payload.cacheKey === message.imageMd5 ||
+        payload.cacheKey === message.imageDatName ||
+        (payload.imageMd5 && payload.imageMd5 === message.imageMd5) ||
+        (payload.imageDatName && payload.imageDatName === message.imageDatName)
+      if (matchesCacheKey) {
+        imageDataUrlCache.set(imageCacheKey, payload.localPath)
+        setImageLocalPath(payload.localPath)
+        setImageError(false)
+      }
+    })
+    return () => {
+      unsubscribe?.()
+    }
+  }, [isImage, imageCacheKey, message.imageDatName, message.imageMd5])
+
 
   useEffect(() => {
     if (!isVoice) return

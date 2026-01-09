@@ -36,6 +36,14 @@ export default defineConfig({
         }
       },
       {
+        entry: 'electron/imageSearchWorker.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron'
+          }
+        }
+      },
+      {
         entry: 'electron/preload.ts',
         onstart(options) {
           options.reload()

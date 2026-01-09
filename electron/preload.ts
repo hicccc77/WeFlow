@@ -109,7 +109,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) =>
       ipcRenderer.invoke('image:decrypt', payload),
     resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) =>
-      ipcRenderer.invoke('image:resolveCache', payload)
+      ipcRenderer.invoke('image:resolveCache', payload),
+    onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => {
+      ipcRenderer.on('image:updateAvailable', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('image:updateAvailable')
+    },
+    onCacheResolved: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string; localPath: string }) => void) => {
+      ipcRenderer.on('image:cacheResolved', (_, payload) => callback(payload))
+      return () => ipcRenderer.removeAllListeners('image:cacheResolved')
+    }
   },
 
   // 数据分析
