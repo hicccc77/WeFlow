@@ -14,24 +14,36 @@
   height: 100vh;
   background: var(--chat-pattern);
   background-color: var(--ar-bg-color);
-  color: var(--ar-text-main);
-  overflow-y: auto;
-  overflow-x: hidden;
+  // overflow-y: auto; // Moved to .report-scroll-view
+  overflow: hidden; // Contain everything
   position: relative;
   -webkit-app-region: no-drag; // 确保主容器不可拖动
 
   // 隐藏滚动条
+  /* scrollbar-width: none; */
+  // Moved
+  /* -ms-overflow-style: none; */
+}
+
+.report-scroll-view {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 1;
+
+  // 隐藏滚动条
   scrollbar-width: none;
   -ms-overflow-style: none;
+
   &::-webkit-scrollbar {
     display: none;
   }
-
 }
 
 // 背景装饰圆点 - 毛玻璃效果
 .bg-decoration {
-  position: fixed;
+  position: absolute; // Changed from fixed
   inset: 0;
   pointer-events: none;
   z-index: 0;
@@ -45,7 +57,7 @@
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
   border: 1px solid rgba(0, 0, 0, 0.05);
-  
+
   &.c1 {
     width: 280px;
     height: 280px;
@@ -53,7 +65,7 @@
     right: -60px;
     animation: float1 20s ease-in-out infinite;
   }
-  
+
   &.c2 {
     width: 200px;
     height: 200px;
@@ -61,7 +73,7 @@
     left: -70px;
     animation: float2 25s ease-in-out infinite;
   }
-  
+
   &.c3 {
     width: 120px;
     height: 120px;
@@ -69,7 +81,7 @@
     right: -40px;
     animation: float3 18s ease-in-out infinite;
   }
-  
+
   &.c4 {
     width: 90px;
     height: 90px;
@@ -77,7 +89,7 @@
     left: 8%;
     animation: float1 22s ease-in-out infinite reverse;
   }
-  
+
   &.c5 {
     width: 60px;
     height: 60px;
@@ -88,21 +100,43 @@
 }
 
 @keyframes float1 {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-15px, 15px); }
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(-15px, 15px);
+  }
 }
 
 @keyframes float2 {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(12px, -12px); }
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(12px, -12px);
+  }
 }
 
 @keyframes float3 {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-8px, -15px); }
+
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(-8px, -15px);
+  }
 }
 
 .annual-report-window {
+
   // 所有子元素默认不可拖动
   * {
     -webkit-app-region: no-drag;
@@ -113,7 +147,7 @@
     content: "";
     position: fixed;
     inset: 0;
-    background: 
+    background:
       radial-gradient(circle 500px at 0% 0%, rgba(7, 193, 96, 0.06), transparent),
       radial-gradient(circle 500px at 100% 0%, rgba(242, 170, 0, 0.05), transparent),
       radial-gradient(circle 500px at 0% 100%, rgba(242, 170, 0, 0.05), transparent),
@@ -122,7 +156,8 @@
     z-index: 0;
   }
 
-  &.loading, &.error {
+  &.loading,
+  &.error {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -130,7 +165,9 @@
     gap: 16px;
     color: var(--ar-text-sub);
 
-    p { font-size: 16px; }
+    p {
+      font-size: 16px;
+    }
   }
 
   &.loading {
@@ -391,7 +428,9 @@
   grid-template-columns: repeat(24, 1fr);
   gap: 3px;
 
-  span { text-align: center; }
+  span {
+    text-align: center;
+  }
 }
 
 .heatmap {
@@ -531,11 +570,13 @@
       height: 72px;
       border-color: #ffd700;
     }
+
     .crown {
       font-size: 28px;
       margin-bottom: -8px;
       animation: crownBounce 2s ease-in-out infinite;
     }
+
     .podium-stand {
       height: 100px;
       background: linear-gradient(180deg, #ffd700, #ffb800);
@@ -592,8 +633,15 @@
 }
 
 @keyframes crownBounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
 }
 
 // 第4-5名列表
@@ -780,17 +828,22 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 
 // 顶部拖动区域
 .drag-region {
-  position: fixed;
+  position: absolute; // Changed from fixed
   top: 0;
   left: 0;
-  right: 138px;
+  right: 0; // Changed from right: 138px (since it's now inside the window container)
   height: 32px;
   -webkit-app-region: drag !important;
   z-index: 100;
@@ -798,14 +851,15 @@
 
 // 浮动操作按钮
 .fab-container {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   z-index: 99;
+  pointer-events: none; // 容器本身不阻挡点击
 }
 
 .fab-main {
@@ -856,8 +910,13 @@
     transform: scale(1) translateY(0);
     pointer-events: auto;
 
-    &:nth-child(1) { transition-delay: 0.05s; }
-    &:nth-child(2) { transition-delay: 0.1s; }
+    &:nth-child(1) {
+      transition-delay: 0.05s;
+    }
+
+    &:nth-child(2) {
+      transition-delay: 0.1s;
+    }
   }
 
   &:hover {
@@ -880,8 +939,13 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 // 导出进度弹窗
@@ -898,11 +962,12 @@
 }
 
 @keyframes scaleIn {
-  from { 
+  from {
     opacity: 0;
     transform: scale(0.9);
   }
-  to { 
+
+  to {
     opacity: 1;
     transform: scale(1);
   }
@@ -932,13 +997,27 @@
 }
 
 @keyframes spinRing {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.1); }
+
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 
 .export-title {
@@ -1165,6 +1244,7 @@
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.6);
   }
+
   100% {
     opacity: var(--final-opacity, 1);
     transform: translate(-50%, -50%) scale(1);

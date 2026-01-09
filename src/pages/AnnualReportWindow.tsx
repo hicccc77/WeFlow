@@ -15,12 +15,12 @@ const drawPatternBackground = async (ctx: CanvasRenderingContext2D, width: numbe
   // 先填充背景色
   ctx.fillStyle = bgColor
   ctx.fillRect(0, 0, width, height)
-  
+
   // 加载 SVG 图案
   const svgString = isDark ? PATTERN_DARK_SVG : PATTERN_LIGHT_SVG
   const blob = new Blob([svgString], { type: 'image/svg+xml' })
   const url = URL.createObjectURL(blob)
-  
+
   return new Promise<void>((resolve) => {
     const img = new window.Image()
     img.onload = () => {
@@ -84,7 +84,7 @@ interface SectionInfo {
 const Avatar = ({ url, name, size = 'md' }: { url?: string; name: string; size?: 'sm' | 'md' | 'lg' }) => {
   const [imgError, setImgError] = useState(false)
   const initial = name?.[0] || '友'
-  
+
   return (
     <div className={`avatar ${size}`}>
       {url && !imgError ? (
@@ -100,7 +100,7 @@ const Avatar = ({ url, name, size = 'md' }: { url?: string; name: string; size?:
 const Heatmap = ({ data }: { data: number[][] }) => {
   const maxHeat = Math.max(...data.flat())
   const weekLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  
+
   return (
     <div className="heatmap-wrapper">
       <div className="heatmap-header">
@@ -116,13 +116,13 @@ const Heatmap = ({ data }: { data: number[][] }) => {
           {weekLabels.map(w => <div key={w} className="week-label">{w}</div>)}
         </div>
         <div className="heatmap-grid">
-          {data.map((row, wi) => 
+          {data.map((row, wi) =>
             row.map((val, hi) => {
               const alpha = maxHeat > 0 ? (val / maxHeat * 0.85 + 0.1).toFixed(2) : '0.1'
               return (
-                <div 
-                  key={`${wi}-${hi}`} 
-                  className="h-cell" 
+                <div
+                  key={`${wi}-${hi}`}
+                  className="h-cell"
                   style={{ background: `rgba(7, 193, 96, ${alpha})` }}
                   title={`${weekLabels[wi]} ${hi}:00 - ${val}条`}
                 />
@@ -140,16 +140,16 @@ const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) =>
   const maxCount = words.length > 0 ? words[0].count : 1
   const topWords = words.slice(0, 32)
   const baseSize = 520
-  
+
   // 使用确定性随机数生成器
   const seededRandom = (seed: number) => {
     const x = Math.sin(seed) * 10000
     return x - Math.floor(x)
   }
-  
+
   // 计算词云位置
   const placedItems: { x: number; y: number; w: number; h: number }[] = []
-  
+
   const canPlace = (x: number, y: number, w: number, h: number): boolean => {
     const halfW = w / 2
     const halfH = h / 2
@@ -158,25 +158,25 @@ const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) =>
     const dist = Math.sqrt(dx * dx + dy * dy)
     const maxR = 49 - Math.max(halfW, halfH)
     if (dist > maxR) return false
-    
+
     const pad = 1.8
     for (const p of placedItems) {
       if ((x - halfW - pad) < (p.x + p.w / 2) &&
-          (x + halfW + pad) > (p.x - p.w / 2) &&
-          (y - halfH - pad) < (p.y + p.h / 2) &&
-          (y + halfH + pad) > (p.y - p.h / 2)) {
+        (x + halfW + pad) > (p.x - p.w / 2) &&
+        (y - halfH - pad) < (p.y + p.h / 2) &&
+        (y + halfH + pad) > (p.y - p.h / 2)) {
         return false
       }
     }
     return true
   }
-  
+
   const wordItems = topWords.map((item, i) => {
     const ratio = item.count / maxCount
     const fontSize = Math.round(12 + Math.pow(ratio, 0.65) * 20)
     const opacity = Math.min(1, Math.max(0.35, 0.35 + ratio * 0.65))
     const delay = (i * 0.04).toFixed(2)
-    
+
     // 计算词语宽度
     const charCount = Math.max(1, item.phrase.length)
     const hasCjk = /[\u4e00-\u9fff]/.test(item.phrase)
@@ -186,12 +186,12 @@ const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) =>
     const heightPx = fontSize * 1.1
     const widthPct = (widthPx / baseSize) * 100
     const heightPct = (heightPx / baseSize) * 100
-    
+
     // 寻找位置
     let x = 50, y = 50
     let placedOk = false
     const tries = i === 0 ? 1 : 420
-    
+
     for (let t = 0; t < tries; t++) {
       if (i === 0) {
         x = 50
@@ -208,10 +208,10 @@ const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) =>
         break
       }
     }
-    
+
     if (!placedOk) return null
     placedItems.push({ x, y, w: widthPct, h: heightPct })
-    
+
     return (
       <span
         key={i}
@@ -229,7 +229,7 @@ const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) =>
       </span>
     )
   }).filter(Boolean)
-  
+
   return (
     <div className="word-cloud-wrapper">
       <div className="word-cloud-inner">
@@ -295,13 +295,13 @@ function AnnualReportWindow() {
       setLoadingProgress(payload.progress)
       setLoadingStage(payload.status)
     })
-    
+
     try {
       const result = await window.electronAPI.annualReport.generateReport(year)
       removeProgressListener?.()
       setLoadingProgress(100)
       setLoadingStage('完成')
-      
+
       if (result.success && result.data) {
         setTimeout(() => {
           setReportData(result.data!)
@@ -397,12 +397,12 @@ function AnnualReportWindow() {
       const wordTags = element.querySelectorAll('.word-tag') as NodeListOf<HTMLElement>
       let wordCloudOriginalStyle = ''
       const wordTagOriginalStyles: string[] = []
-      
+
       if (wordCloudInner) {
         wordCloudOriginalStyle = wordCloudInner.style.cssText
         wordCloudInner.style.transform = 'none'
       }
-      
+
       wordTags.forEach((tag, i) => {
         wordTagOriginalStyles[i] = tag.style.cssText
         tag.style.opacity = String(tag.style.getPropertyValue('--final-opacity') || '1')
@@ -413,7 +413,7 @@ function AnnualReportWindow() {
 
       const computedStyle = getComputedStyle(document.documentElement)
       const bgColor = computedStyle.getPropertyValue('--bg-primary').trim() || '#F9F8F6'
-      
+
       const canvas = await html2canvas(element, {
         backgroundColor: null, // 透明背景，让 SVG 图案显示
         scale: 2,
@@ -436,21 +436,21 @@ function AnnualReportWindow() {
       outputCanvas.width = OUTPUT_WIDTH
       outputCanvas.height = OUTPUT_HEIGHT
       const ctx = outputCanvas.getContext('2d')!
-      
+
       // 绘制带 SVG 图案的背景
       const isDark = themeMode === 'dark'
       await drawPatternBackground(ctx, OUTPUT_WIDTH, OUTPUT_HEIGHT, bgColor, isDark)
-      
+
       // 边距 (留出更多空白)
       const PADDING = 80
       const contentWidth = OUTPUT_WIDTH - PADDING * 2
       const contentHeight = OUTPUT_HEIGHT - PADDING * 2
-      
+
       // 计算缩放和居中位置
       const srcRatio = canvas.width / canvas.height
       const dstRatio = contentWidth / contentHeight
       let drawWidth: number, drawHeight: number, drawX: number, drawY: number
-      
+
       if (srcRatio > dstRatio) {
         // 源图更宽，以宽度为准
         drawWidth = contentWidth
@@ -464,7 +464,7 @@ function AnnualReportWindow() {
         drawX = PADDING + (contentWidth - drawWidth) / 2
         drawY = PADDING
       }
-      
+
       ctx.drawImage(canvas, drawX, drawY, drawWidth, drawHeight)
 
       return { name: section.name, data: outputCanvas.toDataURL('image/png') }
@@ -486,7 +486,7 @@ function AnnualReportWindow() {
       const container = containerRef.current
       const sections = container.querySelectorAll('.section')
       const originalStyles: string[] = []
-      
+
       sections.forEach((section, i) => {
         const el = section as HTMLElement
         originalStyles[i] = el.style.cssText
@@ -499,12 +499,12 @@ function AnnualReportWindow() {
       const wordTags = container.querySelectorAll('.word-tag') as NodeListOf<HTMLElement>
       let wordCloudOriginalStyle = ''
       const wordTagOriginalStyles: string[] = []
-      
+
       if (wordCloudInner) {
         wordCloudOriginalStyle = wordCloudInner.style.cssText
         wordCloudInner.style.transform = 'none'
       }
-      
+
       wordTags.forEach((tag, i) => {
         wordTagOriginalStyles[i] = tag.style.cssText
         tag.style.opacity = String(tag.style.getPropertyValue('--final-opacity') || '1')
@@ -513,11 +513,11 @@ function AnnualReportWindow() {
 
       // 等待样式生效
       await new Promise(r => setTimeout(r, 100))
-      
+
       // 获取计算后的背景色
       const computedStyle = getComputedStyle(document.documentElement)
       const bgColor = computedStyle.getPropertyValue('--bg-primary').trim() || '#F9F8F6'
-      
+
       const canvas = await html2canvas(container, {
         backgroundColor: null, // 透明背景
         scale: 2,
@@ -531,11 +531,11 @@ function AnnualReportWindow() {
         const el = section as HTMLElement
         el.style.cssText = originalStyles[i]
       })
-      
+
       if (wordCloudInner) {
         wordCloudInner.style.cssText = wordCloudOriginalStyle
       }
-      
+
       wordTags.forEach((tag, i) => {
         tag.style.cssText = wordTagOriginalStyles[i]
       })
@@ -545,11 +545,11 @@ function AnnualReportWindow() {
       outputCanvas.width = canvas.width
       outputCanvas.height = canvas.height
       const ctx = outputCanvas.getContext('2d')!
-      
+
       // 绘制 SVG 图案背景
       const isDark = themeMode === 'dark'
       await drawPatternBackground(ctx, canvas.width, canvas.height, bgColor, isDark)
-      
+
       // 绘制内容
       ctx.drawImage(canvas, 0, 0)
 
@@ -584,7 +584,7 @@ function AnnualReportWindow() {
     for (let i = 0; i < sections.length; i++) {
       const section = sections[i]
       setExportProgress(`正在导出: ${section.name} (${i + 1}/${sections.length})`)
-      
+
       const result = await exportSection(section)
       if (result) {
         exportedImages.push(result)
@@ -607,13 +607,13 @@ function AnnualReportWindow() {
     } else {
       setExportProgress('正在打包...')
       const zip = new JSZip()
-      
+
       for (const img of exportedImages) {
         // 从 data URL 提取 base64 数据
         const base64Data = img.data.split(',')[1]
         zip.file(`${reportData?.year}年度报告_${img.name}.png`, base64Data, { base64: true })
       }
-      
+
       const blob = await zip.generateAsync({ type: 'blob' })
       const link = document.createElement('a')
       link.download = `${reportData?.year}年度报告_分模块.zip`
@@ -654,8 +654,8 @@ function AnnualReportWindow() {
         <div className="loading-ring">
           <svg viewBox="0 0 100 100">
             <circle className="ring-bg" cx="50" cy="50" r="42" />
-            <circle 
-              className="ring-progress" 
+            <circle
+              className="ring-progress"
               cx="50" cy="50" r="42"
               style={{ strokeDashoffset: 264 - (264 * loadingProgress / 100) }}
             />
@@ -691,7 +691,7 @@ function AnnualReportWindow() {
   return (
     <div className="annual-report-window">
       <div className="drag-region" />
-      
+
       {/* 背景装饰 */}
       <div className="bg-decoration">
         <div className="deco-circle c1" />
@@ -700,7 +700,7 @@ function AnnualReportWindow() {
         <div className="deco-circle c4" />
         <div className="deco-circle c5" />
       </div>
-      
+
       {/* 浮动操作按钮 */}
       <div className={`fab-container ${fabOpen ? 'open' : ''}`}>
         <button className="fab-item" onClick={() => { setFabOpen(false); setShowExportModal(true) }} title="分模块导出">
@@ -740,8 +740,8 @@ function AnnualReportWindow() {
             </div>
             <div className="section-grid">
               {getAvailableSections().map(section => (
-                <div 
-                  key={section.id} 
+                <div
+                  key={section.id}
                   className={`section-card ${selectedSections.has(section.id) ? 'selected' : ''}`}
                   onClick={() => toggleSection(section.id)}
                 >
@@ -756,8 +756,8 @@ function AnnualReportWindow() {
               <button className="select-all-btn" onClick={toggleAll}>
                 {selectedSections.size === getAvailableSections().length ? '取消全选' : '全选'}
               </button>
-              <button 
-                className="confirm-btn" 
+              <button
+                className="confirm-btn"
                 onClick={exportSelectedSections}
                 disabled={selectedSections.size === 0}
               >
@@ -768,259 +768,262 @@ function AnnualReportWindow() {
         </div>
       )}
 
-      <div className="report-container" ref={containerRef}>
-        {/* 封面 */}
-        <section className="section" ref={sectionRefs.cover}>
-          <div className="label-text">WeFlow · ANNUAL REPORT</div>
-          <h1 className="hero-title">{year}年<br/>微信聊天报告</h1>
-          <hr className="divider" />
-          <p className="hero-desc">时光匆匆，转眼又是一年<br/>让我们一起回顾这一年的点点滴滴</p>
-        </section>
+      <div className="report-scroll-view">
+        <div className="report-container" ref={containerRef}>
 
-        {/* 年度概览 */}
-        <section className="section" ref={sectionRefs.overview}>
-          <div className="label-text">年度概览</div>
-          <h2 className="hero-title">你和你的朋友们<br/>互相发过</h2>
-          <div className="big-stat">
-            <span className="stat-num">{formatNumber(totalMessages)}</span>
-            <span className="stat-unit">条消息</span>
-          </div>
-          <p className="hero-desc">
-            在这段时光里，你与 <span className="hl">{formatNumber(totalFriends)}</span> 位好友交换过喜怒哀乐。
-            <br/>每一个对话，都是一段故事的开始。
-          </p>
-        </section>
+          {/* 封面 */}
+          <section className="section" ref={sectionRefs.cover}>
+            <div className="label-text">WeFlow · ANNUAL REPORT</div>
+            <h1 className="hero-title">{year}年<br />微信聊天报告</h1>
+            <hr className="divider" />
+            <p className="hero-desc">时光匆匆，转眼又是一年<br />让我们一起回顾这一年的点点滴滴</p>
+          </section>
 
-        {/* 年度挚友 */}
-        {topFriend && (
-          <section className="section" ref={sectionRefs.bestFriend}>
-            <div className="label-text">年度挚友</div>
-            <h2 className="hero-title">{topFriend.displayName}</h2>
+          {/* 年度概览 */}
+          <section className="section" ref={sectionRefs.overview}>
+            <div className="label-text">年度概览</div>
+            <h2 className="hero-title">你和你的朋友们<br />互相发过</h2>
             <div className="big-stat">
-              <span className="stat-num">{formatNumber(topFriend.messageCount)}</span>
+              <span className="stat-num">{formatNumber(totalMessages)}</span>
               <span className="stat-unit">条消息</span>
             </div>
             <p className="hero-desc">
-              你发出 <span className="hl">{formatNumber(topFriend.sentCount)}</span> 条，
-              收到 <span className="hl">{formatNumber(topFriend.receivedCount)}</span> 条
-              <br/>在一起，就可以
+              在这段时光里，你与 <span className="hl">{formatNumber(totalFriends)}</span> 位好友交换过喜怒哀乐。
+              <br />每一个对话，都是一段故事的开始。
             </p>
           </section>
-        )}
 
-        {/* 月度好友 */}
-        <section className="section" ref={sectionRefs.monthlyFriends}>
-          <div className="label-text">月度好友</div>
-          <h2 className="hero-title">{year}年月度好友</h2>
-          <p className="hero-desc">根据12个月的聊天习惯<br/>每个月陪你最多的人</p>
-          <div className="monthly-orbit">
-            {monthlyTopFriends.map((m, i) => (
-              <div key={m.month} className="monthly-item" style={{ '--i': i } as React.CSSProperties}>
-                <div className="month-label">{m.month}月</div>
-                <Avatar url={m.avatarUrl} name={m.displayName} size="sm" />
-                <div className="month-name">{m.displayName}</div>
+          {/* 年度挚友 */}
+          {topFriend && (
+            <section className="section" ref={sectionRefs.bestFriend}>
+              <div className="label-text">年度挚友</div>
+              <h2 className="hero-title">{topFriend.displayName}</h2>
+              <div className="big-stat">
+                <span className="stat-num">{formatNumber(topFriend.messageCount)}</span>
+                <span className="stat-unit">条消息</span>
               </div>
-            ))}
-            <div className="monthly-center">
-              <Avatar url={selfAvatarUrl} name="我" size="lg" />
-            </div>
-          </div>
-        </section>
+              <p className="hero-desc">
+                你发出 <span className="hl">{formatNumber(topFriend.sentCount)}</span> 条，
+                收到 <span className="hl">{formatNumber(topFriend.receivedCount)}</span> 条
+                <br />在一起，就可以
+              </p>
+            </section>
+          )}
 
-        {/* 双向奔赴 */}
-        {mutualFriend && (
-          <section className="section" ref={sectionRefs.mutualFriend}>
-            <div className="label-text">双向奔赴</div>
-            <h2 className="hero-title">最默契的朋友</h2>
-            <div className="mutual-visual">
-              <div className="mutual-side you">
+          {/* 月度好友 */}
+          <section className="section" ref={sectionRefs.monthlyFriends}>
+            <div className="label-text">月度好友</div>
+            <h2 className="hero-title">{year}年月度好友</h2>
+            <p className="hero-desc">根据12个月的聊天习惯<br />每个月陪你最多的人</p>
+            <div className="monthly-orbit">
+              {monthlyTopFriends.map((m, i) => (
+                <div key={m.month} className="monthly-item" style={{ '--i': i } as React.CSSProperties}>
+                  <div className="month-label">{m.month}月</div>
+                  <Avatar url={m.avatarUrl} name={m.displayName} size="sm" />
+                  <div className="month-name">{m.displayName}</div>
+                </div>
+              ))}
+              <div className="monthly-center">
                 <Avatar url={selfAvatarUrl} name="我" size="lg" />
-                <div className="mutual-arrow">
-                  <span className="arrow-count">{formatNumber(mutualFriend.sentCount)}</span>
-                  <div className="arrow-line">→</div>
-                </div>
-              </div>
-              <div className="mutual-center">
-                <div className="mutual-icon">🤝</div>
-                <div className="mutual-ratio">{mutualFriend.ratio}:1</div>
-              </div>
-              <div className="mutual-side friend">
-                <div className="mutual-arrow reverse">
-                  <span className="arrow-count">{formatNumber(mutualFriend.receivedCount)}</span>
-                  <div className="arrow-line">←</div>
-                </div>
-                <Avatar url={mutualFriend.avatarUrl} name={mutualFriend.displayName} size="lg" />
               </div>
             </div>
-            <div className="mutual-name-tag">{mutualFriend.displayName}</div>
-            <p className="hero-desc">势均力敌，有来有往</p>
           </section>
-        )}
 
-        {/* 社交主动性 */}
-        {socialInitiative && (
-          <section className="section" ref={sectionRefs.socialInitiative}>
-            <div className="label-text">社交主动性</div>
-            <h2 className="hero-title">{socialInitiative.initiativeRate >= 50 ? '主动出击型' : '佛系社交型'}</h2>
-            <div className="big-stat">
-              <span className="stat-num">{socialInitiative.initiativeRate}%</span>
-              <span className="stat-unit">主动发起率</span>
-            </div>
-            <p className="hero-desc">
-              你主动发起了 <span className="hl">{formatNumber(socialInitiative.initiatedChats)}</span> 次对话
-              <br/>被动回复了 <span className="hl">{formatNumber(socialInitiative.receivedChats)}</span> 次对话
+          {/* 双向奔赴 */}
+          {mutualFriend && (
+            <section className="section" ref={sectionRefs.mutualFriend}>
+              <div className="label-text">双向奔赴</div>
+              <h2 className="hero-title">最默契的朋友</h2>
+              <div className="mutual-visual">
+                <div className="mutual-side you">
+                  <Avatar url={selfAvatarUrl} name="我" size="lg" />
+                  <div className="mutual-arrow">
+                    <span className="arrow-count">{formatNumber(mutualFriend.sentCount)}</span>
+                    <div className="arrow-line">→</div>
+                  </div>
+                </div>
+                <div className="mutual-center">
+                  <div className="mutual-icon">🤝</div>
+                  <div className="mutual-ratio">{mutualFriend.ratio}:1</div>
+                </div>
+                <div className="mutual-side friend">
+                  <div className="mutual-arrow reverse">
+                    <span className="arrow-count">{formatNumber(mutualFriend.receivedCount)}</span>
+                    <div className="arrow-line">←</div>
+                  </div>
+                  <Avatar url={mutualFriend.avatarUrl} name={mutualFriend.displayName} size="lg" />
+                </div>
+              </div>
+              <div className="mutual-name-tag">{mutualFriend.displayName}</div>
+              <p className="hero-desc">势均力敌，有来有往</p>
+            </section>
+          )}
+
+          {/* 社交主动性 */}
+          {socialInitiative && (
+            <section className="section" ref={sectionRefs.socialInitiative}>
+              <div className="label-text">社交主动性</div>
+              <h2 className="hero-title">{socialInitiative.initiativeRate >= 50 ? '主动出击型' : '佛系社交型'}</h2>
+              <div className="big-stat">
+                <span className="stat-num">{socialInitiative.initiativeRate}%</span>
+                <span className="stat-unit">主动发起率</span>
+              </div>
+              <p className="hero-desc">
+                你主动发起了 <span className="hl">{formatNumber(socialInitiative.initiatedChats)}</span> 次对话
+                <br />被动回复了 <span className="hl">{formatNumber(socialInitiative.receivedChats)}</span> 次对话
+              </p>
+            </section>
+          )}
+
+          {/* 巅峰时刻 */}
+          {peakDay && (
+            <section className="section" ref={sectionRefs.peakDay}>
+              <div className="label-text">巅峰时刻</div>
+              <h2 className="hero-title">{peakDay.date}</h2>
+              <div className="big-stat">
+                <span className="stat-num">{formatNumber(peakDay.messageCount)}</span>
+                <span className="stat-unit">条消息</span>
+              </div>
+              <p className="hero-desc">
+                这是你聊天最多的一天
+                {peakDay.topFriend && (
+                  <><br />那天，你和 <span className="hl">{peakDay.topFriend}</span> 聊了 {formatNumber(peakDay.topFriendCount || 0)} 条</>
+                )}
+              </p>
+            </section>
+          )}
+
+          {/* 聊天火花 */}
+          {longestStreak && (
+            <section className="section" ref={sectionRefs.streak}>
+              <div className="label-text">聊天火花</div>
+              <h2 className="hero-title">持之以恒</h2>
+              <p className="hero-desc">与 <span className="hl">{longestStreak.friendName}</span> 保持了</p>
+              <div className="big-stat">
+                <span className="stat-num">{longestStreak.days}</span>
+                <span className="stat-unit">天</span>
+              </div>
+              <p className="hero-desc">陪伴，是最长情的告白</p>
+            </section>
+          )}
+
+          {/* 作息规律 */}
+          <section className="section" ref={sectionRefs.heatmap}>
+            <div className="label-text">作息规律</div>
+            <h2 className="hero-title">时间的痕迹</h2>
+            <p className="hero-desc active-time">
+              在 <span className="hl">{mostActive.weekday} {mostActive.hour}:00</span> 最活跃
             </p>
+            <Heatmap data={activityHeatmap.data} />
           </section>
-        )}
 
-        {/* 巅峰时刻 */}
-        {peakDay && (
-          <section className="section" ref={sectionRefs.peakDay}>
-            <div className="label-text">巅峰时刻</div>
-            <h2 className="hero-title">{peakDay.date}</h2>
-            <div className="big-stat">
-              <span className="stat-num">{formatNumber(peakDay.messageCount)}</span>
-              <span className="stat-unit">条消息</span>
-            </div>
-            <p className="hero-desc">
-              这是你聊天最多的一天
-              {peakDay.topFriend && (
-                <><br/>那天，你和 <span className="hl">{peakDay.topFriend}</span> 聊了 {formatNumber(peakDay.topFriendCount || 0)} 条</>
+          {/* 深夜好友 */}
+          {midnightKing && (
+            <section className="section" ref={sectionRefs.midnightKing}>
+              <div className="label-text">深夜好友</div>
+              <h2 className="hero-title">当城市睡去</h2>
+              <div className="big-stat">
+                <span className="stat-num">{midnightKing.count}</span>
+                <span className="stat-unit">次深夜对话</span>
+              </div>
+              <p className="hero-desc">
+                <span className="hl">{midnightKing.displayName}</span> 常常在深夜陪着你
+                <br />占深夜聊天的 <span className="gold">{midnightKing.percentage}%</span>
+              </p>
+            </section>
+          )}
+
+          {/* 回应速度 */}
+          {responseSpeed && (
+            <section className="section" ref={sectionRefs.responseSpeed}>
+              <div className="label-text">回应速度</div>
+              <h2 className="hero-title">秒回达人</h2>
+              <div className="big-stat">
+                <span className="stat-num">{formatTime(responseSpeed.avgResponseTime)}</span>
+                <span className="stat-unit">平均回复时间</span>
+              </div>
+              <p className="hero-desc">
+                你回复 <span className="hl">{responseSpeed.fastestFriend}</span> 最快
+                <br />平均只需 <span className="gold">{formatTime(responseSpeed.fastestTime)}</span>
+              </p>
+            </section>
+          )}
+
+          {/* 年度常用语 - 词云 */}
+          {topPhrases && topPhrases.length > 0 && (
+            <section className="section" ref={sectionRefs.topPhrases}>
+              <div className="label-text">年度常用语</div>
+              <h2 className="hero-title">你在{year}年的年度常用语</h2>
+              <p className="hero-desc">
+                这一年，你说得最多的是：
+                <br />
+                <span className="hl" style={{ fontSize: '20px' }}>
+                  {topPhrases.slice(0, 3).map(p => p.phrase).join('、')}
+                </span>
+              </p>
+              <WordCloud words={topPhrases} />
+              <p className="hero-desc word-cloud-note">颜色越深代表出现频率越高</p>
+            </section>
+          )}
+
+          {/* 好友排行 */}
+          <section className="section" ref={sectionRefs.ranking}>
+            <div className="label-text">年度好友榜</div>
+            <h2 className="hero-title">聊得最多的人</h2>
+
+            {/* 领奖台 - 前三名 */}
+            <div className="podium">
+              {/* 第二名 - 左边 */}
+              {coreFriends[1] && (
+                <div className="podium-item second">
+                  <Avatar url={coreFriends[1].avatarUrl} name={coreFriends[1].displayName} size="lg" />
+                  <div className="podium-name">{coreFriends[1].displayName}</div>
+                  <div className="podium-count">{formatNumber(coreFriends[1].messageCount)} 条</div>
+                  <div className="podium-stand">
+                    <span className="podium-rank">2</span>
+                  </div>
+                </div>
               )}
-            </p>
-          </section>
-        )}
 
-        {/* 聊天火花 */}
-        {longestStreak && (
-          <section className="section" ref={sectionRefs.streak}>
-            <div className="label-text">聊天火花</div>
-            <h2 className="hero-title">持之以恒</h2>
-            <p className="hero-desc">与 <span className="hl">{longestStreak.friendName}</span> 保持了</p>
-            <div className="big-stat">
-              <span className="stat-num">{longestStreak.days}</span>
-              <span className="stat-unit">天</span>
-            </div>
-            <p className="hero-desc">陪伴，是最长情的告白</p>
-          </section>
-        )}
-
-        {/* 作息规律 */}
-        <section className="section" ref={sectionRefs.heatmap}>
-          <div className="label-text">作息规律</div>
-          <h2 className="hero-title">时间的痕迹</h2>
-          <p className="hero-desc active-time">
-            在 <span className="hl">{mostActive.weekday} {mostActive.hour}:00</span> 最活跃
-          </p>
-          <Heatmap data={activityHeatmap.data} />
-        </section>
-
-        {/* 深夜好友 */}
-        {midnightKing && (
-          <section className="section" ref={sectionRefs.midnightKing}>
-            <div className="label-text">深夜好友</div>
-            <h2 className="hero-title">当城市睡去</h2>
-            <div className="big-stat">
-              <span className="stat-num">{midnightKing.count}</span>
-              <span className="stat-unit">次深夜对话</span>
-            </div>
-            <p className="hero-desc">
-              <span className="hl">{midnightKing.displayName}</span> 常常在深夜陪着你
-              <br/>占深夜聊天的 <span className="gold">{midnightKing.percentage}%</span>
-            </p>
-          </section>
-        )}
-
-        {/* 回应速度 */}
-        {responseSpeed && (
-          <section className="section" ref={sectionRefs.responseSpeed}>
-            <div className="label-text">回应速度</div>
-            <h2 className="hero-title">秒回达人</h2>
-            <div className="big-stat">
-              <span className="stat-num">{formatTime(responseSpeed.avgResponseTime)}</span>
-              <span className="stat-unit">平均回复时间</span>
-            </div>
-            <p className="hero-desc">
-              你回复 <span className="hl">{responseSpeed.fastestFriend}</span> 最快
-              <br/>平均只需 <span className="gold">{formatTime(responseSpeed.fastestTime)}</span>
-            </p>
-          </section>
-        )}
-
-        {/* 年度常用语 - 词云 */}
-        {topPhrases && topPhrases.length > 0 && (
-          <section className="section" ref={sectionRefs.topPhrases}>
-            <div className="label-text">年度常用语</div>
-            <h2 className="hero-title">你在{year}年的年度常用语</h2>
-            <p className="hero-desc">
-              这一年，你说得最多的是：
-              <br/>
-              <span className="hl" style={{ fontSize: '20px' }}>
-                {topPhrases.slice(0, 3).map(p => p.phrase).join('、')}
-              </span>
-            </p>
-            <WordCloud words={topPhrases} />
-            <p className="hero-desc word-cloud-note">颜色越深代表出现频率越高</p>
-          </section>
-        )}
-
-        {/* 好友排行 */}
-        <section className="section" ref={sectionRefs.ranking}>
-          <div className="label-text">年度好友榜</div>
-          <h2 className="hero-title">聊得最多的人</h2>
-          
-          {/* 领奖台 - 前三名 */}
-          <div className="podium">
-            {/* 第二名 - 左边 */}
-            {coreFriends[1] && (
-              <div className="podium-item second">
-                <Avatar url={coreFriends[1].avatarUrl} name={coreFriends[1].displayName} size="lg" />
-                <div className="podium-name">{coreFriends[1].displayName}</div>
-                <div className="podium-count">{formatNumber(coreFriends[1].messageCount)} 条</div>
-                <div className="podium-stand">
-                  <span className="podium-rank">2</span>
+              {/* 第一名 - 中间最高 */}
+              {coreFriends[0] && (
+                <div className="podium-item first">
+                  <div className="crown">👑</div>
+                  <Avatar url={coreFriends[0].avatarUrl} name={coreFriends[0].displayName} size="lg" />
+                  <div className="podium-name">{coreFriends[0].displayName}</div>
+                  <div className="podium-count">{formatNumber(coreFriends[0].messageCount)} 条</div>
+                  <div className="podium-stand">
+                    <span className="podium-rank">1</span>
+                  </div>
                 </div>
-              </div>
-            )}
-            
-            {/* 第一名 - 中间最高 */}
-            {coreFriends[0] && (
-              <div className="podium-item first">
-                <div className="crown">👑</div>
-                <Avatar url={coreFriends[0].avatarUrl} name={coreFriends[0].displayName} size="lg" />
-                <div className="podium-name">{coreFriends[0].displayName}</div>
-                <div className="podium-count">{formatNumber(coreFriends[0].messageCount)} 条</div>
-                <div className="podium-stand">
-                  <span className="podium-rank">1</span>
-                </div>
-              </div>
-            )}
-            
-            {/* 第三名 - 右边 */}
-            {coreFriends[2] && (
-              <div className="podium-item third">
-                <Avatar url={coreFriends[2].avatarUrl} name={coreFriends[2].displayName} size="lg" />
-                <div className="podium-name">{coreFriends[2].displayName}</div>
-                <div className="podium-count">{formatNumber(coreFriends[2].messageCount)} 条</div>
-                <div className="podium-stand">
-                  <span className="podium-rank">3</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+              )}
 
-        {/* 结尾 */}
-        <section className="section ending" ref={sectionRefs.ending}>
-          <div className="label-text">尾声</div>
-          <h2 className="hero-title">感谢每一次对话</h2>
-          <p className="hero-desc">
-            我们总是在向前走，却很少有机会回头看看
-            <br/>愿新的一年，所有期待，皆有回声
-          </p>
-          <div className="ending-year">{year}</div>
-          <div className="ending-brand">WeFlow-WeFlow</div>
-        </section>
+              {/* 第三名 - 右边 */}
+              {coreFriends[2] && (
+                <div className="podium-item third">
+                  <Avatar url={coreFriends[2].avatarUrl} name={coreFriends[2].displayName} size="lg" />
+                  <div className="podium-name">{coreFriends[2].displayName}</div>
+                  <div className="podium-count">{formatNumber(coreFriends[2].messageCount)} 条</div>
+                  <div className="podium-stand">
+                    <span className="podium-rank">3</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 结尾 */}
+          <section className="section ending" ref={sectionRefs.ending}>
+            <div className="label-text">尾声</div>
+            <h2 className="hero-title">感谢每一次对话</h2>
+            <p className="hero-desc">
+              我们总是在向前走，却很少有机会回头看看
+              <br />愿新的一年，所有期待，皆有回声
+            </p>
+            <div className="ending-year">{year}</div>
+            <div className="ending-brand">WeFlow-WeFlow</div>
+          </section>
+        </div>
       </div>
     </div>
   )
