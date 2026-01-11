@@ -56,6 +56,8 @@ export interface Message {
   aesKey?: string
   encrypVer?: number
   cdnThumbUrl?: string
+  // 语音相关
+  voiceDurationSeconds?: number
 }
 
 export interface Contact {
@@ -78,6 +80,10 @@ class ChatService {
   private readonly avatarCacheTtlMs = 10 * 60 * 1000
   private readonly defaultV1AesKey = 'cfcd208495d565ef'
   private hardlinkCache = new Map<string, HardlinkState>()
+  // 游标预热
+  private prewarmingSessionIds: Set<string> = new Set()
+  private prewarmQueue: string[] = []
+  private isPrewarming = false
 
   constructor() {
     this.configService = new ConfigService()
@@ -180,6 +186,7 @@ class ChatService {
         return { success: false, error: result.error || '获取会话失败' }
       }
       const rows = result.sessions as Record<string, any>[]
+      
       if (rows.length > 0 && (rows[0]._error || rows[0]._info)) {
         const info = rows[0]
         const detail = info._error || info._info
@@ -224,7 +231,10 @@ class ChatService {
 
         const summary = this.cleanString(row.summary || row.digest || row.last_msg || row.lastMsg || '')
         const lastMsgType = parseInt(row.last_msg_type || row.lastMsgType || '0', 10)
-
+        
+        // 先从缓存获取联系人信息
+        const cached = this.avatarCache.get(username)
+        
         sessions.push({
           username,
           type: parseInt(row.type || '0', 10),
@@ -233,17 +243,98 @@ class ChatService {
           sortTimestamp: sortTs,
           lastTimestamp: lastTs,
           lastMsgType,
-          displayName: username
+          displayName: cached?.displayName || username,
+          avatarUrl: cached?.avatarUrl
         })
       }
-
-      // 获取联系人信息
-      await this.enrichSessionsWithContacts(sessions)
-
+      
+      // 异步加载联系人信息，不阻塞返回
+      this.enrichSessionsWithContactsAsync(sessions)
+      
       return { success: true, sessions }
     } catch (e) {
       console.error('ChatService: 获取会话列表失败:', e)
       return { success: false, error: String(e) }
+    }
+  }
+  
+  /**
+   * 异步补充联系人信息（不阻塞主流程）
+   * 只加载前20个会话的联系人信息，其余按需加载
+   */
+  private enrichSessionsWithContactsAsync(sessions: ChatSession[]): void {
+    // 使用 setImmediate 确保在当前事件循环结束后执行
+    setImmediate(async () => {
+      try {
+        // 只加载前20个会话的联系人信息
+        const initialBatch = sessions.slice(0, 20)
+        await this.enrichSessionsWithContacts(initialBatch)
+        // 通知前端更新会话列表
+        const { BrowserWindow } = require('electron')
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('chat:sessionsUpdated', sessions)
+          }
+        }
+      } catch (e) {
+        console.error('异步加载联系人信息失败:', e)
+      }
+    })
+  }
+  
+  /**
+   * 按需加载指定会话的联系人信息
+   */
+  async enrichSessionContacts(usernames: string[]): Promise<{ success: boolean; sessions?: Array<{ username: string; displayName?: string; avatarUrl?: string }> }> {
+    if (usernames.length === 0) return { success: true, sessions: [] }
+    
+    try {
+      const startTime = Date.now()
+      const now = Date.now()
+      const toFetch: string[] = []
+      const results: Array<{ username: string; displayName?: string; avatarUrl?: string }> = []
+      
+      // 检查缓存
+      for (const username of usernames) {
+        const cached = this.avatarCache.get(username)
+        if (cached && now - cached.updatedAt < this.avatarCacheTtlMs) {
+          results.push({
+            username,
+            displayName: cached.displayName,
+            avatarUrl: cached.avatarUrl
+          })
+        } else {
+          toFetch.push(username)
+        }
+      }
+      
+      if (toFetch.length === 0) {
+        return { success: true, sessions: results }
+      }
+      
+      // 批量获取
+      const [displayNames, avatarUrls] = await Promise.all([
+        wcdbService.getDisplayNames(toFetch),
+        wcdbService.getAvatarUrls(toFetch)
+      ])
+      
+      for (const username of toFetch) {
+        const displayName = displayNames.success && displayNames.map ? displayNames.map[username] : undefined
+        const avatarUrl = avatarUrls.success && avatarUrls.map ? avatarUrls.map[username] : undefined
+        
+        results.push({ username, displayName, avatarUrl })
+        
+        this.avatarCache.set(username, {
+          displayName,
+          avatarUrl,
+          updatedAt: now
+        })
+      }
+      
+      return { success: true, sessions: results }
+    } catch (e) {
+      console.error('ChatService: 按需加载联系人信息失败:', e)
+      return { success: false }
     }
   }
 
@@ -310,16 +401,11 @@ class ChatService {
       const batchSize = Math.max(1, limit || this.messageBatchDefault)
       let state = this.messageCursors.get(sessionId)
 
-      // 只在以下情况重新创建游标:
-      // 1. 没有游标状态
-      // 2. offset 为 0 (重新加载会话)
-      // 3. batchSize 改变
-      const needNewCursor = !state || offset === 0 || state.batchSize !== batchSize
+      // 优化：只在没有游标或 batchSize 改变时创建新游标
+      const needNewCursor = !state || state.batchSize !== batchSize
 
       if (needNewCursor) {
-        console.log(`[ChatService] 创建新游标: sessionId=${sessionId}, offset=${offset}, batchSize=${batchSize}`)
-
-        // 关闭旧游标
+        // 关闭旧游标（如果存在且 batchSize 不同）
         if (state) {
           try {
             await wcdbService.closeMessageCursor(state.cursor)
@@ -328,8 +414,8 @@ class ChatService {
           }
         }
 
-        // 创建新游标
-        const cursorResult = await wcdbService.openMessageCursor(sessionId, batchSize, false, 0, 0)
+        // 创建新游标 - 优先使用 Lite 版本（更快）
+        const cursorResult = await wcdbService.openMessageCursorLite(sessionId, batchSize, false, 0, 0)
         if (!cursorResult.success || !cursorResult.cursor) {
           console.error('[ChatService] 打开消息游标失败:', cursorResult.error)
           return { success: false, error: cursorResult.error || '打开消息游标失败' }
@@ -337,35 +423,44 @@ class ChatService {
 
         state = { cursor: cursorResult.cursor, fetched: 0, batchSize }
         this.messageCursors.set(sessionId, state)
+      } else if (offset === 0 && state) {
+        // 重新加载同一会话：关闭旧游标，创建新游标
+        try {
+          await wcdbService.closeMessageCursor(state.cursor)
+        } catch (e) {
+          console.warn('[ChatService] 关闭旧游标失败:', e)
+        }
+        
+        const cursorResult = await wcdbService.openMessageCursorLite(sessionId, batchSize, false, 0, 0)
+        if (!cursorResult.success || !cursorResult.cursor) {
+          console.error('[ChatService] 打开消息游标失败:', cursorResult.error)
+          return { success: false, error: cursorResult.error || '打开消息游标失败' }
+        }
+        
+        state = { cursor: cursorResult.cursor, fetched: 0, batchSize }
+        this.messageCursors.set(sessionId, state)
+      }
 
-        // 如果需要跳过消息(offset > 0),逐批获取但不返回
-        if (offset > 0) {
-          console.log(`[ChatService] 跳过消息: offset=${offset}`)
-          let skipped = 0
-          while (skipped < offset) {
-            const skipBatch = await wcdbService.fetchMessageBatch(state.cursor)
-            if (!skipBatch.success) {
-              console.error('[ChatService] 跳过消息批次失败:', skipBatch.error)
-              return { success: false, error: skipBatch.error || '跳过消息失败' }
-            }
-            if (!skipBatch.rows || skipBatch.rows.length === 0) {
-              console.log('[ChatService] 跳过时没有更多消息')
-              return { success: true, messages: [], hasMore: false }
-            }
-            skipped += skipBatch.rows.length
-            state.fetched += skipBatch.rows.length
-            if (!skipBatch.hasMore) {
-              console.log('[ChatService] 跳过时已到达末尾')
-              return { success: true, messages: [], hasMore: false }
-            }
+      // 如果需要跳过消息(offset > 0 且 fetched < offset)
+      if (state && offset > 0 && state.fetched < offset) {
+        let skipped = state.fetched
+        while (skipped < offset) {
+          const skipBatch = await wcdbService.fetchMessageBatch(state.cursor)
+          if (!skipBatch.success) {
+            console.error('[ChatService] 跳过消息批次失败:', skipBatch.error)
+            return { success: false, error: skipBatch.error || '跳过消息失败' }
           }
-          console.log(`[ChatService] 跳过完成: skipped=${skipped}, fetched=${state.fetched}`)
+          if (!skipBatch.rows || skipBatch.rows.length === 0) {
+            return { success: true, messages: [], hasMore: false }
+          }
+          skipped += skipBatch.rows.length
+          state.fetched += skipBatch.rows.length
+          if (!skipBatch.hasMore) {
+            return { success: true, messages: [], hasMore: false }
+          }
         }
       } else if (state && offset !== state.fetched) {
-        // offset 与 fetched 不匹配,说明状态不一致
-        console.warn(`[ChatService] 游标状态不一致: offset=${offset}, fetched=${state.fetched}, 继续使用现有游标`)
-        // 不重新创建游标,而是继续使用现有游标
-        // 这样可以避免频繁重建导致的问题
+        console.warn(`[ChatService] 游标状态不一致: offset=${offset}, fetched=${state.fetched}`)
       }
 
       // 确保 state 已初始化
@@ -375,7 +470,6 @@ class ChatService {
       }
 
       // 获取当前批次的消息
-      console.log(`[ChatService] 获取消息批次: cursor=${state.cursor}, fetched=${state.fetched}`)
       const batch = await wcdbService.fetchMessageBatch(state.cursor)
       if (!batch.success) {
         console.error('[ChatService] 获取消息批次失败:', batch.error)
@@ -410,6 +504,98 @@ class ChatService {
       console.error('ChatService: 获取消息失败:', e)
       return { success: false, error: String(e) }
     }
+  }
+
+  /**
+   * 快速获取消息（不使用游标，用于首次加载）
+   */
+  async getMessagesFast(
+    sessionId: string,
+    limit: number = 50
+  ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
+      }
+
+      // 直接使用 getMessages，不创建游标
+      const result = await wcdbService.getMessages(sessionId, limit, 0)
+      
+      if (!result.success || !result.messages) {
+        return { success: false, error: result.error || '获取消息失败' }
+      }
+
+      const normalized = this.normalizeMessageOrder(this.mapRowsToMessages(result.messages))
+
+      // 检查是否有更多消息
+      const hasMore = result.messages.length >= limit
+
+      return { success: true, messages: normalized, hasMore }
+    } catch (e) {
+      console.error('ChatService: 快速获取消息失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  /**
+   * 预热会话游标（后台异步执行，不阻塞）
+   * 在会话列表加载后调用，预先创建前N个会话的游标
+   */
+  async prewarmCursors(sessionIds: string[]): Promise<void> {
+    // 过滤掉已有游标的会话
+    const toPrewarm = sessionIds.filter(id => !this.messageCursors.has(id) && !this.prewarmingSessionIds.has(id))
+    if (toPrewarm.length === 0) return
+
+    // 添加到队列
+    this.prewarmQueue.push(...toPrewarm)
+    
+    // 如果已经在预热，不重复启动
+    if (this.isPrewarming) return
+    
+    this.isPrewarming = true
+    
+    // 异步执行预热，不阻塞主流程
+    setImmediate(() => this.processPrewarmQueue())
+  }
+
+  private async processPrewarmQueue(): Promise<void> {
+    while (this.prewarmQueue.length > 0) {
+      const sessionId = this.prewarmQueue.shift()!
+      
+      // 如果已有游标，跳过
+      if (this.messageCursors.has(sessionId)) continue
+      
+      this.prewarmingSessionIds.add(sessionId)
+      
+      try {
+        const cursorResult = await wcdbService.openMessageCursorLite(sessionId, this.messageBatchDefault, false, 0, 0)
+        
+        if (cursorResult.success && cursorResult.cursor) {
+          this.messageCursors.set(sessionId, { 
+            cursor: cursorResult.cursor, 
+            fetched: 0, 
+            batchSize: this.messageBatchDefault 
+          })
+        }
+      } catch (e) {
+        // 预热失败不影响正常使用
+      } finally {
+        this.prewarmingSessionIds.delete(sessionId)
+      }
+      
+      // 每个游标之间稍微延迟，避免阻塞其他操作
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    
+    this.isPrewarming = false
+  }
+
+  /**
+   * 检查游标是否已预热
+   */
+  isCursorReady(sessionId: string): boolean {
+    return this.messageCursors.has(sessionId)
   }
 
   /**
@@ -1394,6 +1580,59 @@ class ChatService {
   }
 
   /**
+   * 批量获取联系人头像和显示名称（用于群聊消息预加载）
+   */
+  async getContactAvatarsBatch(usernames: string[]): Promise<{ success: boolean; map?: Record<string, { avatarUrl?: string; displayName?: string }>; error?: string }> {
+    if (!usernames || usernames.length === 0) {
+      return { success: true, map: {} }
+    }
+
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error }
+      }
+
+      const now = Date.now()
+      const resultMap: Record<string, { avatarUrl?: string; displayName?: string }> = {}
+      const toFetch: string[] = []
+
+      // 先检查缓存
+      for (const username of usernames) {
+        if (!username) continue
+        const cached = this.avatarCache.get(username)
+        if (cached && Date.now() - cached.updatedAt < this.avatarCacheTtlMs) {
+          resultMap[username] = { avatarUrl: cached.avatarUrl, displayName: cached.displayName }
+        } else {
+          toFetch.push(username)
+        }
+      }
+
+      if (toFetch.length === 0) {
+        return { success: true, map: resultMap }
+      }
+
+      // 批量获取
+      const [displayNames, avatarUrls] = await Promise.all([
+        wcdbService.getDisplayNames(toFetch),
+        wcdbService.getAvatarUrls(toFetch)
+      ])
+
+      for (const username of toFetch) {
+        const displayName = displayNames.success && displayNames.map ? displayNames.map[username] : undefined
+        const avatarUrl = avatarUrls.success && avatarUrls.map ? avatarUrls.map[username] : undefined
+        resultMap[username] = { avatarUrl, displayName: displayName || username }
+        this.avatarCache.set(username, { avatarUrl, displayName: displayName || username, updatedAt: now })
+      }
+
+      return { success: true, map: resultMap }
+    } catch (e) {
+      console.error('ChatService: 批量获取头像失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  /**
    * 获取当前用户的头像 URL
    */
   async getMyAvatarUrl(): Promise<{ success: boolean; avatarUrl?: string; error?: string }> {
@@ -1751,12 +1990,7 @@ class ChatService {
         return { success: false, error: '未找到消息' }
       }
       const msg = msgResult.message
-      console.info('[ChatService][Image] request', {
-        sessionId,
-        localId: msg.localId,
-        imageMd5: msg.imageMd5,
-        imageDatName: msg.imageDatName
-      })
+      // console.info('[ChatService][Image] request', { sessionId, localId: msg.localId, imageMd5: msg.imageMd5, imageDatName: msg.imageDatName })
 
       // 2. 确定搜索的基础名
       const baseName = msg.imageMd5 || msg.imageDatName || String(msg.localId)
@@ -1773,7 +2007,7 @@ class ChatService {
 
       const datPath = await this.findDatFile(actualAccountDir, baseName, sessionId)
       if (!datPath) return { success: false, error: '未找到图片源文件 (.dat)' }
-      console.info('[ChatService][Image] dat path', datPath)
+      // console.info('[ChatService][Image] dat path', datPath)
 
       // 4. 获取解密密钥
       const xorKeyRaw = this.configService.get('imageXorKey')
@@ -1801,7 +2035,7 @@ class ChatService {
         const aesKey = this.asciiKey16(trimmed)
         decrypted = this.decryptDatV4(data, xorKey, aesKey)
       }
-      console.info('[ChatService][Image] decrypted bytes', decrypted.length)
+      // console.info('[ChatService][Image] decrypted bytes', decrypted.length)
 
       // 返回 base64
       return { success: true, data: decrypted.toString('base64') }
@@ -1825,17 +2059,12 @@ class ChatService {
       if (candidates.length === 0) {
         return { success: false, error: '未找到语音关联账号' }
       }
-      console.info('[ChatService][Voice] request', {
-        sessionId,
-        localId: msg.localId,
-        createTime: msg.createTime,
-        candidates
-      })
+      // console.info('[ChatService][Voice] request', { sessionId, localId: msg.localId, createTime: msg.createTime, candidates })
 
       // 2. 查找所有的 media_*.db
       const mediaDbs = await wcdbService.listMediaDbs()
       if (!mediaDbs.success || !mediaDbs.data) return { success: false, error: '获取媒体库失败' }
-      console.info('[ChatService][Voice] media dbs', mediaDbs.data)
+      // console.info('[ChatService][Voice] media dbs', mediaDbs.data)
 
       // 3. 在所有媒体库中查找该消息的语音数据
       let silkData: Buffer | null = null
@@ -1863,7 +2092,7 @@ class ChatService {
                 const raw = result.rows[0]?.data
                 const decoded = this.decodeVoiceBlob(raw)
                 if (decoded && decoded.length > 0) {
-                  console.info('[ChatService][Voice] hit by createTime', { dbPath, voiceTable, whereClause, bytes: decoded.length })
+                  // console.info('[ChatService][Voice] hit by createTime', { dbPath, voiceTable, whereClause, bytes: decoded.length })
                   silkData = decoded
                   break
                 }
@@ -1880,7 +2109,7 @@ class ChatService {
               const raw = result.rows[0]?.data
               const decoded = this.decodeVoiceBlob(raw)
               if (decoded && decoded.length > 0) {
-                console.info('[ChatService][Voice] hit by localId', { dbPath, voiceTable, whereClause, bytes: decoded.length })
+                // console.info('[ChatService][Voice] hit by localId', { dbPath, voiceTable, whereClause, bytes: decoded.length })
                 silkData = decoded
                 break
               }
@@ -1901,7 +2130,7 @@ class ChatService {
       if (!existsSync(decoderPath)) {
         return { success: false, error: '找不到语音解码器 (silk_v3_decoder.exe)' }
       }
-      console.info('[ChatService][Voice] decoder path', decoderPath)
+      // console.info('[ChatService][Voice] decoder path', decoderPath)
 
       const tempDir = app.getPath('temp')
       const silkFile = join(tempDir, `voice_${msgId}.silk`)
@@ -1910,14 +2139,14 @@ class ChatService {
       try {
         writeFileSync(silkFile, silkData)
         // 执行解码: silk_v3_decoder.exe <silk> <pcm> -Fs_API 24000
-        console.info('[ChatService][Voice] executing decoder:', decoderPath, [silkFile, pcmFile])
+        // console.info('[ChatService][Voice] executing decoder:', decoderPath, [silkFile, pcmFile])
         const { stdout, stderr } = await execFileAsync(
           decoderPath,
           [silkFile, pcmFile, '-Fs_API', '24000'],
           { cwd: dirname(decoderPath) }
         )
-        if (stdout && stdout.trim()) console.info('[ChatService][Voice] decoder stdout:', stdout)
-        if (stderr && stderr.trim()) console.warn('[ChatService][Voice] decoder stderr:', stderr)
+        // if (stdout && stdout.trim()) console.info('[ChatService][Voice] decoder stdout:', stdout)
+        // if (stderr && stderr.trim()) console.warn('[ChatService][Voice] decoder stderr:', stderr)
 
         if (!existsSync(pcmFile)) {
           return { success: false, error: '语音解码失败' }
@@ -1959,7 +2188,7 @@ class ChatService {
 
   async getMessageById(sessionId: string, localId: number): Promise<{ success: boolean; message?: Message; error?: string }> {
     try {
-      console.info('[ChatService] getMessageById (SQL)', { sessionId, localId })
+      // console.info('[ChatService] getMessageById (SQL)', { sessionId, localId })
 
       // 1. 获取该会话所在的消息表
       // 注意：这里使用 getMessageTableStats 而不是 getMessageTables，因为前者包含 db_path
@@ -1983,7 +2212,7 @@ class ChatService {
           const message = this.parseMessage(row)
 
           if (message.localId !== 0) {
-            console.info('[ChatService] getMessageById hit', { tableName, localId: message.localId })
+            // console.info('[ChatService] getMessageById hit', { tableName, localId: message.localId })
             return { success: true, message }
           }
         }
@@ -2231,12 +2460,12 @@ class ChatService {
     }
 
     const aesData = payload.subarray(0, alignedAesSize)
-    let unpadded = Buffer.alloc(0)
+    let unpadded: Buffer = Buffer.alloc(0)
     if (aesData.length > 0) {
       const decipher = crypto.createDecipheriv('aes-128-ecb', aesKey, Buffer.alloc(0))
       decipher.setAutoPadding(false)
       const decrypted = Buffer.concat([decipher.update(aesData), decipher.final()])
-      unpadded = this.strictRemovePadding(decrypted)
+      unpadded = this.strictRemovePadding(decrypted) as Buffer
     }
 
     const remaining = payload.subarray(alignedAesSize)
@@ -2244,21 +2473,21 @@ class ChatService {
       throw new Error('文件格式异常：XOR 数据长度不合法')
     }
 
-    let rawData = Buffer.alloc(0)
-    let xoredData = Buffer.alloc(0)
+    let rawData: Buffer = Buffer.alloc(0)
+    let xoredData: Buffer = Buffer.alloc(0)
     if (xorSize > 0) {
       const rawLength = remaining.length - xorSize
       if (rawLength < 0) {
         throw new Error('文件格式异常：原始数据长度小于XOR长度')
       }
-      rawData = remaining.subarray(0, rawLength)
+      rawData = Buffer.from(remaining.subarray(0, rawLength))
       const xorData = remaining.subarray(rawLength)
       xoredData = Buffer.alloc(xorData.length)
       for (let i = 0; i < xorData.length; i++) {
         xoredData[i] = xorData[i] ^ xorKey
       }
     } else {
-      rawData = remaining
+      rawData = Buffer.from(remaining)
       xoredData = Buffer.alloc(0)
     }
 

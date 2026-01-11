@@ -61,6 +61,14 @@ export interface ElectronAPI {
       hasMore?: boolean;
       error?: string
     }>
+    getMessagesFast: (sessionId: string, limit?: number) => Promise<{
+      success: boolean;
+      messages?: Message[];
+      hasMore?: boolean;
+      error?: string
+    }>
+    prewarmCursors: (sessionIds: string[]) => Promise<{ success: boolean }>
+    isCursorReady: (sessionId: string) => Promise<boolean>
     getLatestMessages: (sessionId: string, limit?: number) => Promise<{
       success: boolean
       messages?: Message[]
@@ -68,6 +76,11 @@ export interface ElectronAPI {
     }>
     getContact: (username: string) => Promise<Contact | null>
     getContactAvatar: (username: string) => Promise<{ avatarUrl?: string; displayName?: string } | null>
+    getContactAvatarsBatch: (usernames: string[]) => Promise<{
+      success: boolean
+      map?: Record<string, { avatarUrl?: string; displayName?: string }>
+      error?: string
+    }>
     getMyAvatarUrl: () => Promise<{ success: boolean; avatarUrl?: string; error?: string }>
     downloadEmoji: (cdnUrl: string, md5?: string) => Promise<{ success: boolean; localPath?: string; error?: string }>
     close: () => Promise<boolean>
@@ -89,6 +102,11 @@ export interface ElectronAPI {
     }>
     getImageData: (sessionId: string, msgId: string) => Promise<{ success: boolean; data?: string; error?: string }>
     getVoiceData: (sessionId: string, msgId: string) => Promise<{ success: boolean; data?: string; error?: string }>
+    enrichSessionContacts: (usernames: string[]) => Promise<{ 
+      success: boolean
+      sessions?: Array<{ username: string; displayName?: string; avatarUrl?: string }>
+    }>
+    onSessionsUpdated: (callback: (sessions: ChatSession[]) => void) => () => void
   }
   image: {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => Promise<{ success: boolean; localPath?: string; error?: string }>

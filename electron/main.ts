@@ -394,6 +394,19 @@ function registerIpcHandlers() {
     return chatService.getMessages(sessionId, offset, limit)
   })
 
+  ipcMain.handle('chat:getMessagesFast', async (_, sessionId: string, limit?: number) => {
+    return chatService.getMessagesFast(sessionId, limit)
+  })
+
+  ipcMain.handle('chat:prewarmCursors', async (_, sessionIds: string[]) => {
+    chatService.prewarmCursors(sessionIds)
+    return { success: true }
+  })
+
+  ipcMain.handle('chat:isCursorReady', async (_, sessionId: string) => {
+    return chatService.isCursorReady(sessionId)
+  })
+
   ipcMain.handle('chat:getLatestMessages', async (_, sessionId: string, limit?: number) => {
     return chatService.getLatestMessages(sessionId, limit)
   })
@@ -404,6 +417,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:getContactAvatar', async (_, username: string) => {
     return chatService.getContactAvatar(username)
+  })
+
+  ipcMain.handle('chat:getContactAvatarsBatch', async (_, usernames: string[]) => {
+    return chatService.getContactAvatarsBatch(usernames)
   })
 
   ipcMain.handle('chat:getMyAvatarUrl', async () => {
@@ -433,6 +450,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:getMessageById', async (_, sessionId: string, localId: number) => {
     return chatService.getMessageById(sessionId, localId)
+  })
+
+  ipcMain.handle('chat:enrichSessionContacts', async (_, usernames: string[]) => {
+    return chatService.enrichSessionContacts(usernames)
   })
 
   ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => {
