@@ -93,16 +93,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSessions: () => ipcRenderer.invoke('chat:getSessions'),
     getMessages: (sessionId: string, offset?: number, limit?: number) =>
       ipcRenderer.invoke('chat:getMessages', sessionId, offset, limit),
+    getMessagesFast: (sessionId: string, limit?: number) =>
+      ipcRenderer.invoke('chat:getMessagesFast', sessionId, limit),
+    prewarmCursors: (sessionIds: string[]) =>
+      ipcRenderer.invoke('chat:prewarmCursors', sessionIds),
+    isCursorReady: (sessionId: string) =>
+      ipcRenderer.invoke('chat:isCursorReady', sessionId),
     getLatestMessages: (sessionId: string, limit?: number) =>
       ipcRenderer.invoke('chat:getLatestMessages', sessionId, limit),
     getContact: (username: string) => ipcRenderer.invoke('chat:getContact', username),
     getContactAvatar: (username: string) => ipcRenderer.invoke('chat:getContactAvatar', username),
+    getContactAvatarsBatch: (usernames: string[]) => ipcRenderer.invoke('chat:getContactAvatarsBatch', usernames),
     getMyAvatarUrl: () => ipcRenderer.invoke('chat:getMyAvatarUrl'),
     downloadEmoji: (cdnUrl: string, md5?: string) => ipcRenderer.invoke('chat:downloadEmoji', cdnUrl, md5),
     close: () => ipcRenderer.invoke('chat:close'),
     getSessionDetail: (sessionId: string) => ipcRenderer.invoke('chat:getSessionDetail', sessionId),
     getImageData: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:getImageData', sessionId, msgId),
-    getVoiceData: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:getVoiceData', sessionId, msgId)
+    getVoiceData: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:getVoiceData', sessionId, msgId),
+    enrichSessionContacts: (usernames: string[]) => ipcRenderer.invoke('chat:enrichSessionContacts', usernames),
+    // 会话列表更新事件（联系人信息异步加载完成后）
+    onSessionsUpdated: (callback: (sessions: any[]) => void) => {
+      const handler = (_: any, sessions: any[]) => callback(sessions)
+      ipcRenderer.on('chat:sessionsUpdated', handler)
+      return () => ipcRenderer.removeListener('chat:sessionsUpdated', handler)
+    },
+    offSessionsUpdated: (callback: any) => {
+      ipcRenderer.removeListener('chat:sessionsUpdated', callback)
+    }
   },
 
   // 图片解密

@@ -1,8 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import { basename, dirname, extname, join } from 'path'
 import { pathToFileURL } from 'url'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs'
-import { writeFile } from 'fs/promises'
+import { existsSync, mkdirSync, readdirSync, statSync } from 'fs'
+import { writeFile, readFile } from 'fs/promises'
 import crypto from 'crypto'
 import { Worker } from 'worker_threads'
 import { ConfigService } from './config'
@@ -31,12 +31,8 @@ export class ImageDecryptService {
   private updateFlags = new Map<string, boolean>()
 
   private logInfo(message: string, meta?: Record<string, unknown>): void {
-    if (!this.configService.get('logEnabled')) return
-    if (meta) {
-      console.info(message, meta)
-    } else {
-      console.info(message)
-    }
+    // 完全禁用ImageDecrypt的详细日志，只保留错误日志
+    return
   }
 
   async resolveCachedImage(payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }): Promise<DecryptResult & { hasUpdate?: boolean }> {
@@ -49,7 +45,7 @@ export class ImageDecryptService {
     for (const key of cacheKeys) {
       const cached = this.resolvedCache.get(key)
       if (cached && existsSync(cached) && this.isImageFile(cached)) {
-        const dataUrl = this.fileToDataUrl(cached)
+        const dataUrl = await this.fileToDataUrl(cached)
         const isThumb = this.isThumbnailPath(cached)
         const hasUpdate = isThumb ? (this.updateFlags.get(key) ?? false) : false
         if (isThumb) {
@@ -69,7 +65,7 @@ export class ImageDecryptService {
       const existing = this.findCachedOutput(key, false, payload.sessionId)
       if (existing) {
         this.cacheResolvedPaths(key, payload.imageMd5, payload.imageDatName, existing)
-        const dataUrl = this.fileToDataUrl(existing)
+        const dataUrl = await this.fileToDataUrl(existing)
         const isThumb = this.isThumbnailPath(existing)
         const hasUpdate = isThumb ? (this.updateFlags.get(key) ?? false) : false
         if (isThumb) {
@@ -94,7 +90,7 @@ export class ImageDecryptService {
     if (!payload.force) {
       const cached = this.resolvedCache.get(cacheKey)
       if (cached && existsSync(cached) && this.isImageFile(cached)) {
-        const dataUrl = this.fileToDataUrl(cached)
+        const dataUrl = await this.fileToDataUrl(cached)
         const localPath = dataUrl || this.filePathToUrl(cached)
         this.emitCacheResolved(payload, cacheKey, localPath)
         return { success: true, localPath }
@@ -150,7 +146,7 @@ export class ImageDecryptService {
 
       if (!extname(datPath).toLowerCase().includes('dat')) {
         this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, datPath)
-        const dataUrl = this.fileToDataUrl(datPath)
+        const dataUrl = await this.fileToDataUrl(datPath)
         const localPath = dataUrl || this.filePathToUrl(datPath)
         const isThumb = this.isThumbnailPath(datPath)
         this.emitCacheResolved(payload, cacheKey, localPath)
@@ -164,7 +160,7 @@ export class ImageDecryptService {
         // 如果要求高清但找到的是缩略图，继续解密高清图
         if (!(payload.force && !isHd)) {
           this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, existing)
-          const dataUrl = this.fileToDataUrl(existing)
+          const dataUrl = await this.fileToDataUrl(existing)
           const localPath = dataUrl || this.filePathToUrl(existing)
           const isThumb = this.isThumbnailPath(existing)
           this.emitCacheResolved(payload, cacheKey, localPath)
@@ -986,10 +982,20 @@ export class ImageDecryptService {
   }
 
   private emitCacheResolved(payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }, cacheKey: string, localPath: string): void {
-    const message = { cacheKey, imageMd5: payload.imageMd5, imageDatName: payload.imageDatName, localPath }
+    // 确保只传递可序列化的数据
+    const message = { 
+      cacheKey: String(cacheKey), 
+      imageMd5: payload.imageMd5 ? String(payload.imageMd5) : undefined, 
+      imageDatName: payload.imageDatName ? String(payload.imageDatName) : undefined, 
+      localPath: String(localPath) 
+    }
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send('image:cacheResolved', message)
+        try {
+          win.webContents.send('image:cacheResolved', message)
+        } catch (e) {
+          // 忽略序列化错误，避免阻塞
+        }
       }
     }
   }
@@ -1078,27 +1084,27 @@ export class ImageDecryptService {
   }
 
   private async decryptDatAuto(datPath: string, xorKey: number, aesKey: Buffer | null): Promise<Buffer> {
-    const version = this.getDatVersion(datPath)
+    const version = await this.getDatVersion(datPath)
     
     if (version === 0) {
-      return this.decryptDatV3(datPath, xorKey)
+      return await this.decryptDatV3(datPath, xorKey)
     }
     if (version === 1) {
       const key = this.asciiKey16(this.defaultV1AesKey)
-      return this.decryptDatV4(datPath, xorKey, key)
+      return await this.decryptDatV4(datPath, xorKey, key)
     }
     // version === 2
     if (!aesKey || aesKey.length !== 16) {
       throw new Error('请到设置配置图片解密密钥')
     }
-    return this.decryptDatV4(datPath, xorKey, aesKey)
+    return await this.decryptDatV4(datPath, xorKey, aesKey)
   }
 
-  private getDatVersion(inputPath: string): number {
+  private async getDatVersion(inputPath: string): Promise<number> {
     if (!existsSync(inputPath)) {
       throw new Error('文件不存在')
     }
-    const bytes = readFileSync(inputPath)
+    const bytes = await readFile(inputPath)
     if (bytes.length < 6) {
       return 0
     }
@@ -1112,8 +1118,8 @@ export class ImageDecryptService {
     return 0
   }
 
-  private decryptDatV3(inputPath: string, xorKey: number): Buffer {
-    const data = readFileSync(inputPath)
+  private async decryptDatV3(inputPath: string, xorKey: number): Promise<Buffer> {
+    const data = await readFile(inputPath)
     const out = Buffer.alloc(data.length)
     for (let i = 0; i < data.length; i += 1) {
       out[i] = data[i] ^ xorKey
@@ -1121,8 +1127,8 @@ export class ImageDecryptService {
     return out
   }
 
-  private decryptDatV4(inputPath: string, xorKey: number, aesKey: Buffer): Buffer {
-    const bytes = readFileSync(inputPath)
+  private async decryptDatV4(inputPath: string, xorKey: number, aesKey: Buffer): Promise<Buffer> {
+    const bytes = await readFile(inputPath)
     if (bytes.length < 0x0f) {
       throw new Error('文件太小，无法解析')
     }
@@ -1226,12 +1232,12 @@ export class ImageDecryptService {
     return `data:${mimeType};base64,${buffer.toString('base64')}`
   }
 
-  private fileToDataUrl(filePath: string): string | null {
+  private async fileToDataUrl(filePath: string): Promise<string | null> {
     try {
       const ext = extname(filePath).toLowerCase()
       const mimeType = this.mimeFromExtension(ext)
       if (!mimeType) return null
-      const data = readFileSync(filePath)
+      const data = await readFile(filePath)
       return `data:${mimeType};base64,${data.toString('base64')}`
     } catch {
       return null

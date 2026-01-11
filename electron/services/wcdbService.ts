@@ -596,13 +596,16 @@ export class WcdbService {
     try {
       const outPtr = [null as any]
       const result = this.wcdbGetSessions(this.handle, outPtr)
+      
       if (result !== 0 || !outPtr[0]) {
         this.writeLog(`getSessions failed: code=${result}`)
         return { success: false, error: `获取会话失败: ${result}` }
       }
+      
       const jsonStr = this.decodeJsonPtr(outPtr[0])
       if (!jsonStr) return { success: false, error: '解析会话失败' }
       this.writeLog(`getSessions ok size=${jsonStr.length}`)
+      
       const sessions = JSON.parse(jsonStr)
       return { success: true, sessions }
     } catch (e) {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
+import { useAppStore } from '../stores/appStore'
 import type { ChatSession, Message } from '../types/models'
 import { getEmojiPath } from 'wechat-emojis'
 import './ChatPage.scss'
@@ -76,6 +77,78 @@ function SessionAvatar({ session, size = 48 }: { session: ChatSession; size?: nu
   )
 }
 
+// 会话列表项组件 - 支持懒加载联系人信息
+const loadingUsernames = new Set<string>()
+const loadedUsernames = new Set<string>()
+
+function SessionItem({ 
+  session, 
+  isActive, 
+  onClick,
+  onNeedLoadContact,
+  formatTime
+}: { 
+  session: ChatSession
+  isActive: boolean
+  onClick: () => void
+  onNeedLoadContact: (username: string) => void
+  formatTime: (timestamp: number) => string
+}) {
+  const itemRef = useRef<HTMLDivElement>(null)
+  const hasContactInfo = session.avatarUrl || (session.displayName && session.displayName !== session.username)
+  
+  useEffect(() => {
+    // 如果已经有联系人信息，或者已经在加载/已加载，跳过
+    if (hasContactInfo || loadingUsernames.has(session.username) || loadedUsernames.has(session.username)) {
+      return
+    }
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          // 进入视口，请求加载联系人信息
+          if (!loadingUsernames.has(session.username) && !loadedUsernames.has(session.username)) {
+            loadingUsernames.add(session.username)
+            onNeedLoadContact(session.username)
+          }
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '100px' }
+    )
+    
+    if (itemRef.current) {
+      observer.observe(itemRef.current)
+    }
+    
+    return () => observer.disconnect()
+  }, [session.username, hasContactInfo, onNeedLoadContact])
+  
+  return (
+    <div
+      ref={itemRef}
+      className={`session-item ${isActive ? 'active' : ''}`}
+      onClick={onClick}
+    >
+      <SessionAvatar session={session} size={48} />
+      <div className="session-info">
+        <div className="session-top">
+          <span className="session-name">{session.displayName || session.username}</span>
+          <span className="session-time">{formatTime(session.lastTimestamp || session.sortTimestamp)}</span>
+        </div>
+        <div className="session-bottom">
+          <span className="session-summary">{session.summary || '暂无消息'}</span>
+          {session.unreadCount > 0 && (
+            <span className="unread-badge">
+              {session.unreadCount > 99 ? '99+' : session.unreadCount}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ChatPage(_props: ChatPageProps) {
   const {
     isConnected,
@@ -104,6 +177,9 @@ function ChatPage(_props: ChatPageProps) {
     setHasMoreMessages,
     setSearchKeyword
   } = useChatStore()
+
+  // 从 appStore 获取全局连接状态
+  const isDbConnected = useAppStore(state => state.isDbConnected)
 
   const messageListRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -200,6 +276,35 @@ function ChatPage(_props: ChatPageProps) {
       if (result.success && result.sessions) {
         const nextSessions = options?.silent ? mergeSessions(result.sessions) : result.sessions
         setSessions(nextSessions)
+        
+        // 预热前5个会话的游标（后台异步执行）
+        if (!options?.silent && nextSessions.length > 0) {
+          const topSessionIds = nextSessions.slice(0, 5).map(s => s.username)
+          window.electronAPI.chat.prewarmCursors(topSessionIds)
+          
+          // 预加载前30个会话的联系人信息（减少滚动时的请求）
+          const sessionsNeedContact = nextSessions
+            .slice(0, 30)
+            .filter(s => !s.avatarUrl && !s.displayName)
+            .map(s => s.username)
+          if (sessionsNeedContact.length > 0) {
+            window.electronAPI.chat.enrichSessionContacts(sessionsNeedContact).then(res => {
+              if (res.success && res.sessions) {
+                const updated = [...nextSessions]
+                let hasChanges = false
+                for (const info of res.sessions) {
+                  const idx = updated.findIndex(s => s.username === info.username)
+                  if (idx >= 0 && (info.displayName || info.avatarUrl)) {
+                    updated[idx] = { ...updated[idx], displayName: info.displayName, avatarUrl: info.avatarUrl }
+                    loadedUsernames.add(info.username)
+                    hasChanges = true
+                  }
+                }
+                if (hasChanges) setSessions(updated)
+              }
+            })
+          }
+        }
       } else if (!result.success) {
         setConnectionError(result.error || '获取会话失败')
       }
@@ -219,6 +324,76 @@ function ChatPage(_props: ChatPageProps) {
   const handleRefresh = async () => {
     await loadSessions({ silent: true })
   }
+
+  // 批量加载联系人信息的队列
+  const pendingContactsRef = useRef<Set<string>>(new Set())
+  const loadContactsTimerRef = useRef<number | null>(null)
+  
+  // 批量加载联系人信息
+  const loadContactsBatch = useCallback(async () => {
+    const usernames = Array.from(pendingContactsRef.current)
+    if (usernames.length === 0) return
+    
+    pendingContactsRef.current.clear()
+    
+    try {
+      const result = await (window.electronAPI.chat as any).enrichSessionContacts(usernames)
+      if (result.success && result.sessions) {
+        // 更新会话列表中的联系人信息
+        const currentSessions = sessionsRef.current
+        const updated = [...currentSessions]
+        let hasChanges = false
+        
+        for (const info of result.sessions as Array<{ username: string; displayName?: string; avatarUrl?: string }>) {
+          const idx = updated.findIndex(s => s.username === info.username)
+          if (idx >= 0) {
+            updated[idx] = {
+              ...updated[idx],
+              displayName: info.displayName || updated[idx].displayName,
+              avatarUrl: info.avatarUrl || updated[idx].avatarUrl
+            }
+            loadedUsernames.add(info.username)
+            hasChanges = true
+          }
+        }
+        
+        if (hasChanges) {
+          setSessions(updated)
+        }
+      }
+    } catch (e) {
+      console.error('批量加载联系人信息失败:', e)
+    } finally {
+      // 清除加载中状态
+      for (const username of usernames) {
+        loadingUsernames.delete(username)
+      }
+    }
+  }, [setSessions])
+  
+  // 请求加载联系人信息（防抖批量处理）
+  const isLoadingContactsRef = useRef(false)
+  const handleNeedLoadContact = useCallback((username: string) => {
+    pendingContactsRef.current.add(username)
+    
+    // 防抖：300ms 内的请求合并为一批，避免滚动时频繁请求
+    if (loadContactsTimerRef.current) {
+      clearTimeout(loadContactsTimerRef.current)
+    }
+    loadContactsTimerRef.current = window.setTimeout(async () => {
+      // 如果正在加载，延迟执行
+      if (isLoadingContactsRef.current) {
+        loadContactsTimerRef.current = window.setTimeout(() => {
+          loadContactsBatch()
+        }, 200)
+        return
+      }
+      isLoadingContactsRef.current = true
+      await loadContactsBatch()
+      isLoadingContactsRef.current = false
+      loadContactsTimerRef.current = null
+    }, 300)
+  }, [loadContactsBatch])
 
   // 刷新当前会话消息（增量更新新消息）
   const [isRefreshingMessages, setIsRefreshingMessages] = useState(false)
@@ -257,17 +432,19 @@ function ChatPage(_props: ChatPageProps) {
     }
   }
 
-  // 加载消息
-  const loadMessages = async (sessionId: string, offset = 0) => {
+  // 加载消息 - 先快速加载少量，然后无感刷新
+  const loadMessages = async (sessionId: string, offset = 0, isBackgroundLoad = false) => {
     const listEl = messageListRef.current
     const session = sessionMapRef.current.get(sessionId)
-    const unreadCount = session?.unreadCount ?? 0
-    const messageLimit = offset === 0 && unreadCount > 99 ? 30 : 50
     
-    if (offset === 0) {
+    // 首次加载时先加载20条，后台再加载更多
+    const initialLimit = 20
+    const fullLimit = 50
+    
+    if (offset === 0 && !isBackgroundLoad) {
       setLoadingMessages(true)
       setMessages([])
-    } else {
+    } else if (!isBackgroundLoad) {
       setLoadingMore(true)
     }
 
@@ -275,38 +452,109 @@ function ChatPage(_props: ChatPageProps) {
     const firstMsgEl = listEl?.querySelector('.message-wrapper') as HTMLElement | null
 
     try {
-      const result = await window.electronAPI.chat.getMessages(sessionId, offset, messageLimit)
+      let result: { success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }
+      
+      if (offset === 0 && !isBackgroundLoad) {
+        // 首次加载：检查游标是否已预热
+        const isCursorReady = await window.electronAPI.chat.isCursorReady(sessionId)
+        
+        if (isCursorReady) {
+          // 游标已预热，直接使用游标获取（极快）
+          result = await window.electronAPI.chat.getMessages(sessionId, 0, initialLimit)
+        } else {
+          // 游标未预热，使用快速方法
+          result = await window.electronAPI.chat.getMessagesFast(sessionId, initialLimit)
+        }
+      } else {
+        // 后续加载使用游标方法
+        const limit = isBackgroundLoad ? fullLimit : fullLimit
+        result = await window.electronAPI.chat.getMessages(sessionId, offset, limit)
+      }
+      
       if (result.success && result.messages) {
-        if (offset === 0) {
+        // 群聊：批量预加载发送者头像
+        if (session?.username?.includes('@chatroom') && result.messages.length > 0) {
+          const senderUsernames = [...new Set(
+            result.messages
+              .filter(m => m.senderUsername && !senderAvatarCache.has(m.senderUsername))
+              .map(m => m.senderUsername!)
+          )]
+          if (senderUsernames.length > 0) {
+            // 异步预加载，不阻塞消息显示
+            window.electronAPI.chat.getContactAvatarsBatch(senderUsernames).then(res => {
+              if (res.success && res.map) {
+                for (const [username, info] of Object.entries(res.map)) {
+                  senderAvatarCache.set(username, info)
+                }
+              }
+            })
+          }
+        }
+        
+        if (offset === 0 && !isBackgroundLoad) {
           setMessages(result.messages)
+          setLoadingMessages(false)
           // 首次加载滚动到底部
           requestAnimationFrame(() => {
             if (messageListRef.current) {
               messageListRef.current.scrollTop = messageListRef.current.scrollHeight
             }
           })
-        } else {
+          setHasMoreMessages(result.hasMore ?? false)
+          setCurrentOffset(result.messages.length)
+          
+          // 后台无感加载更多消息
+          const loadedCount = result.messages.length
+          if (result.hasMore && currentSessionRef.current === sessionId) {
+            setTimeout(() => {
+              if (currentSessionRef.current === sessionId) {
+                loadMessages(sessionId, loadedCount, true)
+              }
+            }, 100)
+          }
+          return
+        } else if (isBackgroundLoad) {
+          // 后台加载：追加到前面，不影响滚动位置
+          const currentScrollHeight = listEl?.scrollHeight || 0
+          const currentScrollTop = listEl?.scrollTop || 0
+          
           appendMessages(result.messages, true)
-          // 加载更多后保持位置：让之前的第一条消息保持在原来的视觉位置
+          
+          // 保持滚动位置
+          requestAnimationFrame(() => {
+            if (listEl) {
+              const newScrollHeight = listEl.scrollHeight
+              listEl.scrollTop = currentScrollTop + (newScrollHeight - currentScrollHeight)
+            }
+          })
+          setHasMoreMessages(result.hasMore ?? false)
+          setCurrentOffset(offset + result.messages.length)
+        } else {
+          // 用户主动加载更多
+          appendMessages(result.messages, true)
           if (firstMsgEl && listEl) {
             requestAnimationFrame(() => {
               listEl.scrollTop = firstMsgEl.offsetTop - 80
             })
           }
+          setHasMoreMessages(result.hasMore ?? false)
+          setCurrentOffset(offset + result.messages.length)
         }
-        setHasMoreMessages(result.hasMore ?? false)
-        setCurrentOffset(offset + result.messages.length)
       } else if (!result.success) {
         setConnectionError(result.error || '加载消息失败')
         setHasMoreMessages(false)
       }
     } catch (e) {
       console.error('加载消息失败:', e)
-      setConnectionError('加载消息失败')
+      if (!isBackgroundLoad) {
+        setConnectionError('加载消息失败')
+      }
       setHasMoreMessages(false)
     } finally {
-      setLoadingMessages(false)
-      setLoadingMore(false)
+      if (!isBackgroundLoad) {
+        setLoadingMessages(false)
+        setLoadingMore(false)
+      }
     }
   }
 
@@ -437,10 +685,18 @@ function ChatPage(_props: ChatPageProps) {
 
   // 初始化连接
   useEffect(() => {
-    if (!isConnected && !isConnecting) {
+    // 如果 App 已经连接了数据库，直接标记为已连接并加载会话
+    if (isDbConnected && !isConnected && !isConnecting) {
+      setConnected(true)
+      loadSessions()
+      loadMyAvatar()
+      return
+    }
+    // 如果未连接且未在连接中，则连接
+    if (!isDbConnected && !isConnected && !isConnecting) {
       connect()
     }
-  }, [])
+  }, [isDbConnected, isConnected, isConnecting])
 
   useEffect(() => {
     const nextSet = new Set<string>()
@@ -463,36 +719,44 @@ function ChatPage(_props: ChatPageProps) {
     }
   }, [currentSessionId])
 
-  useEffect(() => {
-    if (!currentSessionId || messages.length === 0) return
-    const preloadEdgeCount = 40
-    const maxPreload = 30
-    const head = messages.slice(0, preloadEdgeCount)
-    const tail = messages.slice(-preloadEdgeCount)
-    const candidates = [...head, ...tail]
-    const queued = preloadImageKeysRef.current
-    const seen = new Set<string>()
-    const payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }> = []
-    for (const msg of candidates) {
-      if (payloads.length >= maxPreload) break
-      if (msg.localType !== 3) continue
-      const cacheKey = msg.imageMd5 || msg.imageDatName || `local:${msg.localId}`
-      if (!msg.imageMd5 && !msg.imageDatName) continue
-      if (imageDataUrlCache.has(cacheKey)) continue
-      const taskKey = `${currentSessionId}|${cacheKey}`
-      if (queued.has(taskKey) || seen.has(taskKey)) continue
-      queued.add(taskKey)
-      seen.add(taskKey)
-      payloads.push({
-        sessionId: currentSessionId,
-        imageMd5: msg.imageMd5 || undefined,
-        imageDatName: msg.imageDatName
-      })
-    }
-    if (payloads.length > 0) {
-      window.electronAPI.image.preload(payloads).catch(() => {})
-    }
-  }, [currentSessionId, messages])
+  // 暂时完全禁用图片预加载，改为懒加载
+  // useEffect(() => {
+  //   if (!currentSessionId || messages.length === 0) return
+  //   const preloadEdgeCount = 40
+  //   const maxPreload = 5  // 减少并发数从30到5
+  //   const head = messages.slice(0, preloadEdgeCount)
+  //   const tail = messages.slice(-preloadEdgeCount)
+  //   const candidates = [...head, ...tail]
+  //   const queued = preloadImageKeysRef.current
+  //   const seen = new Set<string>()
+  //   const payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }> = []
+  //   for (const msg of candidates) {
+  //     if (payloads.length >= maxPreload) break
+  //     if (msg.localType !== 3) continue
+  //     const cacheKey = msg.imageMd5 || msg.imageDatName || `local:${msg.localId}`
+  //     if (!msg.imageMd5 && !msg.imageDatName) continue
+  //     if (imageDataUrlCache.has(cacheKey)) continue
+  //     const taskKey = `${currentSessionId}|${cacheKey}`
+  //     if (queued.has(taskKey) || seen.has(taskKey)) continue
+  //     queued.add(taskKey)
+  //     seen.add(taskKey)
+  //     payloads.push({
+  //       sessionId: currentSessionId,
+  //       imageMd5: msg.imageMd5 || undefined,
+  //       imageDatName: msg.imageDatName
+  //     })
+  //   }
+  //   if (payloads.length > 0) {
+  //     // 分批处理，避免过度并发
+  //     const batchSize = 3
+  //     for (let i = 0; i < payloads.length; i += batchSize) {
+  //       const batch = payloads.slice(i, i + batchSize)
+  //       setTimeout(() => {
+  //         window.electronAPI.image.preload(batch).catch(() => {})
+  //       }, i * 100) // 每批间隔100ms
+  //     }
+  //   }
+  // }, [currentSessionId, messages])
 
   useEffect(() => {
     const nextMap = new Map<string, ChatSession>()
@@ -505,6 +769,17 @@ function ChatPage(_props: ChatPageProps) {
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  // 监听会话列表更新事件（联系人信息异步加载完成后）
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.chat?.onSessionsUpdated?.((updatedSessions: ChatSession[]) => {
+      setSessions(updatedSessions)
+    })
+    
+    return () => {
+      unsubscribe?.()
+    }
+  }, [setSessions])
 
   useEffect(() => {
     isLoadingMessagesRef.current = isLoadingMessages
@@ -520,14 +795,23 @@ function ChatPage(_props: ChatPageProps) {
   }, [searchKeyword])
 
   useEffect(() => {
-    if (!searchKeyword.trim()) return
-    const lower = searchKeyword.toLowerCase()
-    const filtered = sessions.filter(s =>
-      s.displayName?.toLowerCase().includes(lower) ||
-      s.username.toLowerCase().includes(lower) ||
-      s.summary.toLowerCase().includes(lower)
-    )
-    setFilteredSessions(filtered)
+    if (!searchKeyword.trim()) {
+      setFilteredSessions(sessions)
+      return
+    }
+    
+    // 添加防抖，避免频繁搜索
+    const timeoutId = setTimeout(() => {
+      const lower = searchKeyword.toLowerCase()
+      const filtered = sessions.filter(s =>
+        s.displayName?.toLowerCase().includes(lower) ||
+        s.username.toLowerCase().includes(lower) ||
+        s.summary.toLowerCase().includes(lower)
+      )
+      setFilteredSessions(filtered)
+    }, 300) // 300ms防抖
+
+    return () => clearTimeout(timeoutId)
   }, [sessions, searchKeyword, setFilteredSessions])
 
 
@@ -644,27 +928,14 @@ function ChatPage(_props: ChatPageProps) {
         ) : filteredSessions.length > 0 ? (
           <div className="session-list">
             {filteredSessions.map(session => (
-              <div
+              <SessionItem
                 key={session.username}
-                className={`session-item ${currentSessionId === session.username ? 'active' : ''}`}
+                session={session}
+                isActive={currentSessionId === session.username}
                 onClick={() => handleSelectSession(session)}
-              >
-                <SessionAvatar session={session} size={48} />
-                <div className="session-info">
-                  <div className="session-top">
-                    <span className="session-name">{session.displayName || session.username}</span>
-                    <span className="session-time">{formatSessionTime(session.lastTimestamp || session.sortTimestamp)}</span>
-                  </div>
-                  <div className="session-bottom">
-                    <span className="session-summary">{session.summary || '暂无消息'}</span>
-                    {session.unreadCount > 0 && (
-                      <span className="unread-badge">
-                        {session.unreadCount > 99 ? '99+' : session.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                onNeedLoadContact={handleNeedLoadContact}
+                formatTime={formatSessionTime}
+              />
             ))}
           </div>
         ) : (
@@ -888,10 +1159,46 @@ function ChatPage(_props: ChatPageProps) {
   )
 }
 
-// 前端表情包缓存
-const emojiDataUrlCache = new Map<string, string>()
-const imageDataUrlCache = new Map<string, string>()
-const voiceDataUrlCache = new Map<string, string>()
+// 前端表情包缓存 - 带LRU限制
+class LRUCache<K, V> {
+  private cache = new Map<K, V>()
+  private maxSize: number
+
+  constructor(maxSize: number) {
+    this.maxSize = maxSize
+  }
+
+  get(key: K): V | undefined {
+    const value = this.cache.get(key)
+    if (value !== undefined) {
+      // 移到最后（最近使用）
+      this.cache.delete(key)
+      this.cache.set(key, value)
+    }
+    return value
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key)
+    } else if (this.cache.size >= this.maxSize) {
+      // 删除最久未使用的项
+      const firstKey = this.cache.keys().next().value
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey)
+      }
+    }
+    this.cache.set(key, value)
+  }
+
+  has(key: K): boolean {
+    return this.cache.has(key)
+  }
+}
+
+const emojiDataUrlCache = new LRUCache<string, string>(100)
+const imageDataUrlCache = new LRUCache<string, string>(200)
+const voiceDataUrlCache = new LRUCache<string, string>(50)
 const senderAvatarCache = new Map<string, { avatarUrl?: string; displayName?: string }>()
 const senderAvatarLoading = new Map<string, Promise<{ avatarUrl?: string; displayName?: string } | null>>()
 
@@ -923,6 +1230,12 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   const [isVoicePlaying, setIsVoicePlaying] = useState(false)
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
   const [showImagePreview, setShowImagePreview] = useState(false)
+
+  // 懒加载状态
+  const imageRef = useRef<HTMLDivElement>(null)
+  const emojiRef = useRef<HTMLDivElement>(null)
+  const [isInView, setIsInView] = useState(false)
+  const [isEmojiInView, setIsEmojiInView] = useState(false)
 
   // 从缓存获取表情包 data URL
   const cacheKey = message.emojiMd5 || message.emojiCdnUrl || ''
@@ -1035,13 +1348,13 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
     }
   }, [isGroupChat, isSent, message.senderUsername])
 
-  // 自动下载表情包
+  // 自动下载表情包 - 改为懒加载
   useEffect(() => {
     if (emojiLocalPath) return
-    if (isEmoji && message.emojiCdnUrl && !emojiLoading && !emojiError) {
+    if (isEmoji && isEmojiInView && message.emojiCdnUrl && !emojiLoading && !emojiError) {
       downloadEmoji()
     }
-  }, [isEmoji, message.emojiCdnUrl, emojiLocalPath, emojiLoading, emojiError])
+  }, [isEmoji, isEmojiInView, message.emojiCdnUrl, emojiLocalPath, emojiLoading, emojiError])
 
   const requestImageDecrypt = useCallback(async (forceUpdate = false) => {
     if (!isImage || imageLoading) return
@@ -1106,7 +1419,53 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   }, [])
 
   useEffect(() => {
-    if (!isImage || imageLoading) return
+    if (!isImage || !imageRef.current) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsInView(true)
+            observer.disconnect() // 一旦进入视口就停止观察
+          }
+        })
+      },
+      { 
+        rootMargin: '100px', // 提前100px开始加载
+        threshold: 0.1 
+      }
+    )
+    
+    observer.observe(imageRef.current)
+    
+    return () => observer.disconnect()
+  }, [isImage])
+
+  useEffect(() => {
+    if (!isEmoji || !emojiRef.current) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsEmojiInView(true)
+            observer.disconnect()
+          }
+        })
+      },
+      { 
+        rootMargin: '50px',
+        threshold: 0.1 
+      }
+    )
+    
+    observer.observe(emojiRef.current)
+    
+    return () => observer.disconnect()
+  }, [isEmoji])
+
+  useEffect(() => {
+    if (!isImage || !isInView || imageLoading) return
     if (!message.imageMd5 && !message.imageDatName) return
     if (imageUpdateCheckedRef.current === imageCacheKey) return
     imageUpdateCheckedRef.current = imageCacheKey
@@ -1129,7 +1488,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
     return () => {
       cancelled = true
     }
-  }, [isImage, imageLocalPath, imageLoading, message.imageMd5, message.imageDatName, imageCacheKey, session.username])
+  }, [isImage, isInView, imageLocalPath, imageLoading, message.imageMd5, message.imageDatName, imageCacheKey, session.username])
 
   useEffect(() => {
     if (!isImage) return
@@ -1243,61 +1602,64 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   // 渲染消息内容
   const renderContent = () => {
     if (isImage) {
-      if (imageLoading) {
-        return (
-          <div className="image-loading">
-            <Loader2 size={20} className="spin" />
-          </div>
-        )
-      }
-      if (imageError || !imageLocalPath) {
-        return (
-          <button
-            className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
-            onClick={handleImageClick}
-            disabled={imageLoading}
-            type="button"
-          >
-            <ImageIcon size={24} />
-            <span>图片未解密</span>
-            <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
-          </button>
-        )
-      }
       return (
-        <>
-          <div className="image-message-wrapper">
-            <img
-              src={imageLocalPath}
-              alt="图片"
-              className="image-message"
-              onClick={() => setShowImagePreview(true)}
-              onLoad={() => setImageError(false)}
-              onError={() => setImageError(true)}
-            />
-            {imageHasUpdate && (
-              <button
-                className="image-update-button"
-                type="button"
-                title="发现更高清图片，点击更新"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void requestImageDecrypt(true)
-                }}
-              >
-                <RefreshCw size={14} />
-              </button>
-            )}
-          </div>
-          {showImagePreview && (
-            <div className="image-preview-overlay" onClick={() => setShowImagePreview(false)}>
-              <img src={imageLocalPath} alt="图片预览" onClick={(e) => e.stopPropagation()} />
-              <button className="image-preview-close" onClick={() => setShowImagePreview(false)}>
-                <X size={16} />
-              </button>
+        <div ref={imageRef} className="image-container">
+          {!isInView ? (
+            <div className="image-placeholder">
+              <ImageIcon size={24} />
+              <span>图片</span>
             </div>
+          ) : imageLoading ? (
+            <div className="image-loading">
+              <Loader2 size={20} className="spin" />
+            </div>
+          ) : imageError || !imageLocalPath ? (
+            <button
+              className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
+              onClick={handleImageClick}
+              disabled={imageLoading}
+              type="button"
+            >
+              <ImageIcon size={24} />
+              <span>图片未解密</span>
+              <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
+            </button>
+          ) : (
+            <>
+              <div className="image-message-wrapper">
+                <img
+                  src={imageLocalPath}
+                  alt="图片"
+                  className="image-message"
+                  onClick={() => setShowImagePreview(true)}
+                  onLoad={() => setImageError(false)}
+                  onError={() => setImageError(true)}
+                />
+                {imageHasUpdate && (
+                  <button
+                    className="image-update-button"
+                    type="button"
+                    title="发现更高清图片，点击更新"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void requestImageDecrypt(true)
+                    }}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                )}
+              </div>
+              {showImagePreview && (
+                <div className="image-preview-overlay" onClick={() => setShowImagePreview(false)}>
+                  <img src={imageLocalPath} alt="图片预览" onClick={(e) => e.stopPropagation()} />
+                  <button className="image-preview-close" onClick={() => setShowImagePreview(false)}>
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
-        </>
+        </div>
       )
     }
 
@@ -1382,39 +1744,41 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
 
     // 表情包消息
     if (isEmoji) {
-      // ... (keep existing emoji logic)
-      // 没有 cdnUrl 或加载失败，显示占位符
-      if (!message.emojiCdnUrl || emojiError) {
-        return (
-          <div className="emoji-unavailable">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 15s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
-            </svg>
-            <span>表情包未缓存</span>
-          </div>
-        )
-      }
-
-      // 显示加载中
-      if (emojiLoading || !emojiLocalPath) {
-        return (
-          <div className="emoji-loading">
-            <Loader2 size={20} className="spin" />
-          </div>
-        )
-      }
-
-      // 显示表情图片
       return (
-        <img
-          src={emojiLocalPath}
-          alt="表情"
-          className="emoji-image"
-          onError={() => setEmojiError(true)}
-        />
+        <div ref={emojiRef} className="emoji-container">
+          {!isEmojiInView ? (
+            <div className="emoji-placeholder">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 15s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+              <span>表情</span>
+            </div>
+          ) : !message.emojiCdnUrl || emojiError ? (
+            <div className="emoji-unavailable">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 15s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+              <span>表情包未缓存</span>
+            </div>
+          ) : emojiLoading || !emojiLocalPath ? (
+            <div className="emoji-loading">
+              <Loader2 size={20} className="spin" />
+            </div>
+          ) : (
+            <img
+              src={emojiLocalPath}
+              alt="表情"
+              className="emoji-image"
+              onError={() => setEmojiError(true)}
+            />
+          )}
+        </div>
       )
     }
     // 带引用的消息
