@@ -54,7 +54,7 @@ jobs:
                   "filter": { "pattern": "^(chore|docs|perf|refactor):.*", "flags": "i" }
                 }
               ],
-              "ignore_labels": true,
+              "ignore_labels": [],
               "commitMode": true,
               "empty_summary": "##  更新详情\n- 常规代码优化与维护"
             }
