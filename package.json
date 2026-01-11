@@ -1,6 +1,6 @@
 {
   "name": "weflow",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "WeFlow - 微信聊天记录查看工具",
   "main": "dist-electron/main.js",
   "author": "cc",
