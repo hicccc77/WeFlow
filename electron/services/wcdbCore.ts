@@ -1,6 +1,12 @@
 import { join, dirname, basename } from 'path'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 
+// DLL 初始化错误信息，用于帮助用户诊断问题
+let lastDllInitError: string | null = null
+export function getLastDllInitError(): string | null {
+  return lastDllInitError
+}
+
 export class WcdbCore {
   private resourcesPath: string | null = null
   private userDataPath: string | null = null
@@ -208,6 +214,31 @@ export class WcdbCore {
         return false
       }
 
+      // 关键修复：显式预加载依赖库 WCDB.dll 和 SDL2.dll
+      // Windows 加载器默认不会查找子目录中的依赖，必须先将其加载到内存
+      // 这可以解决部分用户因为 VC++ 运行时或 DLL 依赖问题导致的闪退
+      const dllDir = dirname(dllPath)
+      const wcdbCorePath = join(dllDir, 'WCDB.dll')
+      if (existsSync(wcdbCorePath)) {
+        try {
+          this.koffi.load(wcdbCorePath)
+          this.writeLog('预加载 WCDB.dll 成功')
+        } catch (e) {
+          console.warn('预加载 WCDB.dll 失败(可能不是致命的):', e)
+          this.writeLog(`预加载 WCDB.dll 失败: ${String(e)}`)
+        }
+      }
+      const sdl2Path = join(dllDir, 'SDL2.dll')
+      if (existsSync(sdl2Path)) {
+        try {
+          this.koffi.load(sdl2Path)
+          this.writeLog('预加载 SDL2.dll 成功')
+        } catch (e) {
+          console.warn('预加载 SDL2.dll 失败(可能不是致命的):', e)
+          this.writeLog(`预加载 SDL2.dll 失败: ${String(e)}`)
+        }
+      }
+
       this.lib = this.koffi.load(dllPath)
 
       // 定义类型
@@ -362,9 +393,20 @@ export class WcdbCore {
       }
 
       this.initialized = true
+      lastDllInitError = null
       return true
     } catch (e) {
-      console.error('WCDB 初始化异常:', e)
+      const errorMsg = e instanceof Error ? e.message : String(e)
+      console.error('WCDB 初始化异常:', errorMsg)
+      this.writeLog(`WCDB 初始化异常: ${errorMsg}`, true)
+      lastDllInitError = errorMsg
+      // 检查是否是常见的 VC++ 运行时缺失错误
+      if (errorMsg.includes('126') || errorMsg.includes('找不到指定的模块') || 
+          errorMsg.includes('The specified module could not be found')) {
+        lastDllInitError = '可能缺少 Visual C++ 运行时库。请安装 Microsoft Visual C++ Redistributable (x64)。'
+      } else if (errorMsg.includes('193') || errorMsg.includes('不是有效的 Win32 应用程序')) {
+        lastDllInitError = 'DLL 架构不匹配。请确保使用 64 位版本的应用程序。'
+      }
       return false
     }
   }
@@ -391,7 +433,9 @@ export class WcdbCore {
       if (!this.initialized) {
         const initOk = await this.initialize()
         if (!initOk) {
-          return { success: false, error: 'WCDB 初始化失败' }
+          // 返回更详细的错误信息，帮助用户诊断问题
+          const detailedError = lastDllInitError || 'WCDB 初始化失败'
+          return { success: false, error: detailedError }
         }
       }
 

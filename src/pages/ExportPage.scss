@@ -602,6 +602,87 @@
     }
   }
 
+  .export-layout-modal {
+    background: var(--card-bg);
+    padding: 28px 32px;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    text-align: center;
+    width: min(520px, 90vw);
+
+    h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 8px;
+    }
+
+    .layout-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin: 0 0 20px;
+    }
+
+    .layout-options {
+      display: grid;
+      gap: 12px;
+    }
+
+    .layout-option-btn {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        border-color: var(--primary);
+        background: rgba(var(--primary-rgb), 0.08);
+      }
+
+      &.primary {
+        border-color: var(--primary);
+        background: rgba(var(--primary-rgb), 0.12);
+      }
+
+      .layout-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .layout-desc {
+        font-size: 12px;
+        color: var(--text-tertiary);
+      }
+    }
+
+    .layout-actions {
+      margin-top: 18px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .layout-cancel-btn {
+      padding: 8px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        background: var(--bg-hover);
+      }
+    }
+  }
+
   .export-result-modal {
     background: var(--card-bg);
     padding: 32px 40px;

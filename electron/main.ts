@@ -13,7 +13,7 @@ import { imagePreloadService } from './services/imagePreloadService'
 import { analyticsService } from './services/analyticsService'
 import { groupAnalyticsService } from './services/groupAnalyticsService'
 import { annualReportService } from './services/annualReportService'
-import { exportService, ExportOptions } from './services/exportService'
+import { exportService, ExportOptions, ExportProgress } from './services/exportService'
 import { KeyService } from './services/keyService'
 import { voiceTranscribeService } from './services/voiceTranscribeService'
 import { videoService } from './services/videoService'
@@ -646,8 +646,13 @@ function registerIpcHandlers() {
   })
 
   // 导出相关
-  ipcMain.handle('export:exportSessions', async (_, sessionIds: string[], outputDir: string, options: ExportOptions) => {
-    return exportService.exportSessions(sessionIds, outputDir, options)
+  ipcMain.handle('export:exportSessions', async (event, sessionIds: string[], outputDir: string, options: ExportOptions) => {
+    const onProgress = (progress: ExportProgress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('export:progress', progress)
+      }
+    }
+    return exportService.exportSessions(sessionIds, outputDir, options, onProgress)
   })
 
   ipcMain.handle('export:exportSession', async (_, sessionId: string, outputPath: string, options: ExportOptions) => {

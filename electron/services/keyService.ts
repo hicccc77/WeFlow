@@ -33,6 +33,7 @@ export class KeyService {
   private ReadProcessMemory: any = null
   private MEMORY_BASIC_INFORMATION: any = null
   private TerminateProcess: any = null
+  private QueryFullProcessImageNameW: any = null
 
   // User32
   private EnumWindows: any = null
@@ -194,6 +195,7 @@ export class KeyService {
       this.OpenProcess = this.kernel32.func('OpenProcess', 'HANDLE', ['uint32', 'bool', 'uint32'])
       this.CloseHandle = this.kernel32.func('CloseHandle', 'bool', ['HANDLE'])
       this.TerminateProcess = this.kernel32.func('TerminateProcess', 'bool', ['HANDLE', 'uint32'])
+      this.QueryFullProcessImageNameW = this.kernel32.func('QueryFullProcessImageNameW', 'bool', ['HANDLE', 'uint32', this.koffi.out('uint16*'), this.koffi.out('uint32*')])
       this.VirtualQueryEx = this.kernel32.func('VirtualQueryEx', 'uint64', ['HANDLE', 'uint64', this.koffi.out(this.koffi.pointer(this.MEMORY_BASIC_INFORMATION)), 'uint64'])
       this.ReadProcessMemory = this.kernel32.func('ReadProcessMemory', 'bool', ['HANDLE', 'uint64', 'void*', 'uint64', this.koffi.out(this.koffi.pointer('uint64'))])
 
@@ -310,7 +312,46 @@ export class KeyService {
     }
   }
 
+  private async getProcessExecutablePath(pid: number): Promise<string | null> {
+    if (!this.ensureKernel32()) return null
+    // 0x1000 = PROCESS_QUERY_LIMITED_INFORMATION
+    const hProcess = this.OpenProcess(0x1000, false, pid)
+    if (!hProcess) return null
+
+    try {
+      const sizeBuf = Buffer.alloc(4)
+      sizeBuf.writeUInt32LE(1024, 0)
+      const pathBuf = Buffer.alloc(1024 * 2)
+
+      const ret = this.QueryFullProcessImageNameW(hProcess, 0, pathBuf, sizeBuf)
+      if (ret) {
+        const len = sizeBuf.readUInt32LE(0)
+        return pathBuf.toString('ucs2', 0, len * 2)
+      }
+      return null
+    } catch (e) {
+      console.error('获取进程路径失败:', e)
+      return null
+    } finally {
+      this.CloseHandle(hProcess)
+    }
+  }
+
   private async findWeChatInstallPath(): Promise<string | null> {
+    // 0. 优先尝试获取正在运行的微信进程路径
+    try {
+      const pid = await this.findWeChatPid()
+      if (pid) {
+        const runPath = await this.getProcessExecutablePath(pid)
+        if (runPath && existsSync(runPath)) {
+          console.log('发现正在运行的微信进程，使用路径:', runPath)
+          return runPath
+        }
+      }
+    } catch (e) {
+      console.error('尝试获取运行中微信路径失败:', e)
+    }
+
     // 1. Registry - Uninstall Keys
     const uninstallKeys = [
       'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
