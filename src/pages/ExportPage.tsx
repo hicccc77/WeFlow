@@ -216,6 +216,23 @@ function ExportPage() {
     return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
   }
 
+  const handleFormatChange = (format: ExportOptions['format']) => {
+    setOptions((prev) => {
+      const next = { ...prev, format }
+      if (format === 'html') {
+        return {
+          ...next,
+          exportMedia: true,
+          exportImages: true,
+          exportVoices: true,
+          exportEmojis: true,
+          exportVoiceAsText: true
+        }
+      }
+      return next
+    })
+  }
+
   const openExportFolder = async () => {
     if (exportFolder) {
       await window.electronAPI.shell.openPath(exportFolder)
@@ -249,7 +266,7 @@ function ExportPage() {
         } : null
       }
 
-      if (options.format === 'chatlab' || options.format === 'chatlab-jsonl' || options.format === 'json' || options.format === 'excel' || options.format === 'txt') {
+      if (options.format === 'chatlab' || options.format === 'chatlab-jsonl' || options.format === 'json' || options.format === 'excel' || options.format === 'txt' || options.format === 'html') {
         const result = await window.electronAPI.export.exportSessions(
           sessionList,
           exportFolder,
@@ -455,7 +472,7 @@ function ExportPage() {
                 <div
                   key={fmt.value}
                   className={`format-card ${options.format === fmt.value ? 'active' : ''}`}
-                  onClick={() => setOptions({ ...options, format: fmt.value as any })}
+                  onClick={() => handleFormatChange(fmt.value as ExportOptions['format'])}
                 >
                   <fmt.icon size={24} />
                   <span className="format-label">{fmt.label}</span>

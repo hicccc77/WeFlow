@@ -4,10 +4,12 @@ import * as http from 'http'
 import * as https from 'https'
 import { fileURLToPath } from 'url'
 import ExcelJS from 'exceljs'
+import { getEmojiPath } from 'wechat-emojis'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { imageDecryptService } from './imageDecryptService'
 import { chatService } from './chatService'
+import { videoService } from './videoService'
 
 // ChatLab 格式类型定义
 interface ChatLabHeader {
@@ -89,7 +91,8 @@ const TXT_COLUMN_DEFINITIONS: Array<{ id: string; label: string }> = [
 
 interface MediaExportItem {
   relativePath: string
-  kind: 'image' | 'voice' | 'emoji'
+  kind: 'image' | 'voice' | 'emoji' | 'video'
+  posterDataUrl?: string
 }
 
 export interface ExportProgress {
@@ -127,6 +130,8 @@ async function parallelLimit<T, R>(
 class ExportService {
   private configService: ConfigService
   private contactCache: Map<string, { displayName: string; avatarUrl?: string }> = new Map()
+  private inlineEmojiCache: Map<string, string> = new Map()
+  private htmlStyleCache: string | null = null
 
   constructor() {
     this.configService = new ConfigService()
@@ -216,6 +221,9 @@ class ExportService {
     if (!raw) return ''
     if (typeof raw === 'string') {
       if (raw.length === 0) return ''
+      if (/^[0-9]+$/.test(raw)) {
+        return raw
+      }
       if (this.looksLikeHex(raw)) {
         const bytes = Buffer.from(raw, 'hex')
         if (bytes.length > 0) return this.decodeBinaryContent(bytes)
@@ -451,6 +459,129 @@ class ExportService {
     return value.replace(/\r?\n/g, ' ').replace(/\t/g, ' ').trim()
   }
 
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  private escapeAttribute(value: string): string {
+    return this.escapeHtml(value).replace(/`/g, '&#96;')
+  }
+
+  private getAvatarFallback(name: string): string {
+    if (!name) return '?'
+    return [...name][0] || '?'
+  }
+
+  private renderMultilineText(value: string): string {
+    return this.escapeHtml(value).replace(/\r?\n/g, '<br />')
+  }
+
+  private loadExportHtmlStyles(): string {
+    if (this.htmlStyleCache !== null) {
+      return this.htmlStyleCache
+    }
+    const candidates = [
+      path.join(__dirname, 'exportHtml.css'),
+      path.join(process.cwd(), 'electron', 'services', 'exportHtml.css')
+    ]
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath)) {
+        try {
+          const content = fs.readFileSync(filePath, 'utf-8')
+          this.htmlStyleCache = content
+          return content
+        } catch {
+          continue
+        }
+      }
+    }
+    this.htmlStyleCache = ''
+    return ''
+  }
+
+  private normalizeAppMessageContent(content: string): string {
+    if (!content) return ''
+    if (content.includes('&lt;') && content.includes('&gt;')) {
+      return content
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+    }
+    return content
+  }
+
+  private getInlineEmojiDataUrl(name: string): string | null {
+    if (!name) return null
+    const cached = this.inlineEmojiCache.get(name)
+    if (cached) return cached
+    const emojiPath = getEmojiPath(name as any)
+    if (!emojiPath) return null
+    const baseDir = path.dirname(require.resolve('wechat-emojis'))
+    const absolutePath = path.join(baseDir, emojiPath)
+    if (!fs.existsSync(absolutePath)) return null
+    try {
+      const buffer = fs.readFileSync(absolutePath)
+      const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`
+      this.inlineEmojiCache.set(name, dataUrl)
+      return dataUrl
+    } catch {
+      return null
+    }
+  }
+
+  private renderTextWithEmoji(text: string): string {
+    if (!text) return ''
+    const parts = text.split(/\[(.*?)\]/g)
+    const rendered = parts.map((part, index) => {
+      if (index % 2 === 1) {
+        const emojiDataUrl = this.getInlineEmojiDataUrl(part)
+        if (emojiDataUrl) {
+          return `<img class="inline-emoji" src="${this.escapeAttribute(emojiDataUrl)}" alt="[${this.escapeAttribute(part)}]" />`
+        }
+        return this.escapeHtml(`[${part}]`)
+      }
+      return this.escapeHtml(part)
+    })
+    return rendered.join('')
+  }
+
+  private formatHtmlMessageText(content: string, localType: number): string {
+    if (!content) return ''
+
+    const normalized = this.normalizeAppMessageContent(content)
+    const isAppMessage = normalized.includes('<appmsg') || normalized.includes('<msg>')
+
+    if (localType === 49 || isAppMessage) {
+      const typeMatch = /<type>(\d+)<\/type>/i.exec(normalized)
+      const subType = typeMatch ? parseInt(typeMatch[1], 10) : 0
+      const title = this.extractXmlValue(normalized, 'title') || this.extractXmlValue(normalized, 'appname')
+      if (subType === 6) {
+        const fileName = this.extractXmlValue(normalized, 'filename') || title || '文件'
+        return `[文件] ${fileName}`.trim()
+      }
+      if (subType === 33 || subType === 36) {
+        const appName = this.extractXmlValue(normalized, 'appname')
+        const miniTitle = title || appName || '小程序'
+        return `[小程序] ${miniTitle}`.trim()
+      }
+      return title || '[链接]'
+    }
+
+    if (localType === 42) {
+      const nickname = this.extractXmlValue(normalized, 'nickname')
+      return nickname ? `[名片] ${nickname}` : '[名片]'
+    }
+
+    return this.parseMessageContent(content, localType) || ''
+  }
+
   /**
    * 导出媒体文件到指定目录
    */
@@ -459,7 +590,14 @@ class ExportService {
     sessionId: string,
     mediaRootDir: string,
     mediaRelativePrefix: string,
-    options: { exportImages?: boolean; exportVoices?: boolean; exportEmojis?: boolean; exportVoiceAsText?: boolean }
+    options: {
+      exportImages?: boolean
+      exportVoices?: boolean
+      exportEmojis?: boolean
+      exportVoiceAsText?: boolean
+      includeVoiceWithTranscript?: boolean
+      exportVideos?: boolean
+    }
   ): Promise<MediaExportItem | null> {
     const localType = msg.localType
 
@@ -473,13 +611,12 @@ class ExportService {
 
     // 语音消息
     if (localType === 34) {
-      // 如果开启了语音转文字，优先转文字（不导出语音文件）
-      if (options.exportVoiceAsText) {
-        return null  // 转文字逻辑在消息内容处理中完成
-      }
-      // 否则导出语音文件
-      if (options.exportVoices) {
+      const shouldKeepVoiceFile = options.includeVoiceWithTranscript || !options.exportVoiceAsText
+      if (shouldKeepVoiceFile && options.exportVoices) {
         return this.exportVoice(msg, sessionId, mediaRootDir, mediaRelativePrefix)
+      }
+      if (options.exportVoiceAsText) {
+        return null
       }
     }
 
@@ -489,6 +626,10 @@ class ExportService {
       if (result) {
         }
       return result
+    }
+
+    if (localType === 43 && options.exportVideos) {
+      return this.exportVideo(msg, sessionId, mediaRootDir, mediaRelativePrefix)
     }
 
     return null
@@ -702,6 +843,47 @@ class ExportService {
   }
 
   /**
+   * 导出视频文件
+   */
+  private async exportVideo(
+    msg: any,
+    sessionId: string,
+    mediaRootDir: string,
+    mediaRelativePrefix: string
+  ): Promise<MediaExportItem | null> {
+    try {
+      const videoMd5 = msg.videoMd5
+      if (!videoMd5) return null
+
+      const videosDir = path.join(mediaRootDir, mediaRelativePrefix, 'videos')
+      if (!fs.existsSync(videosDir)) {
+        fs.mkdirSync(videosDir, { recursive: true })
+      }
+
+      const videoInfo = await videoService.getVideoInfo(videoMd5)
+      if (!videoInfo.exists || !videoInfo.videoUrl) {
+        return null
+      }
+
+      const sourcePath = videoInfo.videoUrl
+      const fileName = path.basename(sourcePath)
+      const destPath = path.join(videosDir, fileName)
+
+      if (!fs.existsSync(destPath)) {
+        fs.copyFileSync(sourcePath, destPath)
+      }
+
+      return {
+        relativePath: path.posix.join(mediaRelativePrefix, 'videos', fileName),
+        kind: 'video',
+        posterDataUrl: videoInfo.coverUrl || videoInfo.thumbUrl
+      }
+    } catch (e) {
+      return null
+    }
+  }
+
+  /**
    * 从消息内容提取图片 MD5
    */
   private extractImageMd5(content: string): string | undefined {
@@ -757,6 +939,16 @@ class ExportService {
     if (!content) return undefined
     const match = /md5="([^"]+)"/i.exec(content) || /<md5>([^<]+)<\/md5>/i.exec(content)
     return match?.[1]
+  }
+
+  private extractVideoMd5(content: string): string | undefined {
+    if (!content) return undefined
+    const attrMatch = /<videomsg[^>]*\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content)
+    if (attrMatch) {
+      return attrMatch[1].toLowerCase()
+    }
+    const tagMatch = /<md5>([^<]+)<\/md5>/i.exec(content)
+    return tagMatch?.[1]?.toLowerCase()
   }
 
   /**
@@ -881,6 +1073,7 @@ class ExportService {
           let imageDatName: string | undefined
           let emojiCdnUrl: string | undefined
           let emojiMd5: string | undefined
+          let videoMd5: string | undefined
 
           if (localType === 3 && content) {
             // 图片消息
@@ -890,6 +1083,9 @@ class ExportService {
             // 动画表情
             emojiCdnUrl = this.extractEmojiUrl(content)
             emojiMd5 = this.extractEmojiMd5(content)
+            } else if (localType === 43 && content) {
+            // 视频消息
+            videoMd5 = this.extractVideoMd5(content)
             }
 
           rows.push({
@@ -902,7 +1098,8 @@ class ExportService {
             imageMd5,
             imageDatName,
             emojiCdnUrl,
-            emojiMd5
+            emojiMd5,
+            videoMd5
           })
 
           if (firstTime === null || createTime < firstTime) firstTime = createTime
@@ -2095,6 +2292,352 @@ class ExportService {
   }
 
   /**
+   * 导出单个会话为 HTML 格式
+   */
+  async exportSessionToHtml(
+    sessionId: string,
+    outputPath: string,
+    options: ExportOptions,
+    onProgress?: (progress: ExportProgress) => void
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const conn = await this.ensureConnected()
+      if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
+
+      const cleanedMyWxid = conn.cleanedWxid
+      const isGroup = sessionId.includes('@chatroom')
+      const sessionInfo = await this.getContactInfo(sessionId)
+      const myInfo = await this.getContactInfo(cleanedMyWxid)
+
+      onProgress?.({
+        current: 0,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'preparing'
+      })
+
+      const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
+      if (isGroup) {
+        await this.mergeGroupMembers(sessionId, collected.memberSet, options.exportAvatars === true)
+      }
+      const sortedMessages = collected.rows.sort((a, b) => a.createTime - b.createTime)
+
+      const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
+      const mediaMessages = exportMediaEnabled
+        ? sortedMessages.filter(msg => {
+            const t = msg.localType
+            return (t === 3 && options.exportImages) ||
+              (t === 47 && options.exportEmojis) ||
+              (t === 34 && options.exportVoices) ||
+              t === 43
+          })
+        : []
+
+      const mediaCache = new Map<string, MediaExportItem | null>()
+
+      if (mediaMessages.length > 0) {
+        onProgress?.({
+          current: 20,
+          total: 100,
+          currentSession: sessionInfo.displayName,
+          phase: 'exporting-media'
+        })
+
+        const MEDIA_CONCURRENCY = 6
+        await parallelLimit(mediaMessages, MEDIA_CONCURRENCY, async (msg) => {
+          const mediaKey = `${msg.localType}_${msg.localId}`
+          if (!mediaCache.has(mediaKey)) {
+            const mediaItem = await this.exportMediaForMessage(msg, sessionId, mediaRootDir, mediaRelativePrefix, {
+              exportImages: options.exportImages,
+              exportVoices: options.exportVoices,
+              exportEmojis: options.exportEmojis,
+              exportVoiceAsText: options.exportVoiceAsText,
+              includeVoiceWithTranscript: true,
+              exportVideos: true
+            })
+            mediaCache.set(mediaKey, mediaItem)
+          }
+        })
+      }
+
+      const useVoiceTranscript = options.exportVoiceAsText !== false
+      const voiceMessages = useVoiceTranscript
+        ? sortedMessages.filter(msg => msg.localType === 34)
+        : []
+      const voiceTranscriptMap = new Map<number, string>()
+
+      if (voiceMessages.length > 0) {
+        onProgress?.({
+          current: 40,
+          total: 100,
+          currentSession: sessionInfo.displayName,
+          phase: 'exporting-voice'
+        })
+
+        const VOICE_CONCURRENCY = 4
+        await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          voiceTranscriptMap.set(msg.localId, transcript)
+        })
+      }
+
+      const avatarMap = options.exportAvatars
+        ? await this.exportAvatars(
+          [
+            ...Array.from(collected.memberSet.entries()).map(([username, info]) => ({
+              username,
+              avatarUrl: info.avatarUrl
+            })),
+            { username: sessionId, avatarUrl: sessionInfo.avatarUrl },
+            { username: cleanedMyWxid, avatarUrl: myInfo.avatarUrl }
+          ]
+        )
+        : new Map<string, string>()
+
+      const renderedMessages = sortedMessages.map((msg, index) => {
+        const mediaKey = `${msg.localType}_${msg.localId}`
+        const mediaItem = mediaCache.get(mediaKey) || null
+
+        const isSenderMe = msg.isSend
+        const senderInfo = collected.memberSet.get(msg.senderUsername)?.member
+        const senderName = isSenderMe
+          ? (myInfo.displayName || '我')
+          : (isGroup
+            ? (senderInfo?.groupNickname || senderInfo?.accountName || msg.senderUsername)
+            : (sessionInfo.displayName || sessionId))
+        const avatarData = avatarMap.get(isSenderMe ? cleanedMyWxid : msg.senderUsername)
+        const avatarHtml = avatarData
+          ? `<img src="${this.escapeAttribute(avatarData)}" alt="${this.escapeAttribute(senderName)}" />`
+          : `<span>${this.escapeHtml(this.getAvatarFallback(senderName))}</span>`
+
+        const timeText = this.formatTimestamp(msg.createTime)
+        const typeName = this.getMessageTypeName(msg.localType)
+
+        let textContent = this.formatHtmlMessageText(msg.content, msg.localType)
+        if (msg.localType === 34 && useVoiceTranscript) {
+          textContent = voiceTranscriptMap.get(msg.localId) || '[语音消息 - 转文字失败]'
+        }
+        if (mediaItem && (msg.localType === 3 || msg.localType === 43 || msg.localType === 47)) {
+          textContent = ''
+        }
+
+        let mediaHtml = ''
+        if (mediaItem?.kind === 'image') {
+          const mediaPath = this.escapeAttribute(encodeURI(mediaItem.relativePath))
+          mediaHtml = `<img class="message-media image previewable" src="${mediaPath}" data-full="${mediaPath}" alt="${this.escapeAttribute(typeName)}" />`
+        } else if (mediaItem?.kind === 'emoji') {
+          const mediaPath = this.escapeAttribute(encodeURI(mediaItem.relativePath))
+          mediaHtml = `<img class="message-media emoji previewable" src="${mediaPath}" data-full="${mediaPath}" alt="${this.escapeAttribute(typeName)}" />`
+        } else if (mediaItem?.kind === 'voice') {
+          mediaHtml = `<audio class="message-media audio" controls src="${this.escapeAttribute(encodeURI(mediaItem.relativePath))}"></audio>`
+        } else if (mediaItem?.kind === 'video') {
+          const posterAttr = mediaItem.posterDataUrl ? ` poster="${this.escapeAttribute(mediaItem.posterDataUrl)}"` : ''
+          mediaHtml = `<video class="message-media video" controls preload="metadata"${posterAttr} src="${this.escapeAttribute(encodeURI(mediaItem.relativePath))}"></video>`
+        }
+
+        const textHtml = textContent
+          ? `<div class="message-text">${this.renderTextWithEmoji(textContent).replace(/\r?\n/g, '<br />')}</div>`
+          : ''
+        const senderHtml = isGroup
+          ? `<div class="sender-name">${this.escapeHtml(senderName)}</div>`
+          : ''
+        const timeHtml = `<div class="message-time">${this.escapeHtml(timeText)}</div>`
+        const messageBody = `
+            ${timeHtml}
+            ${senderHtml}
+            <div class="message-content">
+              ${mediaHtml}
+              ${textHtml}
+            </div>
+        `
+
+        return `
+          <div class="message ${isSenderMe ? 'sent' : 'received'}" data-timestamp="${msg.createTime}" data-index="${index + 1}">
+            <div class="message-row">
+              <div class="avatar">${avatarHtml}</div>
+              <div class="bubble">
+                ${messageBody}
+              </div>
+            </div>
+          </div>
+        `
+      }).join('\n')
+
+      onProgress?.({
+        current: 85,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'writing'
+      })
+
+      const exportMeta = this.getExportMeta(sessionId, sessionInfo, isGroup)
+      const htmlStyles = this.loadExportHtmlStyles()
+      const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${this.escapeHtml(sessionInfo.displayName)} - 聊天记录</title>
+    <style>${htmlStyles}</style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1 class="title">${this.escapeHtml(sessionInfo.displayName)} 的聊天记录</h1>
+        <div class="meta">
+          <span>导出时间：${this.escapeHtml(this.formatTimestamp(exportMeta.chatlab.exportedAt))}</span>
+          <span>消息数量：${sortedMessages.length}</span>
+          <span>会话类型：${isGroup ? '群聊' : '私聊'}</span>
+        </div>
+        <div class="controls">
+          <div class="control">
+            <label for="searchInput">搜索内容 / 发送者</label>
+            <input id="searchInput" type="search" placeholder="输入关键词实时过滤" />
+          </div>
+          <div class="control">
+            <label for="timeInput">按时间跳转</label>
+            <input id="timeInput" type="datetime-local" />
+          </div>
+          <div class="control">
+            <label for="themeSelect">主题配色</label>
+            <select id="themeSelect">
+              <option value="cloud-dancer">云舞蓝</option>
+              <option value="corundum-blue">珊瑚蓝</option>
+              <option value="kiwi-green">奇异绿</option>
+              <option value="spicy-red">热辣红</option>
+              <option value="teal-water">蓝绿水</option>
+            </select>
+          </div>
+          <div class="control">
+            <label>&nbsp;</label>
+            <button id="jumpBtn" type="button">跳转到时间</button>
+          </div>
+          <div class="stats">
+            <span id="resultCount">共 ${sortedMessages.length} 条</span>
+          </div>
+        </div>
+      </div>
+      <div class="message-list" id="messageList">
+        ${renderedMessages || '<div class="empty">暂无消息</div>'}
+      </div>
+    </div>
+    <div class="image-preview" id="imagePreview">
+      <img id="imagePreviewTarget" alt="预览" />
+    </div>
+    <script>
+      const messages = Array.from(document.querySelectorAll('.message'))
+      const searchInput = document.getElementById('searchInput')
+      const timeInput = document.getElementById('timeInput')
+      const jumpBtn = document.getElementById('jumpBtn')
+      const resultCount = document.getElementById('resultCount')
+      const themeSelect = document.getElementById('themeSelect')
+      const imagePreview = document.getElementById('imagePreview')
+      const imagePreviewTarget = document.getElementById('imagePreviewTarget')
+      let imageZoom = 1
+
+      const updateCount = () => {
+        const visible = messages.filter((msg) => !msg.classList.contains('hidden'))
+        resultCount.textContent = \`共 \${visible.length} 条\`
+      }
+
+      searchInput.addEventListener('input', () => {
+        const keyword = searchInput.value.trim().toLowerCase()
+        messages.forEach((msg) => {
+          const text = msg.textContent ? msg.textContent.toLowerCase() : ''
+          const match = !keyword || text.includes(keyword)
+          msg.classList.toggle('hidden', !match)
+        })
+        updateCount()
+      })
+
+      jumpBtn.addEventListener('click', () => {
+        const value = timeInput.value
+        if (!value) return
+        const target = Math.floor(new Date(value).getTime() / 1000)
+        const visibleMessages = messages.filter((msg) => !msg.classList.contains('hidden'))
+        if (visibleMessages.length === 0) return
+        let targetMessage = visibleMessages.find((msg) => {
+          const time = Number(msg.dataset.timestamp || 0)
+          return time >= target
+        })
+        if (!targetMessage) {
+          targetMessage = visibleMessages[visibleMessages.length - 1]
+        }
+        visibleMessages.forEach((msg) => msg.classList.remove('highlight'))
+        targetMessage.classList.add('highlight')
+        targetMessage.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => targetMessage.classList.remove('highlight'), 2000)
+      })
+
+      const applyTheme = (value) => {
+        document.body.setAttribute('data-theme', value)
+        localStorage.setItem('weflow-export-theme', value)
+      }
+
+      const storedTheme = localStorage.getItem('weflow-export-theme') || 'cloud-dancer'
+      themeSelect.value = storedTheme
+      applyTheme(storedTheme)
+
+      themeSelect.addEventListener('change', (event) => {
+        applyTheme(event.target.value)
+      })
+
+      document.querySelectorAll('.previewable').forEach((img) => {
+        img.addEventListener('click', () => {
+          const full = img.getAttribute('data-full')
+          if (!full) return
+          imagePreviewTarget.src = full
+          imageZoom = 1
+          imagePreviewTarget.style.transform = 'scale(1)'
+          imagePreview.classList.add('active')
+        })
+      })
+
+      imagePreviewTarget.addEventListener('click', (event) => {
+        event.stopPropagation()
+      })
+
+      imagePreviewTarget.addEventListener('dblclick', (event) => {
+        event.stopPropagation()
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
+      })
+
+      imagePreviewTarget.addEventListener('wheel', (event) => {
+        event.preventDefault()
+        const delta = event.deltaY > 0 ? -0.1 : 0.1
+        imageZoom = Math.min(3, Math.max(0.5, imageZoom + delta))
+        imagePreviewTarget.style.transform = \`scale(\${imageZoom})\`
+      }, { passive: false })
+
+      imagePreview.addEventListener('click', () => {
+        imagePreview.classList.remove('active')
+        imagePreviewTarget.src = ''
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
+      })
+
+      updateCount()
+    </script>
+  </body>
+</html>`
+
+      fs.writeFileSync(outputPath, html, 'utf-8')
+
+      onProgress?.({
+        current: 100,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'complete'
+      })
+
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  /**
    * 批量导出多个会话
    */
   async exportSessions(
@@ -2145,6 +2688,7 @@ class ExportService {
         if (options.format === 'chatlab-jsonl') ext = '.jsonl'
         else if (options.format === 'excel') ext = '.xlsx'
         else if (options.format === 'txt') ext = '.txt'
+        else if (options.format === 'html') ext = '.html'
         const outputPath = path.join(sessionDir, `${safeName}${ext}`)
 
         let result: { success: boolean; error?: string }
@@ -2156,6 +2700,8 @@ class ExportService {
           result = await this.exportSessionToExcel(sessionId, outputPath, options)
         } else if (options.format === 'txt') {
           result = await this.exportSessionToTxt(sessionId, outputPath, options)
+        } else if (options.format === 'html') {
+          result = await this.exportSessionToHtml(sessionId, outputPath, options)
         } else {
           result = { success: false, error: `不支持的格式: ${options.format}` }
         }
