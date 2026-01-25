@@ -1,24 +1,24 @@
 .sidebar {
-  width: 200px;
+  width: 220px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   padding: 16px 0;
   transition: width 0.25s ease;
-  
+
   &.collapsed {
     width: 64px;
-    
+
     .nav-menu,
     .sidebar-footer {
       padding: 0 8px;
     }
-    
+
     .nav-label {
       display: none;
     }
-    
+
     .nav-item {
       justify-content: center;
       padding: 10px;
@@ -32,14 +32,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 8px;
+  padding: 0 12px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 10px 12px;
   border-radius: 9999px;
   color: var(--text-secondary);
   text-decoration: none;
@@ -49,13 +49,12 @@
   background: transparent;
   cursor: pointer;
   font-family: inherit;
-  width: 100%;
-  
+
   &:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
   }
-  
+
   &.active {
     background: var(--primary);
     color: white;
@@ -99,7 +98,7 @@
   border-radius: 9999px;
   transition: all 0.2s ease;
   margin-top: 4px;
-  
+
   &:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);

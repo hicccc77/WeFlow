@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { useChatStore } from '../stores/chatStore'
 import { useThemeStore, themes } from '../stores/themeStore'
 import { useAnalyticsStore } from '../stores/analyticsStore'
 import { dialog } from '../services/ipc'
@@ -28,7 +29,8 @@ interface WxidOption {
 }
 
 function SettingsPage() {
-  const { setDbConnected, setLoading, reset } = useAppStore()
+  const { isDbConnected, setDbConnected, setLoading, reset } = useAppStore()
+  const resetChatStore = useChatStore((state) => state.reset)
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
   const clearAnalyticsStoreCache = useAnalyticsStore((state) => state.clearCache)
 
@@ -40,7 +42,6 @@ function SettingsPage() {
   const [wxid, setWxid] = useState('')
   const [wxidOptions, setWxidOptions] = useState<WxidOption[]>([])
   const [showWxidSelect, setShowWxidSelect] = useState(false)
-  const wxidDropdownRef = useRef<HTMLDivElement>(null)
   const [showExportFormatSelect, setShowExportFormatSelect] = useState(false)
   const [showExportDateRangeSelect, setShowExportDateRangeSelect] = useState(false)
   const [showExportExcelColumnsSelect, setShowExportExcelColumnsSelect] = useState(false)
@@ -92,9 +93,6 @@ function SettingsPage() {
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      if (showWxidSelect && wxidDropdownRef.current && !wxidDropdownRef.current.contains(target)) {
-        setShowWxidSelect(false)
-      }
       if (showExportFormatSelect && exportFormatDropdownRef.current && !exportFormatDropdownRef.current.contains(target)) {
         setShowExportFormatSelect(false)
       }
@@ -107,7 +105,7 @@ function SettingsPage() {
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showWxidSelect, showExportFormatSelect, showExportDateRangeSelect, showExportExcelColumnsSelect])
+  }, [showExportFormatSelect, showExportDateRangeSelect, showExportExcelColumnsSelect])
 
   useEffect(() => {
     const removeDb = window.electronAPI.key.onDbKeyStatus((payload) => {
@@ -142,14 +140,24 @@ function SettingsPage() {
       const savedExportDefaultVoiceAsText = await configService.getExportDefaultVoiceAsText()
       const savedExportDefaultExcelCompactColumns = await configService.getExportDefaultExcelCompactColumns()
 
-      if (savedKey) setDecryptKey(savedKey)
       if (savedPath) setDbPath(savedPath)
       if (savedWxid) setWxid(savedWxid)
       if (savedCachePath) setCachePath(savedCachePath)
-      if (savedImageXorKey != null) {
-        setImageXorKey(`0x${savedImageXorKey.toString(16).toUpperCase().padStart(2, '0')}`)
+
+      const wxidConfig = savedWxid ? await configService.getWxidConfig(savedWxid) : null
+      const decryptKeyToUse = wxidConfig?.decryptKey ?? savedKey ?? ''
+      const imageXorKeyToUse = typeof wxidConfig?.imageXorKey === 'number'
+        ? wxidConfig.imageXorKey
+        : savedImageXorKey
+      const imageAesKeyToUse = wxidConfig?.imageAesKey ?? savedImageAesKey ?? ''
+
+      setDecryptKey(decryptKeyToUse)
+      if (typeof imageXorKeyToUse === 'number') {
+        setImageXorKey(`0x${imageXorKeyToUse.toString(16).toUpperCase().padStart(2, '0')}`)
+      } else {
+        setImageXorKey('')
       }
-      if (savedImageAesKey) setImageAesKey(savedImageAesKey)
+      setImageAesKey(imageAesKeyToUse)
       setLogEnabled(savedLogEnabled)
       setAutoTranscribeVoice(savedAutoTranscribe)
       setTranscribeLanguages(savedTranscribeLanguages)
@@ -255,6 +263,103 @@ function SettingsPage() {
     setTimeout(() => setMessage(null), 3000)
   }
 
+  type WxidKeys = {
+    decryptKey: string
+    imageXorKey: number | null
+    imageAesKey: string
+  }
+
+  const formatImageXorKey = (value: number) => `0x${value.toString(16).toUpperCase().padStart(2, '0')}`
+
+  const parseImageXorKey = (value: string) => {
+    if (!value) return null
+    const parsed = parseInt(value.replace(/^0x/i, ''), 16)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+
+  const buildKeysFromState = (): WxidKeys => ({
+    decryptKey: decryptKey || '',
+    imageXorKey: parseImageXorKey(imageXorKey),
+    imageAesKey: imageAesKey || ''
+  })
+
+  const buildKeysFromConfig = (wxidConfig: configService.WxidConfig | null): WxidKeys => ({
+    decryptKey: wxidConfig?.decryptKey || '',
+    imageXorKey: typeof wxidConfig?.imageXorKey === 'number' ? wxidConfig.imageXorKey : null,
+    imageAesKey: wxidConfig?.imageAesKey || ''
+  })
+
+  const applyKeysToState = (keys: WxidKeys) => {
+    setDecryptKey(keys.decryptKey)
+    if (typeof keys.imageXorKey === 'number') {
+      setImageXorKey(formatImageXorKey(keys.imageXorKey))
+    } else {
+      setImageXorKey('')
+    }
+    setImageAesKey(keys.imageAesKey)
+  }
+
+  const syncKeysToConfig = async (keys: WxidKeys) => {
+    await configService.setDecryptKey(keys.decryptKey)
+    await configService.setImageXorKey(typeof keys.imageXorKey === 'number' ? keys.imageXorKey : 0)
+    await configService.setImageAesKey(keys.imageAesKey)
+  }
+
+  const applyWxidSelection = async (
+    selectedWxid: string,
+    options?: { preferCurrentKeys?: boolean; showToast?: boolean; toastText?: string }
+  ) => {
+    if (!selectedWxid) return
+
+    const currentWxid = wxid
+    const isSameWxid = currentWxid === selectedWxid
+    if (currentWxid && currentWxid !== selectedWxid) {
+      const currentKeys = buildKeysFromState()
+      await configService.setWxidConfig(currentWxid, {
+        decryptKey: currentKeys.decryptKey,
+        imageXorKey: typeof currentKeys.imageXorKey === 'number' ? currentKeys.imageXorKey : 0,
+        imageAesKey: currentKeys.imageAesKey
+      })
+    }
+
+    const preferCurrentKeys = options?.preferCurrentKeys ?? false
+    const keys = preferCurrentKeys
+      ? buildKeysFromState()
+      : buildKeysFromConfig(await configService.getWxidConfig(selectedWxid))
+
+    setWxid(selectedWxid)
+    applyKeysToState(keys)
+    await configService.setMyWxid(selectedWxid)
+    await syncKeysToConfig(keys)
+    await configService.setWxidConfig(selectedWxid, {
+      decryptKey: keys.decryptKey,
+      imageXorKey: typeof keys.imageXorKey === 'number' ? keys.imageXorKey : 0,
+      imageAesKey: keys.imageAesKey
+    })
+    setShowWxidSelect(false)
+    if (isDbConnected) {
+      try {
+        await window.electronAPI.chat.close()
+        const result = await window.electronAPI.chat.connect()
+        setDbConnected(result.success, dbPath || undefined)
+        if (!result.success && result.error) {
+          showMessage(result.error, false)
+        }
+      } catch (e) {
+        showMessage(`切换账号后重新连接失败: ${e}`, false)
+        setDbConnected(false)
+      }
+    }
+    if (!isSameWxid) {
+      clearAnalyticsStoreCache()
+      resetChatStore()
+      window.dispatchEvent(new CustomEvent('wxid-changed', { detail: { wxid: selectedWxid } }))
+    }
+    if (options?.showToast ?? true) {
+      showMessage(options?.toastText || `已选择账号：${selectedWxid}`, true)
+    }
+  }
+
   const handleAutoDetectPath = async () => {
     if (isDetectingPath) return
     setIsDetectingPath(true)
@@ -268,11 +373,10 @@ function SettingsPage() {
         const wxids = await window.electronAPI.dbPath.scanWxids(result.path)
         setWxidOptions(wxids)
         if (wxids.length === 1) {
-          setWxid(wxids[0].wxid)
-          await configService.setMyWxid(wxids[0].wxid)
-          showMessage(`已检测到账号：${wxids[0].wxid}`, true)
+          await applyWxidSelection(wxids[0].wxid, {
+            toastText: `已检测到账号：${wxids[0].wxid}`
+          })
         } else if (wxids.length > 1) {
-          // 多账号时弹出选择对话框
           setShowWxidSelect(true)
         }
       } else {
@@ -297,7 +401,10 @@ function SettingsPage() {
     }
   }
 
-  const handleScanWxid = async (silent = false) => {
+  const handleScanWxid = async (
+    silent = false,
+    options?: { preferCurrentKeys?: boolean; showDialog?: boolean }
+  ) => {
     if (!dbPath) {
       if (!silent) showMessage('请先选择数据库目录', false)
       return
@@ -305,12 +412,14 @@ function SettingsPage() {
     try {
       const wxids = await window.electronAPI.dbPath.scanWxids(dbPath)
       setWxidOptions(wxids)
+      const allowDialog = options?.showDialog ?? !silent
       if (wxids.length === 1) {
-        setWxid(wxids[0].wxid)
-        await configService.setMyWxid(wxids[0].wxid)
-        if (!silent) showMessage(`已检测到账号：${wxids[0].wxid}`, true)
-      } else if (wxids.length > 1) {
-        // 多账号时弹出选择对话框
+        await applyWxidSelection(wxids[0].wxid, {
+          preferCurrentKeys: options?.preferCurrentKeys ?? false,
+          showToast: !silent,
+          toastText: `已检测到账号：${wxids[0].wxid}`
+        })
+      } else if (wxids.length > 1 && allowDialog) {
         setShowWxidSelect(true)
       } else {
         if (!silent) showMessage('未检测到账号目录，请检查路径', false)
@@ -321,10 +430,7 @@ function SettingsPage() {
   }
 
   const handleSelectWxid = async (selectedWxid: string) => {
-    setWxid(selectedWxid)
-    await configService.setMyWxid(selectedWxid)
-    setShowWxidSelect(false)
-    showMessage(`已选择账号：${selectedWxid}`, true)
+    await applyWxidSelection(selectedWxid)
   }
 
   const handleSelectCachePath = async () => {
@@ -397,7 +503,7 @@ function SettingsPage() {
         setDecryptKey(result.key)
         setDbKeyStatus('密钥获取成功')
         showMessage('已自动获取解密密钥', true)
-        await handleScanWxid(true)
+        await handleScanWxid(true, { preferCurrentKeys: true, showDialog: false })
       } else {
         if (result.error?.includes('未找到微信安装路径') || result.error?.includes('启动微信失败')) {
           setIsManualStartPrompt(true)
@@ -483,19 +589,14 @@ function SettingsPage() {
       await configService.setDbPath(dbPath)
       await configService.setMyWxid(wxid)
       await configService.setCachePath(cachePath)
-      if (imageXorKey) {
-        const parsed = parseInt(imageXorKey.replace(/^0x/i, ''), 16)
-        if (!Number.isNaN(parsed)) {
-          await configService.setImageXorKey(parsed)
-        }
-      } else {
-        await configService.setImageXorKey(0)
-      }
-      if (imageAesKey) {
-        await configService.setImageAesKey(imageAesKey)
-      } else {
-        await configService.setImageAesKey('')
-      }
+      const parsedXorKey = parseImageXorKey(imageXorKey)
+      await configService.setImageXorKey(typeof parsedXorKey === 'number' ? parsedXorKey : 0)
+      await configService.setImageAesKey(imageAesKey || '')
+      await configService.setWxidConfig(wxid, {
+        decryptKey,
+        imageXorKey: typeof parsedXorKey === 'number' ? parsedXorKey : 0,
+        imageAesKey
+      })
       await configService.setWhisperModelDir(whisperModelDir)
       await configService.setAutoTranscribeVoice(autoTranscribeVoice)
       await configService.setTranscribeLanguages(transcribeLanguages)
@@ -688,37 +789,13 @@ function SettingsPage() {
       <div className="form-group">
         <label>账号 wxid</label>
         <span className="form-hint">微信账号标识</span>
-        <div className="wxid-input-wrapper" ref={wxidDropdownRef}>
+        <div className="wxid-input-wrapper">
           <input
             type="text"
             placeholder="例如: wxid_xxxxxx"
             value={wxid}
             onChange={(e) => setWxid(e.target.value)}
           />
-          <button
-            type="button"
-            className={`wxid-dropdown-btn ${showWxidSelect ? 'open' : ''}`}
-            onClick={() => wxidOptions.length > 0 ? setShowWxidSelect(!showWxidSelect) : handleScanWxid()}
-            title={wxidOptions.length > 0 ? "选择已检测到的账号" : "扫描账号"}
-          >
-            <ChevronDown size={16} />
-          </button>
-          {showWxidSelect && wxidOptions.length > 0 && (
-            <div className="wxid-dropdown">
-              {wxidOptions.map((opt) => (
-                <div
-                  key={opt.wxid}
-                  className={`wxid-option ${opt.wxid === wxid ? 'active' : ''}`}
-                  onClick={() => handleSelectWxid(opt.wxid)}
-                >
-                  <span className="wxid-value">{opt.wxid}</span>
-                  <span className="wxid-time">
-                    {new Date(opt.modifiedTime).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
         <button className="btn btn-secondary btn-sm" onClick={() => handleScanWxid()}><Search size={14} /> 扫描 wxid</button>
       </div>

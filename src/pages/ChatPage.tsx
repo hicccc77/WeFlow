@@ -245,6 +245,38 @@ function ChatPage(_props: ChatPageProps) {
     }
   }, [loadMyAvatar])
 
+  const handleAccountChanged = useCallback(async () => {
+    senderAvatarCache.clear()
+    senderAvatarLoading.clear()
+    preloadImageKeysRef.current.clear()
+    lastPreloadSessionRef.current = null
+    setSessionDetail(null)
+    setCurrentSession(null)
+    setSessions([])
+    setFilteredSessions([])
+    setMessages([])
+    setSearchKeyword('')
+    setConnectionError(null)
+    setConnected(false)
+    setConnecting(false)
+    setHasMoreMessages(true)
+    setHasMoreLater(false)
+    await connect()
+  }, [
+    connect,
+    setConnected,
+    setConnecting,
+    setConnectionError,
+    setCurrentSession,
+    setFilteredSessions,
+    setHasMoreLater,
+    setHasMoreMessages,
+    setMessages,
+    setSearchKeyword,
+    setSessionDetail,
+    setSessions
+  ])
+
   // 加载会话列表（优化：先返回基础数据，异步加载联系人信息）
   const loadSessions = async (options?: { silent?: boolean }) => {
     if (options?.silent) {
@@ -841,6 +873,14 @@ function ChatPage(_props: ChatPageProps) {
       isEnrichingRef.current = false
     }
   }, [])
+
+  useEffect(() => {
+    const handleChange = () => {
+      void handleAccountChanged()
+    }
+    window.addEventListener('wxid-changed', handleChange as EventListener)
+    return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
+  }, [handleAccountChanged])
 
   useEffect(() => {
     const nextSet = new Set<string>()

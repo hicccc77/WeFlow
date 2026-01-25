@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, Download, FolderOpen, RefreshCw, Check, Calendar, FileJson, FileText, Table, Loader2, X, ChevronDown, ChevronLeft, ChevronRight, FileSpreadsheet, Database, FileCode, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
 import * as configService from '../services/config'
 import './ExportPage.scss'
@@ -23,6 +23,7 @@ interface ExportOptions {
   exportVoiceAsText: boolean
   excelCompactColumns: boolean
   txtColumns: string[]
+  displayNamePreference: 'group-nickname' | 'remark' | 'nickname'
 }
 
 interface ExportResult {
@@ -49,6 +50,8 @@ function ExportPage() {
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [selectingStart, setSelectingStart] = useState(true)
   const [showMediaLayoutPrompt, setShowMediaLayoutPrompt] = useState(false)
+  const [showDisplayNameSelect, setShowDisplayNameSelect] = useState(false)
+  const displayNameDropdownRef = useRef<HTMLDivElement>(null)
 
   const [options, setOptions] = useState<ExportOptions>({
     format: 'excel',
@@ -64,7 +67,8 @@ function ExportPage() {
     exportEmojis: true,
     exportVoiceAsText: true,
     excelCompactColumns: true,
-    txtColumns: defaultTxtColumns
+    txtColumns: defaultTxtColumns,
+    displayNamePreference: 'remark'
   })
 
   const buildDateRangeFromPreset = (preset: string) => {
@@ -165,6 +169,19 @@ function ExportPage() {
   }, [loadSessions, loadExportPath, loadExportDefaults])
 
   useEffect(() => {
+    const handleChange = () => {
+      setSelectedSessions(new Set())
+      setSearchKeyword('')
+      setExportResult(null)
+      setSessions([])
+      setFilteredSessions([])
+      loadSessions()
+    }
+    window.addEventListener('wxid-changed', handleChange as EventListener)
+    return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
+  }, [loadSessions])
+
+  useEffect(() => {
     const removeListener = window.electronAPI.export.onProgress?.((payload) => {
       setExportProgress({
         current: payload.current,
@@ -176,6 +193,16 @@ function ExportPage() {
       removeListener?.()
     }
   }, [])
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (showDisplayNameSelect && displayNameDropdownRef.current && !displayNameDropdownRef.current.contains(target)) {
+        setShowDisplayNameSelect(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showDisplayNameSelect])
 
   useEffect(() => {
     if (!searchKeyword.trim()) {
@@ -258,6 +285,7 @@ function ExportPage() {
         exportVoiceAsText: options.exportVoiceAsText,  // 即使不导出媒体，也可以导出语音转文字内容
         excelCompactColumns: options.excelCompactColumns,
         txtColumns: options.txtColumns,
+        displayNamePreference: options.displayNamePreference,
         sessionLayout,
         dateRange: options.useAllTime ? null : options.dateRange ? {
           start: Math.floor(options.dateRange.start.getTime() / 1000),
@@ -389,6 +417,25 @@ function ExportPage() {
     { value: 'excel', label: 'Excel', icon: FileSpreadsheet, desc: '电子表格，适合统计分析' },
     { value: 'sql', label: 'PostgreSQL', icon: Database, desc: '数据库脚本，便于导入到数据库' }
   ]
+  const displayNameOptions = [
+    {
+      value: 'group-nickname',
+      label: '群昵称优先',
+      desc: '仅群聊有效，私聊显示备注/昵称'
+    },
+    {
+      value: 'remark',
+      label: '备注优先',
+      desc: '有备注显示备注，否则显示昵称'
+    },
+    {
+      value: 'nickname',
+      label: '微信昵称',
+      desc: '始终显示微信昵称'
+    }
+  ]
+  const displayNameOption = displayNameOptions.find(option => option.value === options.displayNamePreference)
+  const displayNameLabel = displayNameOption?.label || '备注优先'
 
   return (
     <div className="export-page">
@@ -503,6 +550,44 @@ function ExportPage() {
             </div>
           </div>
 
+          {/* 发送者名称显示偏好 */}
+          {(options.format === 'html' || options.format === 'json' || options.format === 'txt') && (
+            <div className="setting-section">
+              <h3>发送者名称显示</h3>
+              <p className="setting-subtitle">选择导出时优先显示的名称</p>
+              <div className="select-field" ref={displayNameDropdownRef}>
+                <button
+                  type="button"
+                  className={`select-trigger ${showDisplayNameSelect ? 'open' : ''}`}
+                  onClick={() => setShowDisplayNameSelect(!showDisplayNameSelect)}
+                >
+                  <span className="select-value">{displayNameLabel}</span>
+                  <ChevronDown size={16} />
+                </button>
+                {showDisplayNameSelect && (
+                  <div className="select-dropdown">
+                    {displayNameOptions.map(option => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`select-option ${options.displayNamePreference === option.value ? 'active' : ''}`}
+                        onClick={() => {
+                          setOptions({
+                            ...options,
+                            displayNamePreference: option.value as ExportOptions['displayNamePreference']
+                          })
+                          setShowDisplayNameSelect(false)
+                        }}
+                      >
+                        <span className="option-label">{option.label}</span>
+                        <span className="option-desc">{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="setting-section">
             <h3>媒体文件</h3>
             <p className="setting-subtitle">导出图片/语音/表情并在记录内写入相对路径</p>

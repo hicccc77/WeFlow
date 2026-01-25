@@ -8,6 +8,7 @@ interface ConfigSchema {
   onboardingDone: boolean
   imageXorKey: number
   imageAesKey: string
+  wxidConfigs: Record<string, { decryptKey?: string; imageXorKey?: number; imageAesKey?: string; updatedAt?: number }>
   
   // 缓存相关
   cachePath: string
@@ -40,6 +41,7 @@ export class ConfigService {
         onboardingDone: false,
         imageXorKey: 0,
         imageAesKey: '',
+        wxidConfigs: {},
         cachePath: '',
         lastOpenedDb: '',
         lastSession: '',

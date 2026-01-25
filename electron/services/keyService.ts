@@ -882,16 +882,17 @@ export class KeyService {
     return null
   }
 
-  private isAlphaNumAscii(byte: number): boolean {
-    return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x30 && byte <= 0x39)
+  private isAlphaNumLower(byte: number): boolean {
+    // 只匹配小写字母 a-z 和数字 0-9（AES密钥格式）
+    return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39)
   }
 
-  private isUtf16AsciiKey(buf: Buffer, start: number): boolean {
+  private isUtf16LowerKey(buf: Buffer, start: number): boolean {
     if (start + 64 > buf.length) return false
     for (let j = 0; j < 32; j++) {
       const charByte = buf[start + j * 2]
       const nullByte = buf[start + j * 2 + 1]
-      if (nullByte !== 0x00 || !this.isAlphaNumAscii(charByte)) {
+      if (nullByte !== 0x00 || !this.isAlphaNumLower(charByte)) {
         return false
       }
     }
@@ -924,8 +925,6 @@ export class KeyService {
     const regions: Array<[number, number]> = []
     const MEM_COMMIT = 0x1000
     const MEM_PRIVATE = 0x20000
-    const MEM_MAPPED = 0x40000
-    const MEM_IMAGE = 0x1000000
     const PAGE_NOACCESS = 0x01
     const PAGE_GUARD = 0x100
 
@@ -940,10 +939,9 @@ export class KeyService {
       const protect = info.Protect
       const type = info.Type
       const regionSize = Number(info.RegionSize)
-      if (state === MEM_COMMIT && (protect & PAGE_NOACCESS) === 0 && (protect & PAGE_GUARD) === 0) {
-        if (type === MEM_PRIVATE || type === MEM_MAPPED || type === MEM_IMAGE) {
-          regions.push([Number(info.BaseAddress), regionSize])
-        }
+      // 只收集已提交的私有内存（大幅减少扫描区域）
+      if (state === MEM_COMMIT && type === MEM_PRIVATE && (protect & PAGE_NOACCESS) === 0 && (protect & PAGE_GUARD) === 0) {
+        regions.push([Number(info.BaseAddress), regionSize])
       }
 
       const nextAddress = address + regionSize
@@ -972,86 +970,51 @@ export class KeyService {
 
     try {
       const allRegions = this.getMemoryRegions(hProcess)
+      const totalRegions = allRegions.length
+      let scannedCount = 0
+      let skippedCount = 0
 
-      // 优化1: 只保留小内存区域（< 10MB）- 密钥通常在小区域，可大幅减少扫描时间
-      const filteredRegions = allRegions.filter(([_, size]) => size <= 10 * 1024 * 1024)
+      for (const [baseAddress, regionSize] of allRegions) {
+        // 跳过太大的内存区域（> 100MB）
+        if (regionSize > 100 * 1024 * 1024) {
+          skippedCount++
+          continue
+        }
 
-      // 优化2: 优先级排序 - 按大小升序，先扫描小区域（密钥通常在较小区域）
-      const sortedRegions = filteredRegions.sort((a, b) => a[1] - b[1])
+        scannedCount++
+        if (scannedCount % 10 === 0) {
+          onProgress?.(scannedCount, totalRegions, `正在扫描微信内存... (${scannedCount}/${totalRegions})`)
+          await new Promise(resolve => setImmediate(resolve))
+        }
 
-      // 优化3: 计算总字节数用于精确进度报告
-      const totalBytes = sortedRegions.reduce((sum, [_, size]) => sum + size, 0)
-      let processedBytes = 0
+        const memory = this.readProcessMemory(hProcess, baseAddress, regionSize)
+        if (!memory) continue
 
-      // 优化4: 减小分块大小到 1MB（参考 wx_key 项目）
-      const chunkSize = 1 * 1024 * 1024
-      const overlap = 65
-      let currentRegion = 0
+        // 直接在原始字节中搜索32字节的小写字母数字序列
+        for (let i = 0; i < memory.length - 34; i++) {
+          // 检查前导字符（不是小写字母或数字）
+          if (this.isAlphaNumLower(memory[i])) continue
 
-      for (const [baseAddress, regionSize] of sortedRegions) {
-        currentRegion++
-        const progress = totalBytes > 0 ? Math.floor((processedBytes / totalBytes) * 100) : 0
-        onProgress?.(progress, 100, `扫描内存 ${progress}% (${currentRegion}/${sortedRegions.length})`)
+          // 检查接下来32个字节是否都是小写字母或数字
+          let valid = true
+          for (let j = 1; j <= 32; j++) {
+            if (!this.isAlphaNumLower(memory[i + j])) {
+              valid = false
+              break
+            }
+          }
+          if (!valid) continue
 
-        // 每个区域都让出主线程，确保UI流畅
-        await new Promise(resolve => setImmediate(resolve))
-        let offset = 0
-        let trailing: Buffer | null = null
-        while (offset < regionSize) {
-          const remaining = regionSize - offset
-          const currentChunkSize = remaining > chunkSize ? chunkSize : remaining
-          const chunk = this.readProcessMemory(hProcess, baseAddress + offset, currentChunkSize)
-          if (!chunk || !chunk.length) {
-            offset += currentChunkSize
-            trailing = null
+          // 检查尾部字符（不是小写字母或数字）
+          if (i + 33 < memory.length && this.isAlphaNumLower(memory[i + 33])) {
             continue
           }
 
-          let dataToScan: Buffer
-          if (trailing && trailing.length) {
-            dataToScan = Buffer.concat([trailing, chunk])
-          } else {
-            dataToScan = chunk
+          const keyBytes = memory.subarray(i + 1, i + 33)
+          if (this.verifyKey(ciphertext, keyBytes)) {
+            return keyBytes.toString('ascii')
           }
-
-          for (let i = 0; i < dataToScan.length - 34; i++) {
-            if (this.isAlphaNumAscii(dataToScan[i])) continue
-            let valid = true
-            for (let j = 1; j <= 32; j++) {
-              if (!this.isAlphaNumAscii(dataToScan[i + j])) {
-                valid = false
-                break
-              }
-            }
-            if (valid && this.isAlphaNumAscii(dataToScan[i + 33])) {
-              valid = false
-            }
-            if (valid) {
-              const keyBytes = dataToScan.subarray(i + 1, i + 33)
-              if (this.verifyKey(ciphertext, keyBytes)) {
-                return keyBytes.toString('ascii')
-              }
-            }
-          }
-
-          for (let i = 0; i < dataToScan.length - 65; i++) {
-            if (!this.isUtf16AsciiKey(dataToScan, i)) continue
-            const keyBytes = Buffer.alloc(32)
-            for (let j = 0; j < 32; j++) {
-              keyBytes[j] = dataToScan[i + j * 2]
-            }
-            if (this.verifyKey(ciphertext, keyBytes)) {
-              return keyBytes.toString('ascii')
-            }
-          }
-
-          const start = dataToScan.length - overlap
-          trailing = dataToScan.subarray(start < 0 ? 0 : start)
-          offset += currentChunkSize
         }
-
-        // 更新已处理字节数
-        processedBytes += regionSize
       }
       return null
     } finally {

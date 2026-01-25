@@ -1076,8 +1076,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: rgba(10, 10, 10, 0.28);
-  backdrop-filter: blur(6px);
+  background: var(--bg-tertiary);
   transition: opacity 200ms ease;
   z-index: 2;
 }

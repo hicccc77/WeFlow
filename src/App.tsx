@@ -185,9 +185,15 @@ function App() {
         const decryptKey = await configService.getDecryptKey()
         const wxid = await configService.getMyWxid()
         const onboardingDone = await configService.getOnboardingDone()
+        const wxidConfig = wxid ? await configService.getWxidConfig(wxid) : null
+        const effectiveDecryptKey = wxidConfig?.decryptKey || decryptKey
+
+        if (wxidConfig?.decryptKey && wxidConfig.decryptKey !== decryptKey) {
+          await configService.setDecryptKey(wxidConfig.decryptKey)
+        }
 
         // 如果配置完整，自动测试连接
-        if (dbPath && decryptKey && wxid) {
+        if (dbPath && effectiveDecryptKey && wxid) {
           if (!onboardingDone) {
             await configService.setOnboardingDone(true)
           }

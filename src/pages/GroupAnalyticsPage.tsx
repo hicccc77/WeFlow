@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, User, Medal, Search, X, ChevronLeft, Copy, Check } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import ReactECharts from 'echarts-for-react'
@@ -56,7 +56,7 @@ function GroupAnalyticsPage() {
 
   useEffect(() => {
     loadGroups()
-  }, [])
+  }, [loadGroups])
 
   useEffect(() => {
     if (searchQuery) {
@@ -93,7 +93,7 @@ function GroupAnalyticsPage() {
     }
   }, [dateRangeReady])
 
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async () => {
     setIsLoading(true)
     try {
       const result = await window.electronAPI.groupAnalytics.getGroupChats()
@@ -106,7 +106,23 @@ function GroupAnalyticsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    const handleChange = () => {
+      setGroups([])
+      setFilteredGroups([])
+      setSelectedGroup(null)
+      setSelectedFunction(null)
+      setMembers([])
+      setRankings([])
+      setActiveHours({})
+      setMediaStats(null)
+      void loadGroups()
+    }
+    window.addEventListener('wxid-changed', handleChange as EventListener)
+    return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
+  }, [loadGroups])
 
   const handleGroupSelect = (group: GroupChatInfo) => {
     if (selectedGroup?.username !== group.username) {

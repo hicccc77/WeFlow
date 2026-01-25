@@ -1,9 +1,10 @@
 {
   "name": "weflow",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "WeFlow",
   "main": "dist-electron/main.js",
   "author": "cc",
+  "//": "二改不应改变此处的作者与应用信息",
   "scripts": {
     "postinstall": "echo 'No native modules to rebuild'",
     "rebuild": "echo 'No native modules to rebuild'",

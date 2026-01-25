@@ -209,10 +209,11 @@ function createOnboardingWindow() {
     : join(process.resourcesPath, 'icon.ico')
 
   onboardingWindow = new BrowserWindow({
-    width: 1100,
-    height: 720,
+    width: 960,
+    height: 680,
     minWidth: 900,
-    minHeight: 600,
+    minHeight: 620,
+    resizable: false,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',

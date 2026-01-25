@@ -20,6 +20,7 @@ export class WcdbCore {
   private currentWxid: string | null = null
 
   // 函数引用
+  private wcdbInitProtection: any = null
   private wcdbInit: any = null
   private wcdbShutdown: any = null
   private wcdbOpenAccount: any = null
@@ -242,6 +243,18 @@ export class WcdbCore {
       }
 
       this.lib = this.koffi.load(dllPath)
+
+      // InitProtection (Added for security)
+      try {
+        this.wcdbInitProtection = this.lib.func('bool InitProtection(const char* resourcePath)')
+        const protectionOk = this.wcdbInitProtection(dllDir)
+        if (!protectionOk) {
+          console.error('Core security check failed')
+          return false
+        }
+      } catch (e) {
+        console.warn('InitProtection symbol not found:', e)
+      }
 
       // 定义类型
       // wcdb_status wcdb_init()

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Users, Clock, MessageSquare, Send, Inbox, Calendar, Loader2, RefreshCw, User, Medal } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
@@ -16,7 +16,7 @@ function AnalyticsPage() {
 
   const themeMode = useThemeStore((state) => state.themeMode)
   const { statistics, rankings, timeDistribution, isLoaded, setStatistics, setRankings, setTimeDistribution, markLoaded } = useAnalyticsStore()
-  const loadData = async (forceRefresh = false) => {
+  const loadData = useCallback(async (forceRefresh = false) => {
     if (isLoaded && !forceRefresh) return
     setIsLoading(true)
     setError(null)
@@ -55,14 +55,22 @@ function AnalyticsPage() {
       setIsLoading(false)
       if (removeListener) removeListener()
     }
-  }
+  }, [isLoaded, markLoaded, setRankings, setStatistics, setTimeDistribution])
 
   const location = useLocation()
 
   useEffect(() => {
     const force = location.state?.forceRefresh === true
     loadData(force)
-  }, [location.state])
+  }, [location.state, loadData])
+
+  useEffect(() => {
+    const handleChange = () => {
+      loadData(true)
+    }
+    window.addEventListener('wxid-changed', handleChange as EventListener)
+    return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
+  }, [loadData])
 
   const handleRefresh = () => loadData(true)
 

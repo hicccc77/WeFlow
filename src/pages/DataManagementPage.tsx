@@ -16,6 +16,11 @@ function DataManagementPage() {
       setWxid(id)
     }
     loadConfig()
+    const handleChange = () => {
+      loadConfig()
+    }
+    window.addEventListener('wxid-changed', handleChange as EventListener)
+    return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
   }, [])
 
   return (

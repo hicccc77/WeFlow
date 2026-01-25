@@ -354,6 +354,7 @@ export interface ExportOptions {
   excelCompactColumns?: boolean
   txtColumns?: string[]
   sessionLayout?: 'shared' | 'per-session'
+  displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
 }
 
 export interface ExportProgress {
