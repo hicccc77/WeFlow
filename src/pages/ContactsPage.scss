@@ -111,66 +111,52 @@
 
   .type-filters {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     padding: 0 20px 12px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* Allow horizontal scroll if needed on very small screens */
+
+    /* Hide scrollbar */
+    &::-webkit-scrollbar {
+      display: none;
+    }
 
     .filter-checkbox {
       display: flex;
+      /* Changed to flex with padding */
       align-items: center;
       gap: 8px;
       cursor: pointer;
       user-select: none;
       font-size: 14px;
       color: var(--text-primary);
+      padding: 6px 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      transition: all 0.2s;
 
-      input[type="checkbox"] {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-
-        &:checked+.custom-checkbox {
-          background: var(--primary);
-          border-color: var(--primary);
-
-          &::after {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
+      &:hover {
+        background: var(--bg-hover);
       }
 
-      .custom-checkbox {
-        position: relative;
-        width: 18px;
-        height: 18px;
-        border: 2px solid var(--border-color);
-        border-radius: 4px;
-        background: var(--bg-primary);
-        transition: all 0.2s;
-
-        &::after {
-          content: '';
-          position: absolute;
-          left: 4px;
-          top: 1px;
-          width: 4px;
-          height: 8px;
-          border: solid white;
-          border-width: 0 2px 2px 0;
-          transform: rotate(45deg) scale(0);
-          opacity: 0;
-          transition: all 0.2s;
-        }
+      input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--primary);
+        cursor: pointer;
+        opacity: 1;
+        /* Make visible */
+        position: static;
+        /* Make static */
+        pointer-events: auto;
+        /* Enable pointer events */
       }
 
       svg {
         color: var(--text-secondary);
         flex-shrink: 0;
-      }
-
-      &:hover .custom-checkbox {
-        border-color: var(--primary);
+        margin-left: 2px;
       }
     }
   }

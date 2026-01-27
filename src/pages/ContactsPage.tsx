@@ -230,7 +230,6 @@ function ContactsPage() {
                             checked={contactTypes.friends}
                             onChange={e => setContactTypes({ ...contactTypes, friends: e.target.checked })}
                         />
-                        <div className="custom-checkbox"></div>
                         <User size={16} />
                         <span>好友</span>
                     </label>
@@ -240,7 +239,6 @@ function ContactsPage() {
                             checked={contactTypes.groups}
                             onChange={e => setContactTypes({ ...contactTypes, groups: e.target.checked })}
                         />
-                        <div className="custom-checkbox"></div>
                         <Users size={16} />
                         <span>群聊</span>
                     </label>
@@ -250,7 +248,6 @@ function ContactsPage() {
                             checked={contactTypes.officials}
                             onChange={e => setContactTypes({ ...contactTypes, officials: e.target.checked })}
                         />
-                        <div className="custom-checkbox"></div>
                         <MessageSquare size={16} />
                         <span>公众号</span>
                     </label>
