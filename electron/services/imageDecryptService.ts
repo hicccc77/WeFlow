@@ -415,10 +415,16 @@ export class ImageDecryptService {
           if (imageDatName) this.cacheDatPath(accountDir, imageDatName, hardlinkPath)
           return hardlinkPath
         }
-        // hardlink 找到的是缩略图，但要求高清图，直接返回 null，不再搜索
-        if (!allowThumbnail && isThumb) {
-          return null
+        // hardlink 找到的是缩略图，但要求高清图
+        // 尝试在同一目录下查找高清图变体（快速查找，不遍历）
+        const hdPath = this.findHdVariantInSameDir(hardlinkPath)
+        if (hdPath) {
+          this.cacheDatPath(accountDir, imageMd5, hdPath)
+          if (imageDatName) this.cacheDatPath(accountDir, imageDatName, hdPath)
+          return hdPath
         }
+        // 没找到高清图，返回 null（不进行全局搜索）
+        return null
       }
       this.logInfo('[ImageDecrypt] hardlink miss (md5)', { imageMd5 })
       if (imageDatName && this.looksLikeMd5(imageDatName) && imageDatName !== imageMd5) {
@@ -431,9 +437,13 @@ export class ImageDecryptService {
             this.cacheDatPath(accountDir, imageDatName, fallbackPath)
             return fallbackPath
           }
-          if (!allowThumbnail && isThumb) {
-            return null
+          // 找到缩略图但要求高清图，尝试同目录查找高清图变体
+          const hdPath = this.findHdVariantInSameDir(fallbackPath)
+          if (hdPath) {
+            this.cacheDatPath(accountDir, imageDatName, hdPath)
+            return hdPath
           }
+          return null
         }
         this.logInfo('[ImageDecrypt] hardlink miss (datName)', { imageDatName })
       }
@@ -449,10 +459,13 @@ export class ImageDecryptService {
           this.cacheDatPath(accountDir, imageDatName, hardlinkPath)
           return hardlinkPath
         }
-        // hardlink 找到的是缩略图，但要求高清图，直接返回 null
-        if (!allowThumbnail && isThumb) {
-          return null
+        // hardlink 找到的是缩略图，但要求高清图
+        const hdPath = this.findHdVariantInSameDir(hardlinkPath)
+        if (hdPath) {
+          this.cacheDatPath(accountDir, imageDatName, hdPath)
+          return hdPath
         }
+        return null
       }
       this.logInfo('[ImageDecrypt] hardlink miss (datName)', { imageDatName })
     }
@@ -467,6 +480,9 @@ export class ImageDecryptService {
       const cached = this.resolvedCache.get(imageDatName)
       if (cached && existsSync(cached)) {
         if (allowThumbnail || !this.isThumbnailPath(cached)) return cached
+        // 缓存的是缩略图，尝试找高清图
+        const hdPath = this.findHdVariantInSameDir(cached)
+        if (hdPath) return hdPath
       }
     }
 
@@ -761,11 +777,150 @@ export class ImageDecryptService {
 
     const root = join(accountDir, 'msg', 'attach')
     if (!existsSync(root)) return null
+
+    // 优化1：快速概率性查找
+    // 包含：1. 基于文件名的前缀猜测 (旧版)
+    //       2. 基于日期的最近月份扫描 (新版无索引时)
+    const fastHit = await this.fastProbabilisticSearch(root, datName)
+    if (fastHit) {
+      this.resolvedCache.set(key, fastHit)
+      return fastHit
+    }
+
+    // 优化2：兜底扫描 (异步非阻塞)
     const found = await this.walkForDatInWorker(root, datName.toLowerCase(), 8, allowThumbnail, thumbOnly)
     if (found) {
       this.resolvedCache.set(key, found)
       return found
     }
+    return null
+  }
+
+  /**
+   * 基于文件名的哈希特征猜测可能的路径
+   * 包含：1. 微信旧版结构 filename.substr(0, 2)/...
+   *       2. 微信新版结构 msg/attach/{hash}/{YYYY-MM}/Img/filename
+   */
+  private async fastProbabilisticSearch(root: string, datName: string): Promise<string | null> {
+    const { promises: fs } = require('fs')
+    const { join } = require('path')
+
+    try {
+      // --- 策略 A: 旧版路径猜测 (msg/attach/xx/yy/...) ---
+      const lowerName = datName.toLowerCase()
+      let baseName = lowerName
+      if (baseName.endsWith('.dat')) {
+        baseName = baseName.slice(0, -4)
+        if (baseName.endsWith('_t') || baseName.endsWith('.t') || baseName.endsWith('_hd')) {
+          baseName = baseName.slice(0, -3)
+        } else if (baseName.endsWith('_thumb')) {
+          baseName = baseName.slice(0, -6)
+        }
+      }
+
+      const candidates: string[] = []
+      if (/^[a-f0-9]{32}$/.test(baseName)) {
+        const dir1 = baseName.substring(0, 2)
+        const dir2 = baseName.substring(2, 4)
+        candidates.push(
+          join(root, dir1, dir2, datName),
+          join(root, dir1, dir2, 'Img', datName),
+          join(root, dir1, dir2, 'mg', datName),
+          join(root, dir1, dir2, 'Image', datName)
+        )
+      }
+
+      for (const path of candidates) {
+        try {
+          await fs.access(path)
+          return path
+        } catch { }
+      }
+
+      // --- 策略 B: 新版 Session 哈希路径猜测 ---
+      try {
+        const entries = await fs.readdir(root, { withFileTypes: true })
+        const sessionDirs = entries
+          .filter((e: any) => e.isDirectory() && e.name.length === 32 && /^[a-f0-9]+$/i.test(e.name))
+          .map((e: any) => e.name)
+
+        if (sessionDirs.length === 0) return null
+
+        const now = new Date()
+        const months: string[] = []
+        for (let i = 0; i < 2; i++) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+          months.push(mStr)
+        }
+
+        const targetNames = [datName]
+        if (baseName !== lowerName) {
+          targetNames.push(`${baseName}.dat`)
+          targetNames.push(`${baseName}_t.dat`)
+          targetNames.push(`${baseName}_thumb.dat`)
+        }
+
+        const batchSize = 20
+        for (let i = 0; i < sessionDirs.length; i += batchSize) {
+          const batch = sessionDirs.slice(i, i + batchSize)
+          const tasks = batch.map(async (sessDir: string) => {
+            for (const month of months) {
+              const subDirs = ['Img', 'Image']
+              for (const sub of subDirs) {
+                const dirPath = join(root, sessDir, month, sub)
+                try { await fs.access(dirPath) } catch { continue }
+                for (const name of targetNames) {
+                  const p = join(dirPath, name)
+                  try { await fs.access(p); return p } catch { }
+                }
+              }
+            }
+            return null
+          })
+          const results = await Promise.all(tasks)
+          const hit = results.find(r => r !== null)
+          if (hit) return hit
+        }
+      } catch { }
+
+    } catch { }
+    return null
+  }
+
+  /**
+   * 在同一目录下查找高清图变体
+   * 缩略图: xxx_t.dat -> 高清图: xxx_h.dat 或 xxx.dat
+   */
+  private findHdVariantInSameDir(thumbPath: string): string | null {
+    try {
+      const dir = dirname(thumbPath)
+      const fileName = basename(thumbPath).toLowerCase()
+
+      // 提取基础名称（去掉 _t.dat 或 .t.dat）
+      let baseName = fileName
+      if (baseName.endsWith('_t.dat')) {
+        baseName = baseName.slice(0, -6)
+      } else if (baseName.endsWith('.t.dat')) {
+        baseName = baseName.slice(0, -6)
+      } else {
+        return null
+      }
+
+      // 尝试查找高清图变体
+      const variants = [
+        `${baseName}_h.dat`,
+        `${baseName}.h.dat`,
+        `${baseName}.dat`
+      ]
+
+      for (const variant of variants) {
+        const variantPath = join(dir, variant)
+        if (existsSync(variantPath)) {
+          return variantPath
+        }
+      }
+    } catch { }
     return null
   }
 
