@@ -54,8 +54,8 @@ jobs:
           ## 更新日志
           修复了一些已知问题
 
-          ## 加入我们的群
-          [点击加入 Telegram 群](https://t.me/+hn3QzNc4DbA0MzNl)
+          ## 查看更多日志/获取最新动态
+          [点击加入 Telegram 频道](https://t.me/weflow_cc)
           EOF
           
           gh release edit "$GITHUB_REF_NAME" --notes-file release_notes.md
