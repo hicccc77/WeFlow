@@ -1,6 +1,6 @@
 {
   "name": "weflow",
-  "version": "1.5.0",
+  "version": "1.5.2",
   "description": "WeFlow",
   "main": "dist-electron/main.js",
   "author": "cc",
@@ -112,7 +112,8 @@
     ],
     "asarUnpack": [
       "node_modules/silk-wasm/**/*",
-      "node_modules/sherpa-onnx-node/**/*"
+      "node_modules/sherpa-onnx-node/**/*",
+      "node_modules/ffmpeg-static/**/*"
     ],
     "extraFiles": [
       {

@@ -1604,7 +1604,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
   // 视频相关状态
   const [videoLoading, setVideoLoading] = useState(false)
   const [videoInfo, setVideoInfo] = useState<{ videoUrl?: string; coverUrl?: string; thumbUrl?: string; exists: boolean } | null>(null)
-  const videoContainerRef = useRef<HTMLDivElement>(null)
+  const videoContainerRef = useRef<HTMLElement>(null)
   const [isVideoVisible, setIsVideoVisible] = useState(false)
   const [videoMd5, setVideoMd5] = useState<string | null>(null)
 
@@ -2359,7 +2359,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       // 未进入可视区域时显示占位符
       if (!isVideoVisible) {
         return (
-          <div className="video-placeholder" ref={videoContainerRef}>
+          <div className="video-placeholder" ref={videoContainerRef as React.RefObject<HTMLDivElement>}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polygon points="23 7 16 12 23 17 23 7"></polygon>
               <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
@@ -2371,7 +2371,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       // 加载中
       if (videoLoading) {
         return (
-          <div className="video-loading" ref={videoContainerRef}>
+          <div className="video-loading" ref={videoContainerRef as React.RefObject<HTMLDivElement>}>
             <Loader2 size={20} className="spin" />
           </div>
         )
@@ -2382,7 +2382,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         return (
           <button
             className={`video-unavailable ${videoClicked ? 'clicked' : ''}`}
-            ref={videoContainerRef}
+            ref={videoContainerRef as React.RefObject<HTMLButtonElement>}
             onClick={() => {
               setVideoClicked(true)
               setTimeout(() => setVideoClicked(false), 800)
@@ -2404,7 +2404,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       // 默认显示缩略图，点击打开独立播放窗口
       const thumbSrc = videoInfo.thumbUrl || videoInfo.coverUrl
       return (
-        <div className="video-thumb-wrapper" ref={videoContainerRef} onClick={handlePlayVideo}>
+        <div className="video-thumb-wrapper" ref={videoContainerRef as React.RefObject<HTMLDivElement>} onClick={handlePlayVideo}>
           {thumbSrc ? (
             <img src={thumbSrc} alt="视频缩略图" className="video-thumb" />
           ) : (

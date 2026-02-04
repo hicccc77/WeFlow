@@ -11,7 +11,16 @@ import { wcdbService } from './wcdbService'
 // 获取 ffmpeg-static 的路径
 function getStaticFfmpegPath(): string | null {
   try {
-    // 方法1: 直接 require ffmpeg-static
+    // 优先处理打包后的路径
+    if (app.isPackaged) {
+      const resourcesPath = process.resourcesPath
+      const packedPath = join(resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe')
+      if (existsSync(packedPath)) {
+        return packedPath
+      }
+    }
+
+    // 方法1: 直接 require ffmpeg-static（开发环境）
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ffmpegStatic = require('ffmpeg-static')
 
@@ -19,19 +28,10 @@ function getStaticFfmpegPath(): string | null {
       return ffmpegStatic
     }
 
-    // 方法2: 手动构建路径（开发环境）
+    // 方法2: 手动构建路径（开发环境备用）
     const devPath = join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe')
     if (existsSync(devPath)) {
       return devPath
-    }
-
-    // 方法3: 打包后的路径
-    if (app.isPackaged) {
-      const resourcesPath = process.resourcesPath
-      const packedPath = join(resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe')
-      if (existsSync(packedPath)) {
-        return packedPath
-      }
     }
 
     return null
