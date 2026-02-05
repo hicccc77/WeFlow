@@ -270,7 +270,8 @@ class ExportService {
       if (/^[0-9]+$/.test(raw)) {
         return raw
       }
-      if (this.looksLikeHex(raw)) {
+      // 只有当字符串足够长（超过16字符）且看起来像 hex 时才尝试解码
+      if (raw.length > 16 && this.looksLikeHex(raw)) {
         const bytes = Buffer.from(raw, 'hex')
         if (bytes.length > 0) return this.decodeBinaryContent(bytes)
       }
