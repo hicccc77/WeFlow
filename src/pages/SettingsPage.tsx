@@ -9,12 +9,12 @@ import {
   Eye, EyeOff, FolderSearch, FolderOpen, Search, Copy,
   RotateCcw, Trash2, Plug, Check, Sun, Moon,
   Palette, Database, Download, HardDrive, Info, RefreshCw, ChevronDown, Mic,
-  ShieldCheck, Fingerprint, Lock, KeyRound, Bell
+  ShieldCheck, Fingerprint, Lock, KeyRound, Bell, Globe
 } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import './SettingsPage.scss'
 
-type SettingsTab = 'appearance' | 'notification' | 'database' | 'models' | 'export' | 'cache' | 'security' | 'about'
+type SettingsTab = 'appearance' | 'notification' | 'database' | 'models' | 'export' | 'cache' | 'api' | 'security' | 'about'
 
 const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'appearance', label: '外观', icon: Palette },
@@ -23,6 +23,7 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'models', label: '模型管理', icon: Mic },
   { id: 'export', label: '导出', icon: Download },
   { id: 'cache', label: '缓存', icon: HardDrive },
+  { id: 'api', label: 'API 服务', icon: Globe },
   { id: 'security', label: '安全', icon: ShieldCheck },
   { id: 'about', label: '关于', icon: Info }
 ]
@@ -137,6 +138,12 @@ function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSettingHello, setIsSettingHello] = useState(false)
 
+  // HTTP API 设置 state
+  const [httpApiEnabled, setHttpApiEnabled] = useState(false)
+  const [httpApiPort, setHttpApiPort] = useState(5031)
+  const [httpApiRunning, setHttpApiRunning] = useState(false)
+  const [isTogglingApi, setIsTogglingApi] = useState(false)
+
   const isClearingCache = isClearingAnalyticsCache || isClearingImageCache || isClearingAllCache
 
   // 检查 Hello 可用性
@@ -144,6 +151,22 @@ function SettingsPage() {
     if (window.PublicKeyCredential) {
       void PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(setHelloAvailable)
     }
+  }, [])
+
+  // 检查 HTTP API 服务状态
+  useEffect(() => {
+    const checkApiStatus = async () => {
+      try {
+        const status = await window.electronAPI.http.status()
+        setHttpApiRunning(status.running)
+        if (status.port) {
+          setHttpApiPort(status.port)
+        }
+      } catch (e) {
+        console.error('检查 API 状态失败:', e)
+      }
+    }
+    checkApiStatus()
   }, [])
 
   async function sha256(message: string) {
@@ -1835,6 +1858,151 @@ function SettingsPage() {
     </div>
   )
 
+  // HTTP API 服务控制
+  const handleToggleApi = async () => {
+    if (isTogglingApi) return
+    setIsTogglingApi(true)
+    try {
+      if (httpApiRunning) {
+        await window.electronAPI.http.stop()
+        setHttpApiRunning(false)
+        showMessage('API 服务已停止', true)
+      } else {
+        const result = await window.electronAPI.http.start(httpApiPort)
+        if (result.success) {
+          setHttpApiRunning(true)
+          if (result.port) setHttpApiPort(result.port)
+          showMessage(`API 服务已启动，端口 ${result.port}`, true)
+        } else {
+          showMessage(`启动失败: ${result.error}`, false)
+        }
+      }
+    } catch (e: any) {
+      showMessage(`操作失败: ${e}`, false)
+    } finally {
+      setIsTogglingApi(false)
+    }
+  }
+
+  const handleCopyApiUrl = () => {
+    const url = `http://127.0.0.1:${httpApiPort}`
+    navigator.clipboard.writeText(url)
+    showMessage('已复制 API 地址', true)
+  }
+
+  const renderApiTab = () => (
+    <div className="tab-content">
+      <div className="form-group">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <label>HTTP API 服务</label>
+            <span className="form-hint">启用后可通过 HTTP 接口查询消息数据</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className={`status-badge ${httpApiRunning ? 'running' : 'stopped'}`}>
+              {httpApiRunning ? '运行中' : '已停止'}
+            </span>
+            <button 
+              className={`btn ${httpApiRunning ? 'btn-danger' : 'btn-primary'}`}
+              onClick={handleToggleApi}
+              disabled={isTogglingApi}
+            >
+              {isTogglingApi ? '处理中...' : (httpApiRunning ? '停止服务' : '启动服务')}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="form-group">
+        <label>服务端口</label>
+        <span className="form-hint">API 服务监听的端口号</span>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+          <input
+            type="number"
+            className="field-input"
+            value={httpApiPort}
+            onChange={(e) => setHttpApiPort(parseInt(e.target.value, 10) || 5031)}
+            disabled={httpApiRunning}
+            style={{ width: 120 }}
+            min={1024}
+            max={65535}
+          />
+          <span className="form-hint" style={{ alignSelf: 'center' }}>
+            {httpApiRunning ? '停止服务后可修改端口' : '建议使用 1024-65535 之间的端口'}
+          </span>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="form-group">
+        <label>API 地址</label>
+        <span className="form-hint">使用以下地址访问 API</span>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
+          <code className="api-url">http://127.0.0.1:{httpApiPort}</code>
+          <button className="btn btn-secondary btn-sm" onClick={handleCopyApiUrl}>
+            <Copy size={14} /> 复制
+          </button>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="form-group">
+        <label>接口文档</label>
+        <span className="form-hint">支持的 API 接口列表</span>
+        <div className="api-docs" style={{ marginTop: 12 }}>
+          <div className="api-item">
+            <div className="api-endpoint">
+              <span className="method get">GET</span>
+              <code>/api/v1/messages</code>
+            </div>
+            <p className="api-desc">获取消息列表，支持 ChatLab 格式输出</p>
+            <div className="api-params">
+              <span className="param"><code>talker</code> - 会话ID（必填）</span>
+              <span className="param"><code>limit</code> - 数量限制</span>
+              <span className="param"><code>start</code> - 开始时间 (YYYYMMDD)</span>
+              <span className="param"><code>end</code> - 结束时间 (YYYYMMDD)</span>
+              <span className="param"><code>chatlab=1</code> - 输出 ChatLab 格式</span>
+            </div>
+          </div>
+          <div className="api-item">
+            <div className="api-endpoint">
+              <span className="method get">GET</span>
+              <code>/api/v1/sessions</code>
+            </div>
+            <p className="api-desc">获取会话列表</p>
+          </div>
+          <div className="api-item">
+            <div className="api-endpoint">
+              <span className="method get">GET</span>
+              <code>/api/v1/contacts</code>
+            </div>
+            <p className="api-desc">获取联系人列表</p>
+          </div>
+          <div className="api-item">
+            <div className="api-endpoint">
+              <span className="method get">GET</span>
+              <code>/health</code>
+            </div>
+            <p className="api-desc">健康检查</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="form-group">
+        <label>示例请求</label>
+        <div className="code-block" style={{ marginTop: 10 }}>
+          <code>GET http://127.0.0.1:{httpApiPort}/api/v1/messages?talker=wxid_xxx&limit=100&chatlab=1</code>
+        </div>
+      </div>
+    </div>
+  )
+
   const handleSetupHello = async () => {
     setIsSettingHello(true)
     try {
@@ -2075,6 +2243,7 @@ function SettingsPage() {
         {activeTab === 'models' && renderModelsTab()}
         {activeTab === 'export' && renderExportTab()}
         {activeTab === 'cache' && renderCacheTab()}
+        {activeTab === 'api' && renderApiTab()}
         {activeTab === 'security' && renderSecurityTab()}
         {activeTab === 'about' && renderAboutTab()}
       </div>

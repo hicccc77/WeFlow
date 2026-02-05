@@ -274,7 +274,9 @@ class ExportService {
         const bytes = Buffer.from(raw, 'hex')
         if (bytes.length > 0) return this.decodeBinaryContent(bytes)
       }
-      if (this.looksLikeBase64(raw)) {
+      // 只有当字符串足够长（超过16字符）且看起来像 base64 时才尝试解码
+      // 短字符串（如 "test", "home" 等）容易被误判为 base64
+      if (raw.length > 16 && this.looksLikeBase64(raw)) {
         try {
           const bytes = Buffer.from(raw, 'base64')
           return this.decodeBinaryContent(bytes)
@@ -1849,6 +1851,24 @@ class ExportService {
         await this.mergeGroupMembers(sessionId, collected.memberSet, options.exportAvatars === true)
       }
 
+      // ========== 获取群昵称并更新到 memberSet ==========
+      const groupNicknamesMap = isGroup
+        ? await this.getGroupNicknamesForRoom(sessionId)
+        : new Map<string, string>()
+
+      // 将群昵称更新到 memberSet 中
+      if (isGroup && groupNicknamesMap.size > 0) {
+        for (const [username, info] of collected.memberSet) {
+          // 尝试多种方式查找群昵称（支持大小写）
+          const groupNickname = groupNicknamesMap.get(username) 
+            || groupNicknamesMap.get(username.toLowerCase())
+            || ''
+          if (groupNickname) {
+            info.member.groupNickname = groupNickname
+          }
+        }
+      }
+
       allMessages.sort((a, b) => a.createTime - b.createTime)
 
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
@@ -1925,6 +1945,11 @@ class ExportService {
           groupNickname: undefined
         }
 
+        // 如果 memberInfo 中没有群昵称，尝试从 groupNicknamesMap 获取
+        const groupNickname = memberInfo.groupNickname 
+          || (isGroup ? (groupNicknamesMap.get(msg.senderUsername) || groupNicknamesMap.get(msg.senderUsername?.toLowerCase()) || '') : '')
+          || ''
+
         // 确定消息内容
         let content: string | null
         if (msg.localType === 34 && options.exportVoiceAsText) {
@@ -1937,7 +1962,7 @@ class ExportService {
         const message: ChatLabMessage = {
           sender: msg.senderUsername,
           accountName: memberInfo.accountName,
-          groupNickname: memberInfo.groupNickname,
+          groupNickname: groupNickname || undefined,
           timestamp: msg.createTime,
           type: this.convertMessageType(msg.localType, msg.content),
           content: content

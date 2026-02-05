@@ -286,5 +286,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('llama:downloadProgress', listener)
       return () => ipcRenderer.removeListener('llama:downloadProgress', listener)
     }
+  },
+
+  // HTTP API 服务
+  http: {
+    start: (port?: number) => ipcRenderer.invoke('http:start', port),
+    stop: () => ipcRenderer.invoke('http:stop'),
+    status: () => ipcRenderer.invoke('http:status')
   }
 })

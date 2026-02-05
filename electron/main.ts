@@ -23,6 +23,7 @@ import { contactExportService } from './services/contactExportService'
 import { windowsHelloService } from './services/windowsHelloService'
 import { llamaService } from './services/llamaService'
 import { registerNotificationHandlers, showNotification } from './windows/notificationWindow'
+import { httpService } from './services/httpService'
 
 
 // 配置自动更新
@@ -1280,6 +1281,23 @@ function registerIpcHandlers() {
     return keyService.autoGetImageKey(manualDir, (message) => {
       event.sender.send('key:imageKeyStatus', { message })
     })
+  })
+
+  // HTTP API 服务
+  ipcMain.handle('http:start', async (_, port?: number) => {
+    return httpService.start(port || 5031)
+  })
+
+  ipcMain.handle('http:stop', async () => {
+    await httpService.stop()
+    return { success: true }
+  })
+
+  ipcMain.handle('http:status', async () => {
+    return {
+      running: httpService.isRunning(),
+      port: httpService.getPort()
+    }
   })
 
 }
