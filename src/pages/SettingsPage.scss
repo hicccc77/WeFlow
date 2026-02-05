@@ -1191,6 +1191,109 @@
   }
 }
 
+// 通用弹窗覆盖层
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+// API 警告弹窗
+.api-warning-modal {
+  width: 420px;
+  background: var(--bg-primary);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.25s ease;
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+
+    svg {
+      color: var(--warning, #f59e0b);
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  }
+
+  .modal-body {
+    padding: 20px 24px;
+
+    .warning-text {
+      margin: 0 0 16px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .warning-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
+      .warning-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 1.5;
+
+        .bullet {
+          color: var(--warning, #f59e0b);
+          font-weight: bold;
+        }
+      }
+    }
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 // 协议弹窗
 .agreement-overlay {
@@ -1854,6 +1957,23 @@
 
   to {
     transform: rotate(360deg);
+  }
+}
+
+// API 地址显示样式
+.api-url-display {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+
+  input {
+    flex: 1;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 13px;
+  }
+
+  .btn {
+    flex-shrink: 0;
   }
 }
 

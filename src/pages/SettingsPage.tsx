@@ -143,6 +143,7 @@ function SettingsPage() {
   const [httpApiPort, setHttpApiPort] = useState(5031)
   const [httpApiRunning, setHttpApiRunning] = useState(false)
   const [isTogglingApi, setIsTogglingApi] = useState(false)
+  const [showApiWarning, setShowApiWarning] = useState(false)
 
   const isClearingCache = isClearingAnalyticsCache || isClearingImageCache || isClearingAllCache
 
@@ -1861,21 +1862,37 @@ function SettingsPage() {
   // HTTP API 服务控制
   const handleToggleApi = async () => {
     if (isTogglingApi) return
+    
+    // 启动时显示警告弹窗
+    if (!httpApiRunning) {
+      setShowApiWarning(true)
+      return
+    }
+    
     setIsTogglingApi(true)
     try {
-      if (httpApiRunning) {
-        await window.electronAPI.http.stop()
-        setHttpApiRunning(false)
-        showMessage('API 服务已停止', true)
+      await window.electronAPI.http.stop()
+      setHttpApiRunning(false)
+      showMessage('API 服务已停止', true)
+    } catch (e: any) {
+      showMessage(`操作失败: ${e}`, false)
+    } finally {
+      setIsTogglingApi(false)
+    }
+  }
+
+  // 确认启动 API 服务
+  const confirmStartApi = async () => {
+    setShowApiWarning(false)
+    setIsTogglingApi(true)
+    try {
+      const result = await window.electronAPI.http.start(httpApiPort)
+      if (result.success) {
+        setHttpApiRunning(true)
+        if (result.port) setHttpApiPort(result.port)
+        showMessage(`API 服务已启动，端口 ${result.port}`, true)
       } else {
-        const result = await window.electronAPI.http.start(httpApiPort)
-        if (result.success) {
-          setHttpApiRunning(true)
-          if (result.port) setHttpApiPort(result.port)
-          showMessage(`API 服务已启动，端口 ${result.port}`, true)
-        } else {
-          showMessage(`启动失败: ${result.error}`, false)
-        }
+        showMessage(`启动失败: ${result.error}`, false)
       }
     } catch (e: any) {
       showMessage(`操作失败: ${e}`, false)
@@ -1893,113 +1910,93 @@ function SettingsPage() {
   const renderApiTab = () => (
     <div className="tab-content">
       <div className="form-group">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <label>HTTP API 服务</label>
-            <span className="form-hint">启用后可通过 HTTP 接口查询消息数据</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className={`status-badge ${httpApiRunning ? 'running' : 'stopped'}`}>
-              {httpApiRunning ? '运行中' : '已停止'}
-            </span>
-            <button 
-              className={`btn ${httpApiRunning ? 'btn-danger' : 'btn-primary'}`}
-              onClick={handleToggleApi}
+        <label>HTTP API 服务</label>
+        <span className="form-hint">启用后可通过 HTTP 接口查询消息数据（仅限本机访问）</span>
+        <div className="log-toggle-line">
+          <span className="log-status">
+            {httpApiRunning ? '运行中' : '已停止'}
+          </span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={httpApiRunning}
+              onChange={handleToggleApi}
               disabled={isTogglingApi}
-            >
-              {isTogglingApi ? '处理中...' : (httpApiRunning ? '停止服务' : '启动服务')}
-            </button>
-          </div>
+            />
+            <span className="switch-slider" />
+          </label>
         </div>
       </div>
-
-      <div className="divider" />
 
       <div className="form-group">
         <label>服务端口</label>
-        <span className="form-hint">API 服务监听的端口号</span>
-        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-          <input
-            type="number"
-            className="field-input"
-            value={httpApiPort}
-            onChange={(e) => setHttpApiPort(parseInt(e.target.value, 10) || 5031)}
-            disabled={httpApiRunning}
-            style={{ width: 120 }}
-            min={1024}
-            max={65535}
-          />
-          <span className="form-hint" style={{ alignSelf: 'center' }}>
-            {httpApiRunning ? '停止服务后可修改端口' : '建议使用 1024-65535 之间的端口'}
-          </span>
-        </div>
+        <span className="form-hint">API 服务监听的端口号（1024-65535）</span>
+        <input
+          type="number"
+          className="field-input"
+          value={httpApiPort}
+          onChange={(e) => setHttpApiPort(parseInt(e.target.value, 10) || 5031)}
+          disabled={httpApiRunning}
+          style={{ width: 120 }}
+          min={1024}
+          max={65535}
+        />
       </div>
 
-      <div className="divider" />
-
-      <div className="form-group">
-        <label>API 地址</label>
-        <span className="form-hint">使用以下地址访问 API</span>
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-          <code className="api-url">http://127.0.0.1:{httpApiPort}</code>
-          <button className="btn btn-secondary btn-sm" onClick={handleCopyApiUrl}>
-            <Copy size={14} /> 复制
-          </button>
-        </div>
-      </div>
-
-      <div className="divider" />
-
-      <div className="form-group">
-        <label>接口文档</label>
-        <span className="form-hint">支持的 API 接口列表</span>
-        <div className="api-docs" style={{ marginTop: 12 }}>
-          <div className="api-item">
-            <div className="api-endpoint">
-              <span className="method get">GET</span>
-              <code>/api/v1/messages</code>
-            </div>
-            <p className="api-desc">获取消息列表，支持 ChatLab 格式输出</p>
-            <div className="api-params">
-              <span className="param"><code>talker</code> - 会话ID（必填）</span>
-              <span className="param"><code>limit</code> - 数量限制</span>
-              <span className="param"><code>start</code> - 开始时间 (YYYYMMDD)</span>
-              <span className="param"><code>end</code> - 结束时间 (YYYYMMDD)</span>
-              <span className="param"><code>chatlab=1</code> - 输出 ChatLab 格式</span>
-            </div>
-          </div>
-          <div className="api-item">
-            <div className="api-endpoint">
-              <span className="method get">GET</span>
-              <code>/api/v1/sessions</code>
-            </div>
-            <p className="api-desc">获取会话列表</p>
-          </div>
-          <div className="api-item">
-            <div className="api-endpoint">
-              <span className="method get">GET</span>
-              <code>/api/v1/contacts</code>
-            </div>
-            <p className="api-desc">获取联系人列表</p>
-          </div>
-          <div className="api-item">
-            <div className="api-endpoint">
-              <span className="method get">GET</span>
-              <code>/health</code>
-            </div>
-            <p className="api-desc">健康检查</p>
+      {httpApiRunning && (
+        <div className="form-group">
+          <label>API 地址</label>
+          <span className="form-hint">使用以下地址访问 API</span>
+          <div className="api-url-display">
+            <input
+              type="text"
+              className="field-input"
+              value={`http://127.0.0.1:${httpApiPort}`}
+              readOnly
+            />
+            <button className="btn btn-secondary" onClick={handleCopyApiUrl} title="复制">
+              <Copy size={16} />
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="divider" />
-
-      <div className="form-group">
-        <label>示例请求</label>
-        <div className="code-block" style={{ marginTop: 10 }}>
-          <code>GET http://127.0.0.1:{httpApiPort}/api/v1/messages?talker=wxid_xxx&limit=100&chatlab=1</code>
+      {/* API 安全警告弹窗 */}
+      {showApiWarning && (
+        <div className="modal-overlay" onClick={() => setShowApiWarning(false)}>
+          <div className="api-warning-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <ShieldCheck size={20} />
+              <h3>安全提示</h3>
+            </div>
+            <div className="modal-body">
+              <p className="warning-text">启用 HTTP API 服务后，本机上的其他程序可通过接口访问您的聊天记录数据。</p>
+              <div className="warning-list">
+                <div className="warning-item">
+                  <span className="bullet">•</span>
+                  <span>请确保您了解此功能的用途</span>
+                </div>
+                <div className="warning-item">
+                  <span className="bullet">•</span>
+                  <span>不要在公共或不信任的网络环境下使用</span>
+                </div>
+                <div className="warning-item">
+                  <span className="bullet">•</span>
+                  <span>此功能仅供高级用户或开发者使用</span>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowApiWarning(false)}>
+                取消
+              </button>
+              <button className="btn btn-primary" onClick={confirmStartApi}>
+                确认启动
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 

@@ -57,4 +57,5 @@ Thumbs.db
 
 wcdb/
 *info
-*.md
+概述.md
+chatlab-format.md
