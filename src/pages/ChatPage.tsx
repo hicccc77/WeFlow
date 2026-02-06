@@ -1546,6 +1546,28 @@ function ChatPage(_props: ChatPageProps) {
   )
 }
 
+// 全局语音播放管理器：同一时间只能播放一条语音
+const globalVoiceManager = {
+  currentAudio: null as HTMLAudioElement | null,
+  currentStopCallback: null as (() => void) | null,
+  play(audio: HTMLAudioElement, onStop: () => void) {
+    // 停止当前正在播放的语音
+    if (this.currentAudio && this.currentAudio !== audio) {
+      this.currentAudio.pause()
+      this.currentAudio.currentTime = 0
+      this.currentStopCallback?.()
+    }
+    this.currentAudio = audio
+    this.currentStopCallback = onStop
+  },
+  stop(audio: HTMLAudioElement) {
+    if (this.currentAudio === audio) {
+      this.currentAudio = null
+      this.currentStopCallback = null
+    }
+  },
+}
+
 // 前端表情包缓存
 const emojiDataUrlCache = new Map<string, string>()
 const imageDataUrlCache = new Map<string, string>()
@@ -1985,6 +2007,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
     const handleEnded = () => {
       setIsVoicePlaying(false)
       setVoiceCurrentTime(0)
+      globalVoiceManager.stop(audio)
     }
     const handleTimeUpdate = () => {
       setVoiceCurrentTime(audio.currentTime)
@@ -1999,6 +2022,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
     audio.addEventListener('loadedmetadata', handleLoadedMetadata)
     return () => {
       audio.pause()
+      globalVoiceManager.stop(audio)
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('ended', handleEnded)
@@ -2433,6 +2457,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         if (isVoicePlaying) {
           audio.pause()
           audio.currentTime = 0
+          globalVoiceManager.stop(audio)
           return
         }
         if (!voiceDataUrl) {
@@ -2467,6 +2492,11 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         }
         audio.src = source
         try {
+          // 停止其他正在播放的语音，确保同一时间只播放一条
+          globalVoiceManager.play(audio, () => {
+            audio.pause()
+            audio.currentTime = 0
+          })
           await audio.play()
         } catch {
           setVoiceError(true)
