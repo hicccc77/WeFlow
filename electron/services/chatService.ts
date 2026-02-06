@@ -3551,6 +3551,67 @@ class ChatService {
     }
   }
 
+  /**
+   * 获取某会话的所有语音消息（localType=34），用于批量转写
+   */
+  async getAllVoiceMessages(sessionId: string): Promise<{ success: boolean; messages?: Message[]; error?: string }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
+      }
+
+      // 获取会话表信息
+      let tables = this.sessionTablesCache.get(sessionId)
+      if (!tables) {
+        const tableStats = await wcdbService.getMessageTableStats(sessionId)
+        if (!tableStats.success || !tableStats.tables || tableStats.tables.length === 0) {
+          return { success: false, error: '未找到会话消息表' }
+        }
+        tables = tableStats.tables
+          .map(t => ({ tableName: t.table_name || t.name, dbPath: t.db_path }))
+          .filter(t => t.tableName && t.dbPath) as Array<{ tableName: string; dbPath: string }>
+        if (tables.length > 0) {
+          this.sessionTablesCache.set(sessionId, tables)
+          setTimeout(() => { this.sessionTablesCache.delete(sessionId) }, this.sessionTablesCacheTtl)
+        }
+      }
+
+      let allVoiceMessages: Message[] = []
+
+      for (const { tableName, dbPath } of tables) {
+        try {
+          const sql = `SELECT * FROM ${tableName} WHERE local_type = 34 ORDER BY create_time DESC`
+          const result = await wcdbService.execQuery('message', dbPath, sql)
+          if (result.success && result.rows && result.rows.length > 0) {
+            const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[])
+            allVoiceMessages.push(...mapped)
+          }
+        } catch (e) {
+          console.error(`[ChatService] 查询语音消息失败 (${dbPath}):`, e)
+        }
+      }
+
+      // 按 createTime 降序排序
+      allVoiceMessages.sort((a, b) => b.createTime - a.createTime)
+
+      // 去重
+      const seen = new Set<string>()
+      allVoiceMessages = allVoiceMessages.filter(msg => {
+        const key = `${msg.serverId}-${msg.localId}-${msg.createTime}-${msg.sortSeq}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      console.log(`[ChatService] 共找到 ${allVoiceMessages.length} 条语音消息（去重后）`)
+      return { success: true, messages: allVoiceMessages }
+    } catch (e) {
+      console.error('[ChatService] 获取所有语音消息失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
   async getMessageById(sessionId: string, localId: number): Promise<{ success: boolean; message?: Message; error?: string }> {
     try {
       // 1. 尝试从缓存获取会话表信息
