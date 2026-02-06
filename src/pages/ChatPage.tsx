@@ -3187,10 +3187,17 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
           return (
             <div className={`transfer-message ${isReceived ? 'received' : ''}`}>
               <div className="transfer-icon">
-                <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
-                  <circle cx="20" cy="20" r="18" stroke="white" strokeWidth="2" />
-                  <path d="M12 20h16M20 12l8 8-8 8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {isReceived ? (
+                  <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="20" r="18" stroke="white" strokeWidth="2" />
+                    <path d="M12 20l6 6 10-12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="20" r="18" stroke="white" strokeWidth="2" />
+                    <path d="M12 20h16M20 12l8 8-8 8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
               </div>
               <div className="transfer-info">
                 <div className="transfer-amount">{displayAmount}</div>

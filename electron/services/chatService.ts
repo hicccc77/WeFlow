@@ -2431,8 +2431,23 @@ class ChatService {
         }
       }
 
-      // 解析付款方名称：群昵称 > 备注 > 昵称 > alias > wxid
+      // 获取当前用户 wxid，用于识别"自己"
+      const myWxid = this.configService.get('myWxid')
+      const cleanedMyWxid = myWxid ? this.cleanAccountDirName(myWxid) : ''
+
+      // 解析付款方名称：自己 > 群昵称 > 备注 > 昵称 > alias > wxid
       const resolveName = async (username: string): Promise<string> => {
+        // 特判：如果是当前用户自己（contact 表通常不包含自己）
+        if (myWxid && (username === myWxid || username === cleanedMyWxid)) {
+          // 先查群昵称中是否有自己
+          const myGroupNick = groupNicknames[username]
+          if (myGroupNick) return myGroupNick
+          // 尝试从缓存获取自己的昵称
+          const cached = this.avatarCache.get(username) || this.avatarCache.get(myWxid)
+          if (cached?.displayName) return cached.displayName
+          return '我'
+        }
+
         // 先查群昵称
         const groupNick = groupNicknames[username]
         if (groupNick) return groupNick
