@@ -239,6 +239,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 导出
   export: {
+    getExportStats: (sessionIds: string[], options: any) =>
+      ipcRenderer.invoke('export:getExportStats', sessionIds, options),
     exportSessions: (sessionIds: string[], outputDir: string, options: any) =>
       ipcRenderer.invoke('export:exportSessions', sessionIds, outputDir, options),
     exportSession: (sessionId: string, outputPath: string, options: any) =>

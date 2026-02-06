@@ -106,6 +106,9 @@ export interface ExportProgress {
   total: number
   currentSession: string
   phase: 'preparing' | 'exporting' | 'exporting-media' | 'exporting-voice' | 'writing' | 'complete'
+  phaseProgress?: number
+  phaseTotal?: number
+  phaseLabel?: string
 }
 
 // 并发控制：限制同时执行的 Promise 数量
@@ -847,16 +850,30 @@ class ExportService {
   }
 
   private escapeHtml(value: string): string {
-    return value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
+    return value.replace(/[&<>"']/g, c => {
+      switch (c) {
+        case '&': return '&amp;'
+        case '<': return '&lt;'
+        case '>': return '&gt;'
+        case '"': return '&quot;'
+        case "'": return '&#39;'
+        default: return c
+      }
+    })
   }
 
   private escapeAttribute(value: string): string {
-    return this.escapeHtml(value).replace(/`/g, '&#96;')
+    return value.replace(/[&<>"'`]/g, c => {
+      switch (c) {
+        case '&': return '&amp;'
+        case '<': return '&lt;'
+        case '>': return '&gt;'
+        case '"': return '&quot;'
+        case "'": return '&#39;'
+        case '`': return '&#96;'
+        default: return c
+      }
+    })
   }
 
   private getAvatarFallback(name: string): string {
@@ -997,7 +1014,9 @@ class ExportService {
       if (index % 2 === 1) {
         const emojiDataUrl = this.getInlineEmojiDataUrl(part)
         if (emojiDataUrl) {
-          return `<img class="inline-emoji" src="${this.escapeAttribute(emojiDataUrl)}" alt="[${this.escapeAttribute(part)}]" />`
+          // Cache full <img> tag to avoid re-escaping data URL every time
+          const escapedName = this.escapeAttribute(part)
+          return `<img class="inline-emoji" src="${emojiDataUrl}" alt="[${escapedName}]" />`
         }
         return this.escapeHtml(`[${part}]`)
       }
@@ -1135,22 +1154,19 @@ class ExportService {
       }
 
       // 复制文件
-      if (fs.existsSync(sourcePath)) {
-        const ext = path.extname(sourcePath) || '.jpg'
-        const fileName = `${imageMd5 || imageDatName || msg.localId}${ext}`
-        const destPath = path.join(imagesDir, fileName)
+      if (!fs.existsSync(sourcePath)) return null
+      const ext = path.extname(sourcePath) || '.jpg'
+      const fileName = `${imageMd5 || imageDatName || msg.localId}${ext}`
+      const destPath = path.join(imagesDir, fileName)
 
-        if (!fs.existsSync(destPath)) {
-          fs.copyFileSync(sourcePath, destPath)
-        }
-
-        return {
-          relativePath: path.posix.join(mediaRelativePrefix, 'images', fileName),
-          kind: 'image'
-        }
+      if (!fs.existsSync(destPath)) {
+        fs.copyFileSync(sourcePath, destPath)
       }
 
-      return null
+      return {
+        relativePath: path.posix.join(mediaRelativePrefix, 'images', fileName),
+        kind: 'image'
+      }
     } catch (e) {
       return null
     }
@@ -1771,9 +1787,10 @@ class ExportService {
       fs.mkdirSync(avatarsDir, { recursive: true })
     }
 
-    for (const member of members) {
+    const AVATAR_CONCURRENCY = 8
+    await parallelLimit(members, AVATAR_CONCURRENCY, async (member) => {
       const fileInfo = this.resolveAvatarFile(member.avatarUrl)
-      if (!fileInfo) continue
+      if (!fileInfo) return
       try {
         let data: Buffer | null = null
         let mime = fileInfo.mime
@@ -1788,7 +1805,7 @@ class ExportService {
             mime = downloaded.mime || mime
           }
         }
-        if (!data) continue
+        if (!data) return
 
         // 优先使用内容检测出的 MIME 类型
         const detectedMime = this.detectMimeType(data)
@@ -1805,15 +1822,19 @@ class ExportService {
         const filename = `${sanitizedUsername}${ext}`
         const avatarPath = path.join(avatarsDir, filename)
 
-        // 保存头像文件
-        await fs.promises.writeFile(avatarPath, data)
+        // 跳过已存在文件
+        try {
+          await fs.promises.access(avatarPath)
+        } catch {
+          await fs.promises.writeFile(avatarPath, data)
+        }
 
         // 返回相对路径
         result.set(member.username, `avatars/${filename}`)
       } catch {
-        continue
+        return
       }
-    }
+    })
 
     return result
   }
@@ -2001,11 +2022,15 @@ class ExportService {
           current: 20,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-media'
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
         })
 
         // 并行导出媒体，并发数跟随导出设置
         const mediaConcurrency = this.getClampedConcurrency(options.exportConcurrency)
+        let mediaExported = 0
         await parallelLimit(mediaMessages, mediaConcurrency, async (msg) => {
           const mediaKey = `${msg.localType}_${msg.localId}`
           if (!mediaCache.has(mediaKey)) {
@@ -2018,6 +2043,18 @@ class ExportService {
             })
             mediaCache.set(mediaKey, mediaItem)
           }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 20,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
+          }
         })
       }
 
@@ -2029,14 +2066,28 @@ class ExportService {
           current: 40,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-voice'
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
         })
 
         // 并行转写语音，限制 4 个并发（转写比较耗资源）
         const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
           const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 40,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
         })
       }
 
@@ -2335,10 +2386,14 @@ class ExportService {
           current: 15,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-media'
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
         })
 
         const mediaConcurrency = this.getClampedConcurrency(options.exportConcurrency)
+        let mediaExported = 0
         await parallelLimit(mediaMessages, mediaConcurrency, async (msg) => {
           const mediaKey = `${msg.localType}_${msg.localId}`
           if (!mediaCache.has(mediaKey)) {
@@ -2351,6 +2406,18 @@ class ExportService {
             })
             mediaCache.set(mediaKey, mediaItem)
           }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 15,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
+          }
         })
       }
 
@@ -2362,13 +2429,27 @@ class ExportService {
           current: 35,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-voice'
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
         })
 
         const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
           const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 35,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
         })
       }
 
@@ -2744,10 +2825,14 @@ class ExportService {
           current: 35,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-media'
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
         })
 
         const mediaConcurrency = this.getClampedConcurrency(options.exportConcurrency)
+        let mediaExported = 0
         await parallelLimit(mediaMessages, mediaConcurrency, async (msg) => {
           const mediaKey = `${msg.localType}_${msg.localId}`
           if (!mediaCache.has(mediaKey)) {
@@ -2760,6 +2845,18 @@ class ExportService {
             })
             mediaCache.set(mediaKey, mediaItem)
           }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 35,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
+          }
         })
       }
 
@@ -2771,13 +2868,27 @@ class ExportService {
           current: 50,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-voice'
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
         })
 
         const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
           const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 50,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
         })
       }
 
@@ -3074,10 +3185,14 @@ class ExportService {
           current: 25,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-media'
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
         })
 
         const mediaConcurrency = this.getClampedConcurrency(options.exportConcurrency)
+        let mediaExported = 0
         await parallelLimit(mediaMessages, mediaConcurrency, async (msg) => {
           const mediaKey = `${msg.localType}_${msg.localId}`
           if (!mediaCache.has(mediaKey)) {
@@ -3090,6 +3205,18 @@ class ExportService {
             })
             mediaCache.set(mediaKey, mediaItem)
           }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 25,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
+          }
         })
       }
 
@@ -3100,13 +3227,27 @@ class ExportService {
           current: 45,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-voice'
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
         })
 
         const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
           const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 45,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
         })
       }
 
@@ -3231,158 +3372,83 @@ class ExportService {
 
   private getVirtualScrollScript(): string {
     return `
-      class VirtualScroller {
-        constructor(container, list, data, renderItem) {
+      class ChunkedRenderer {
+        constructor(container, data, renderItem) {
           this.container = container;
-          this.list = list;
           this.data = data;
           this.renderItem = renderItem;
-          
-          this.rowHeight = 80; // Estimated height
-          this.buffer = 5;
-          this.heightCache = new Map();
-          this.visibleItems = new Set();
-          
-          this.spacer = document.createElement('div');
-          this.spacer.className = 'virtual-scroll-spacer';
-          this.content = document.createElement('div');
-          this.content.className = 'virtual-scroll-content';
-          
-          this.container.appendChild(this.spacer);
-          this.container.appendChild(this.content);
-          
-          this.container.addEventListener('scroll', () => this.onScroll());
-          window.addEventListener('resize', () => this.onScroll());
-          
-          this.updateTotalHeight();
-          this.onScroll();
+          this.batchSize = 100;
+          this.rendered = 0;
+          this.loading = false;
+
+          this.list = document.createElement('div');
+          this.list.className = 'message-list';
+          this.container.appendChild(this.list);
+
+          this.sentinel = document.createElement('div');
+          this.sentinel.className = 'load-sentinel';
+          this.container.appendChild(this.sentinel);
+
+          this.renderBatch();
+
+          this.observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting && !this.loading) {
+              this.renderBatch();
+            }
+          }, { root: this.container, rootMargin: '600px' });
+          this.observer.observe(this.sentinel);
+        }
+
+        renderBatch() {
+          if (this.rendered >= this.data.length) return;
+          this.loading = true;
+          const end = Math.min(this.rendered + this.batchSize, this.data.length);
+          const fragment = document.createDocumentFragment();
+          for (let i = this.rendered; i < end; i++) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = this.renderItem(this.data[i], i);
+            if (wrapper.firstElementChild) fragment.appendChild(wrapper.firstElementChild);
+          }
+          this.list.appendChild(fragment);
+          this.rendered = end;
+          this.loading = false;
         }
 
         setData(newData) {
           this.data = newData;
-          this.heightCache.clear();
-          this.content.innerHTML = '';
+          this.rendered = 0;
+          this.list.innerHTML = '';
           this.container.scrollTop = 0;
-          this.updateTotalHeight();
-          this.onScroll();
-          
-          // Show/Hide empty state
           if (this.data.length === 0) {
-             this.content.innerHTML = '<div class="empty">暂无消息</div>';
+            this.list.innerHTML = '<div class="empty">暂无消息</div>';
+            return;
           }
+          this.renderBatch();
         }
 
-        updateTotalHeight() {
-          let total = 0;
-          for (let i = 0; i < this.data.length; i++) {
-            total += this.heightCache.get(i) || this.rowHeight;
-          }
-          this.spacer.style.height = total + 'px';
-        }
-
-        onScroll() {
-          if (this.data.length === 0) return;
-
-          const scrollTop = this.container.scrollTop;
-          const containerHeight = this.container.clientHeight;
-          
-          // Find start index
-          let currentY = 0;
-          let startIndex = 0;
-          for (let i = 0; i < this.data.length; i++) {
-            const h = this.heightCache.get(i) || this.rowHeight;
-            if (currentY + h > scrollTop) {
-              startIndex = i;
-              break;
-            }
-            currentY += h;
-          }
-          
-          // Find end index
-          let endIndex = startIndex;
-          let visibleHeight = 0;
-          for (let i = startIndex; i < this.data.length; i++) {
-            const h = this.heightCache.get(i) || this.rowHeight;
-            visibleHeight += h;
-            endIndex = i;
-            if (visibleHeight > containerHeight) break;
-          }
-          
-          const start = Math.max(0, startIndex - this.buffer);
-          const end = Math.min(this.data.length - 1, endIndex + this.buffer);
-          
-          this.renderRange(start, end, currentY);
-        }
-
-        renderRange(start, end, startY) {
-          // Calculate offset for start item
-          let topOffset = 0;
-          for(let i=0; i<start; i++) {
-             topOffset += this.heightCache.get(i) || this.rowHeight;
-          }
-
-          const newKeys = new Set();
-          
-          // Create or update items
-          let currentTop = topOffset;
-          const fragment = document.createDocumentFragment();
-
-          for (let i = start; i <= end; i++) {
-            newKeys.add(i);
-            const itemData = this.data[i];
-            
-            let el = this.content.querySelector(\`[data-index="\${i}"]\`);
-            if (!el) {
-              el = document.createElement('div');
-              el.setAttribute('data-index', i);
-              el.className = 'virtual-item';
-              el.style.position = 'absolute';
-              el.style.left = '0';
-              el.style.width = '100%';
-              el.innerHTML = this.renderItem(itemData, i);
-              
-              // Measure height after render
-              this.content.appendChild(el); 
-              const rect = el.getBoundingClientRect();
-              const actualHeight = rect.height;
-              
-              if (Math.abs(actualHeight - (this.heightCache.get(i) || this.rowHeight)) > 1) {
-                this.heightCache.set(i, actualHeight);
-                // If height changed significantly, we might need to adjust total height
-                // But for performance, maybe just do it on next scroll or rarely?
-                // For now, let's keep it simple. If we update inline style top, we need to know exact previous heights.
-              }
-            }
-            
-            el.style.top = currentTop + 'px';
-            currentTop += (this.heightCache.get(i) || this.rowHeight);
-          }
-          
-          // Cleanup
-          Array.from(this.content.children).forEach(child => {
-            if (child.classList.contains('empty')) return;
-            const idx = parseInt(child.getAttribute('data-index'));
-            if (!newKeys.has(idx)) {
-              child.remove();
-            }
-          });
-          
-          this.updateTotalHeight();
-        }
-        
         scrollToTime(timestamp) {
-           const idx = this.data.findIndex(item => item.ts >= timestamp);
-           if (idx !== -1) {
-             this.scrollToIndex(idx);
-           }
-        }
-        
-        scrollToIndex(index) {
-          let top = 0;
-          for(let i=0; i<index; i++) {
-            top += this.heightCache.get(i) || this.rowHeight;
+          const idx = this.data.findIndex(item => item.t >= timestamp);
+          if (idx === -1) return;
+          // Ensure all messages up to target are rendered
+          while (this.rendered <= idx) {
+            this.renderBatch();
           }
-          this.container.scrollTop = top;
+          const el = this.list.children[idx];
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('highlight');
+            setTimeout(() => el.classList.remove('highlight'), 2500);
+          }
+        }
+
+        scrollToIndex(index) {
+          while (this.rendered <= index) {
+            this.renderBatch();
+          }
+          const el = this.list.children[index];
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }
       }
     `;
@@ -3447,10 +3513,14 @@ class ExportService {
           current: 20,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-media'
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
         })
 
         const MEDIA_CONCURRENCY = 6
+        let mediaExported = 0
         await parallelLimit(mediaMessages, MEDIA_CONCURRENCY, async (msg) => {
           const mediaKey = `${msg.localType}_${msg.localId}`
           if (!mediaCache.has(mediaKey)) {
@@ -3463,6 +3533,18 @@ class ExportService {
               exportVideos: options.exportVideos
             })
             mediaCache.set(mediaKey, mediaItem)
+          }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 20,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
           }
         })
       }
@@ -3478,13 +3560,27 @@ class ExportService {
           current: 40,
           total: 100,
           currentSession: sessionInfo.displayName,
-          phase: 'exporting-voice'
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
         })
 
         const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
           const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 40,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
         })
       }
 
@@ -3535,43 +3631,23 @@ class ExportService {
   <body>
     <div class="page">
       <div class="header">
-        <h1 class="title">${this.escapeHtml(sessionInfo.displayName)} 的聊天记录</h1>
+        <h1 class="title">${this.escapeHtml(sessionInfo.displayName)}</h1>
         <div class="meta">
-          <span>导出时间：${this.escapeHtml(this.formatTimestamp(exportMeta.chatlab.exportedAt))}</span>
-          <span>消息数量：${sortedMessages.length}</span>
-          <span>会话类型：${isGroup ? '群聊' : '私聊'}</span>
+          <span>${sortedMessages.length} 条消息</span>
+          <span>${isGroup ? '群聊' : '私聊'}</span>
+          <span>${this.escapeHtml(this.formatTimestamp(exportMeta.chatlab.exportedAt))}</span>
         </div>
         <div class="controls">
-          <div class="control">
-            <label for="searchInput">搜索内容 / 发送者</label>
-            <input id="searchInput" type="search" placeholder="输入关键词实时过滤" />
-          </div>
-          <div class="control">
-            <label for="timeInput">按时间跳转</label>
-            <input id="timeInput" type="datetime-local" />
-          </div>
-          <div class="control">
-            <label for="themeSelect">主题配色</label>
-            <select id="themeSelect">
-              <option value="cloud-dancer">云舞蓝</option>
-              <option value="corundum-blue">珊瑚蓝</option>
-              <option value="kiwi-green">奇异绿</option>
-              <option value="spicy-red">热辣红</option>
-              <option value="teal-water">蓝绿水</option>
-            </select>
-          </div>
-          <div class="control">
-            <label>&nbsp;</label>
-            <button id="jumpBtn" type="button">跳转到时间</button>
-          </div>
+          <input id="searchInput" type="search" placeholder="搜索消息..." />
+          <input id="timeInput" type="datetime-local" />
+          <button id="jumpBtn" type="button">跳转</button>
           <div class="stats">
             <span id="resultCount">共 ${sortedMessages.length} 条</span>
           </div>
         </div>
       </div>
       
-      <!-- Virtual Scroll Container -->
-      <div id="virtualScrollContainer" class="virtual-scroll-container"></div>
+      <div id="scrollContainer" class="scroll-container"></div>
       
     </div>
     
@@ -3584,7 +3660,23 @@ class ExportService {
       window.WEFLOW_DATA = [
 `);
 
-      // Write messages in chunks
+      // Pre-build avatar HTML lookup to avoid per-message rebuilds
+      const avatarHtmlCache = new Map<string, string>()
+      const getAvatarHtml = (username: string, name: string): string => {
+        const cached = avatarHtmlCache.get(username)
+        if (cached !== undefined) return cached
+        const avatarData = avatarMap.get(username)
+        const html = avatarData
+          ? `<img src="${this.escapeAttribute(encodeURI(avatarData))}" alt="${this.escapeAttribute(name)}" />`
+          : `<span>${this.escapeHtml(this.getAvatarFallback(name))}</span>`
+        avatarHtmlCache.set(username, html)
+        return html
+      }
+
+      // Write messages in buffered chunks
+      const WRITE_BATCH = 100
+      let writeBuf: string[] = []
+
       for (let i = 0; i < sortedMessages.length; i++) {
         const msg = sortedMessages[i]
         const mediaKey = `${msg.localType}_${msg.localId}`
@@ -3597,10 +3689,8 @@ class ExportService {
           : (isGroup
             ? (senderInfo?.groupNickname || senderInfo?.accountName || msg.senderUsername)
             : (sessionInfo.displayName || sessionId))
-        const avatarData = avatarMap.get(isSenderMe ? cleanedMyWxid : msg.senderUsername)
-        const avatarHtml = avatarData
-          ? `<img src="${this.escapeAttribute(encodeURI(avatarData))}" alt="${this.escapeAttribute(senderName)}" />`
-          : `<span>${this.escapeHtml(this.getAvatarFallback(senderName))}</span>`
+
+        const avatarHtml = getAvatarHtml(isSenderMe ? cleanedMyWxid : msg.senderUsername, senderName)
 
         const timeText = this.formatTimestamp(msg.createTime)
         const typeName = this.getMessageTypeName(msg.localType)
@@ -3634,14 +3724,7 @@ class ExportService {
           ? `<div class="sender-name">${this.escapeHtml(senderName)}</div>`
           : ''
         const timeHtml = `<div class="message-time">${this.escapeHtml(timeText)}</div>`
-        const messageBody = `
-            ${timeHtml}
-            ${senderNameHtml}
-            <div class="message-content">
-              ${mediaHtml}
-              ${textHtml}
-            </div>
-        `
+        const messageBody = `${timeHtml}${senderNameHtml}<div class="message-content">${mediaHtml}${textHtml}</div>`
 
         // Compact JSON object
         const itemObj = {
@@ -3652,8 +3735,15 @@ class ExportService {
           b: messageBody // body HTML
         }
 
-        const jsonStr = JSON.stringify(itemObj)
-        await writePromise(jsonStr + (i < sortedMessages.length - 1 ? ',\n' : '\n'))
+        writeBuf.push(JSON.stringify(itemObj))
+
+        // Flush buffer periodically
+        if (writeBuf.length >= WRITE_BATCH || i === sortedMessages.length - 1) {
+          const isLast = i === sortedMessages.length - 1
+          const chunk = writeBuf.join(',\n') + (isLast ? '\n' : ',\n')
+          await writePromise(chunk)
+          writeBuf = []
+        }
 
         // Report progress occasionally
         if ((i + 1) % 500 === 0) {
@@ -3676,10 +3766,9 @@ class ExportService {
       const timeInput = document.getElementById('timeInput')
       const jumpBtn = document.getElementById('jumpBtn')
       const resultCount = document.getElementById('resultCount')
-      const themeSelect = document.getElementById('themeSelect')
       const imagePreview = document.getElementById('imagePreview')
       const imagePreviewTarget = document.getElementById('imagePreviewTarget')
-      const container = document.getElementById('virtualScrollContainer')
+      const container = document.getElementById('scrollContainer')
       let imageZoom = 1
 
       // Initial Data
@@ -3701,7 +3790,7 @@ class ExportService {
          \`;
       };
       
-      const scroller = new VirtualScroller(container, [], currentList, renderItem);
+      const renderer = new ChunkedRenderer(container, currentList, renderItem);
 
       const updateCount = () => {
         resultCount.textContent = \`共 \${currentList.length} 条\`
@@ -3716,14 +3805,11 @@ class ExportService {
           if (!keyword) {
             currentList = allData;
           } else {
-            // Simplified search: check raw html content (contains body text and sender name)
-            // Ideally we should search raw text, but we only have pre-rendered HTML in JSON 'b' (body)
-            // 'b' contains message content and sender name.
             currentList = allData.filter(item => {
                return item.b.toLowerCase().includes(keyword); 
             });
           }
-          scroller.setData(currentList);
+          renderer.setData(currentList);
           updateCount();
         }, 300);
       })
@@ -3733,21 +3819,7 @@ class ExportService {
         const value = timeInput.value
         if (!value) return
         const target = Math.floor(new Date(value).getTime() / 1000)
-        // Find in current list
-        scroller.scrollToTime(target);
-      })
-
-      // Theme Logic
-      const applyTheme = (value) => {
-        document.body.setAttribute('data-theme', value)
-        localStorage.setItem('weflow-export-theme', value)
-      }
-      const storedTheme = localStorage.getItem('weflow-export-theme') || 'cloud-dancer'
-      themeSelect.value = storedTheme
-      applyTheme(storedTheme)
-
-      themeSelect.addEventListener('change', (event) => {
-        applyTheme(event.target.value)
+        renderer.scrollToTime(target);
       })
 
       // Image Preview (Delegation)
@@ -3788,7 +3860,6 @@ class ExportService {
       })
 
       updateCount()
-      console.log('WeFlow Export Loaded', allData.length);
     </script>
   </body>
 </html>`);
@@ -3808,6 +3879,77 @@ class ExportService {
 
     } catch (e) {
       return { success: false, error: String(e) }
+    }
+  }
+
+  /**
+   * 获取导出前的预估统计信息
+   */
+  async getExportStats(
+    sessionIds: string[],
+    options: ExportOptions
+  ): Promise<{
+    totalMessages: number
+    voiceMessages: number
+    cachedVoiceCount: number
+    needTranscribeCount: number
+    mediaMessages: number
+    estimatedSeconds: number
+    sessions: Array<{ sessionId: string; displayName: string; totalCount: number; voiceCount: number }>
+  }> {
+    const conn = await this.ensureConnected()
+    if (!conn.success || !conn.cleanedWxid) {
+      return { totalMessages: 0, voiceMessages: 0, cachedVoiceCount: 0, needTranscribeCount: 0, mediaMessages: 0, estimatedSeconds: 0, sessions: [] }
+    }
+    const cleanedMyWxid = conn.cleanedWxid
+    const sessionsStats: Array<{ sessionId: string; displayName: string; totalCount: number; voiceCount: number }> = []
+    let totalMessages = 0
+    let voiceMessages = 0
+    let cachedVoiceCount = 0
+    let mediaMessages = 0
+
+    for (const sessionId of sessionIds) {
+      const sessionInfo = await this.getContactInfo(sessionId)
+      const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
+      const msgs = collected.rows
+      const voiceMsgs = msgs.filter(m => m.localType === 34)
+      const mediaMsgs = msgs.filter(m => {
+        const t = m.localType
+        return (t === 3) || (t === 47) || (t === 43) || (t === 34)
+      })
+
+      // 检查已缓存的转写数量
+      let cached = 0
+      for (const msg of voiceMsgs) {
+        if (chatService.hasTranscriptCache(sessionId, String(msg.localId), msg.createTime)) {
+          cached++
+        }
+      }
+
+      totalMessages += msgs.length
+      voiceMessages += voiceMsgs.length
+      cachedVoiceCount += cached
+      mediaMessages += mediaMsgs.length
+      sessionsStats.push({
+        sessionId,
+        displayName: sessionInfo.displayName,
+        totalCount: msgs.length,
+        voiceCount: voiceMsgs.length
+      })
+    }
+
+    const needTranscribeCount = voiceMessages - cachedVoiceCount
+    // 预估：每条语音转文字约 2 秒
+    const estimatedSeconds = needTranscribeCount * 2
+
+    return {
+      totalMessages,
+      voiceMessages,
+      cachedVoiceCount,
+      needTranscribeCount,
+      mediaMessages,
+      estimatedSeconds,
+      sessions: sessionsStats
     }
   }
 
@@ -3850,7 +3992,17 @@ class ExportService {
       await parallelLimit(sessionIds, sessionConcurrency, async (sessionId) => {
         const sessionInfo = await this.getContactInfo(sessionId)
 
-        onProgress?.({
+        // 创建包装后的进度回调，自动附加会话级信息
+        const sessionProgress = (progress: ExportProgress) => {
+          onProgress?.({
+            ...progress,
+            current: completedCount,
+            total: sessionIds.length,
+            currentSession: sessionInfo.displayName
+          })
+        }
+
+        sessionProgress({
           current: completedCount,
           total: sessionIds.length,
           currentSession: sessionInfo.displayName,
@@ -3874,15 +4026,15 @@ class ExportService {
 
         let result: { success: boolean; error?: string }
         if (options.format === 'json') {
-          result = await this.exportSessionToDetailedJson(sessionId, outputPath, options)
+          result = await this.exportSessionToDetailedJson(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'chatlab' || options.format === 'chatlab-jsonl') {
-          result = await this.exportSessionToChatLab(sessionId, outputPath, options)
+          result = await this.exportSessionToChatLab(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'excel') {
-          result = await this.exportSessionToExcel(sessionId, outputPath, options)
+          result = await this.exportSessionToExcel(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'txt') {
-          result = await this.exportSessionToTxt(sessionId, outputPath, options)
+          result = await this.exportSessionToTxt(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'html') {
-          result = await this.exportSessionToHtml(sessionId, outputPath, options)
+          result = await this.exportSessionToHtml(sessionId, outputPath, options, sessionProgress)
         } else {
           result = { success: false, error: `不支持的格式: ${options.format}` }
         }

@@ -117,10 +117,13 @@ class ChatService {
   private voiceWavCache = new Map<string, Buffer>()
   private voiceTranscriptCache = new Map<string, string>()
   private voiceTranscriptPending = new Map<string, Promise<{ success: boolean; transcript?: string; error?: string }>>()
+  private transcriptCacheLoaded = false
+  private transcriptCacheDirty = false
+  private transcriptFlushTimer: ReturnType<typeof setTimeout> | null = null
   private mediaDbsCache: string[] | null = null
   private mediaDbsCacheTime = 0
   private readonly mediaDbsCacheTtl = 300000 // 5分钟
-  private readonly voiceCacheMaxEntries = 50
+  private readonly voiceWavCacheMaxEntries = 50
   // 缓存 media.db 的表结构信息
   private mediaDbSchemaCache = new Map<string, {
     voiceTable: string
@@ -3498,6 +3501,8 @@ class ChatService {
   ): Promise<{ success: boolean; transcript?: string; error?: string }> {
     const startTime = Date.now()
 
+    // 确保磁盘缓存已加载
+    this.loadTranscriptCacheIfNeeded()
 
     try {
       let msgCreateTime = createTime
@@ -3625,18 +3630,76 @@ class ChatService {
 
   private cacheVoiceWav(cacheKey: string, wavData: Buffer): void {
     this.voiceWavCache.set(cacheKey, wavData)
-    if (this.voiceWavCache.size > this.voiceCacheMaxEntries) {
+    if (this.voiceWavCache.size > this.voiceWavCacheMaxEntries) {
       const oldestKey = this.voiceWavCache.keys().next().value
       if (oldestKey) this.voiceWavCache.delete(oldestKey)
     }
   }
 
+  /** 获取持久化转写缓存文件路径 */
+  private getTranscriptCachePath(): string {
+    const cachePath = this.configService.get('cachePath')
+    const base = cachePath || join(app.getPath('documents'), 'WeFlow')
+    return join(base, 'Voices', 'transcripts.json')
+  }
+
+  /** 首次访问时从磁盘加载转写缓存 */
+  private loadTranscriptCacheIfNeeded(): void {
+    if (this.transcriptCacheLoaded) return
+    this.transcriptCacheLoaded = true
+    try {
+      const filePath = this.getTranscriptCachePath()
+      if (existsSync(filePath)) {
+        const raw = readFileSync(filePath, 'utf-8')
+        const data = JSON.parse(raw) as Record<string, string>
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string') this.voiceTranscriptCache.set(k, v)
+        }
+        console.log(`[Transcribe] 从磁盘加载了 ${this.voiceTranscriptCache.size} 条转写缓存`)
+      }
+    } catch (e) {
+      console.error('[Transcribe] 加载转写缓存失败:', e)
+    }
+  }
+
+  /** 将转写缓存持久化到磁盘（防抖 3 秒） */
+  private scheduleTranscriptFlush(): void {
+    if (this.transcriptFlushTimer) return
+    this.transcriptFlushTimer = setTimeout(() => {
+      this.transcriptFlushTimer = null
+      this.flushTranscriptCache()
+    }, 3000)
+  }
+
+  /** 立即写入转写缓存到磁盘 */
+  flushTranscriptCache(): void {
+    if (!this.transcriptCacheDirty) return
+    try {
+      const filePath = this.getTranscriptCachePath()
+      const dir = dirname(filePath)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      const obj: Record<string, string> = {}
+      for (const [k, v] of this.voiceTranscriptCache) obj[k] = v
+      writeFileSync(filePath, JSON.stringify(obj), 'utf-8')
+      this.transcriptCacheDirty = false
+    } catch (e) {
+      console.error('[Transcribe] 写入转写缓存失败:', e)
+    }
+  }
+
   private cacheVoiceTranscript(cacheKey: string, transcript: string): void {
     this.voiceTranscriptCache.set(cacheKey, transcript)
-    if (this.voiceTranscriptCache.size > this.voiceCacheMaxEntries) {
-      const oldestKey = this.voiceTranscriptCache.keys().next().value
-      if (oldestKey) this.voiceTranscriptCache.delete(oldestKey)
-    }
+    this.transcriptCacheDirty = true
+    this.scheduleTranscriptFlush()
+  }
+
+  /**
+   * 检查某个语音消息是否已有缓存的转写结果
+   */
+  hasTranscriptCache(sessionId: string, msgId: string, createTime?: number): boolean {
+    this.loadTranscriptCacheIfNeeded()
+    const cacheKey = this.getVoiceCacheKey(sessionId, msgId, createTime)
+    return this.voiceTranscriptCache.has(cacheKey)
   }
 
   /**

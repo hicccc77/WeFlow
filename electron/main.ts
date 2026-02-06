@@ -959,6 +959,10 @@ function registerIpcHandlers() {
   })
 
   // 导出相关
+  ipcMain.handle('export:getExportStats', async (_, sessionIds: string[], options: any) => {
+    return exportService.getExportStats(sessionIds, options)
+  })
+
   ipcMain.handle('export:exportSessions', async (event, sessionIds: string[], outputDir: string, options: ExportOptions) => {
     const onProgress = (progress: ExportProgress) => {
       if (!event.sender.isDestroyed()) {

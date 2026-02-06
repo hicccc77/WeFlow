@@ -403,6 +403,15 @@ export interface ElectronAPI {
     onProgress: (callback: (payload: { status: string; progress: number }) => void) => () => void
   }
   export: {
+    getExportStats: (sessionIds: string[], options: any) => Promise<{
+      totalMessages: number
+      voiceMessages: number
+      cachedVoiceCount: number
+      needTranscribeCount: number
+      mediaMessages: number
+      estimatedSeconds: number
+      sessions: Array<{ sessionId: string; displayName: string; totalCount: number; voiceCount: number }>
+    }>
     exportSessions: (sessionIds: string[], outputDir: string, options: ExportOptions) => Promise<{
       success: boolean
       successCount?: number
@@ -494,7 +503,10 @@ export interface ExportProgress {
   current: number
   total: number
   currentSession: string
-  phase: 'preparing' | 'exporting' | 'writing' | 'complete'
+  phase: 'preparing' | 'exporting' | 'exporting-media' | 'exporting-voice' | 'writing' | 'complete'
+  phaseProgress?: number
+  phaseTotal?: number
+  phaseLabel?: string
 }
 
 export interface WxidInfo {
