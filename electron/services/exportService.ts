@@ -348,6 +348,51 @@ class ExportService {
     }
   }
 
+  /**
+   * 从转账消息 XML 中提取并解析 "谁转账给谁" 描述
+   * @param content 原始消息内容 XML
+   * @param myWxid 当前用户 wxid
+   * @param groupNicknamesMap 群昵称映射
+   * @param getContactName 联系人名称解析函数
+   * @returns "A 转账给 B" 或 null
+   */
+  private async resolveTransferDesc(
+    content: string,
+    myWxid: string,
+    groupNicknamesMap: Map<string, string>,
+    getContactName: (username: string) => Promise<string>
+  ): Promise<string | null> {
+    const xmlType = this.extractXmlValue(content, 'type')
+    if (xmlType !== '2000') return null
+
+    const payerUsername = this.extractXmlValue(content, 'payer_username')
+    const receiverUsername = this.extractXmlValue(content, 'receiver_username')
+    if (!payerUsername || !receiverUsername) return null
+
+    const cleanedMyWxid = myWxid ? this.cleanAccountDirName(myWxid) : ''
+
+    const resolveName = async (username: string): Promise<string> => {
+      // 当前用户自己
+      if (myWxid && (username === myWxid || username === cleanedMyWxid)) {
+        const groupNick = groupNicknamesMap.get(username) || groupNicknamesMap.get(username.toLowerCase())
+        if (groupNick) return groupNick
+        return '我'
+      }
+      // 群昵称
+      const groupNick = groupNicknamesMap.get(username) || groupNicknamesMap.get(username.toLowerCase())
+      if (groupNick) return groupNick
+      // 联系人名称
+      return getContactName(username)
+    }
+
+    const [payerName, receiverName] = await Promise.all([
+      resolveName(payerUsername),
+      resolveName(receiverUsername)
+    ])
+
+    return `${payerName} 转账给 ${receiverName}`
+  }
+
   private looksLikeBase64(s: string): boolean {
     if (s.length % 4 !== 0) return false
     return /^[A-Za-z0-9+/=]+$/.test(s)
@@ -2003,7 +2048,8 @@ class ExportService {
         phase: 'exporting'
       })
 
-      const chatLabMessages: ChatLabMessage[] = allMessages.map(msg => {
+      const chatLabMessages: ChatLabMessage[] = []
+      for (const msg of allMessages) {
         const memberInfo = collected.memberSet.get(msg.senderUsername)?.member || {
           platformId: msg.senderUsername,
           accountName: msg.senderUsername,
@@ -2022,6 +2068,22 @@ class ExportService {
           content = voiceTranscriptMap.get(msg.localId) || '[语音消息 - 转文字失败]'
         } else {
           content = this.parseMessageContent(msg.content, msg.localType, sessionId, msg.createTime)
+        }
+
+        // 转账消息：追加 "谁转账给谁" 信息
+        if (content && content.startsWith('[转账]') && msg.content) {
+          const transferDesc = await this.resolveTransferDesc(
+            msg.content,
+            cleanedMyWxid,
+            groupNicknamesMap,
+            async (username) => {
+              const info = await this.getContactInfo(username)
+              return info.displayName || username
+            }
+          )
+          if (transferDesc) {
+            content = content.replace('[转账]', `[转账] (${transferDesc})`)
+          }
         }
 
         const message: ChatLabMessage = {
@@ -2127,8 +2189,8 @@ class ExportService {
           message.chatRecords = chatRecords
         }
 
-        return message
-      })
+        chatLabMessages.push(message)
+      }
 
       const avatarMap = options.exportAvatars
         ? await this.exportAvatars(
@@ -2339,6 +2401,25 @@ class ExportService {
           content = mediaItem.relativePath
         } else {
           content = this.parseMessageContent(msg.content, msg.localType)
+        }
+
+        // 转账消息：追加 "谁转账给谁" 信息
+        if (content && content.startsWith('[转账]') && msg.content) {
+          const transferDesc = await this.resolveTransferDesc(
+            msg.content,
+            cleanedMyWxid,
+            groupNicknamesMap,
+            async (username) => {
+              const c = await getContactCached(username)
+              if (c.success && c.contact) {
+                return c.contact.remark || c.contact.nickName || c.contact.alias || username
+              }
+              return username
+            }
+          )
+          if (transferDesc) {
+            content = content.replace('[转账]', `[转账] (${transferDesc})`)
+          }
         }
 
         // 获取发送者信息用于名称显示
@@ -2784,6 +2865,26 @@ class ExportService {
               voiceTranscriptMap.get(msg.localId)
             ))
 
+        // 转账消息：追加 "谁转账给谁" 信息
+        let enrichedContentValue = contentValue
+        if (contentValue.startsWith('[转账]') && msg.content) {
+          const transferDesc = await this.resolveTransferDesc(
+            msg.content,
+            cleanedMyWxid,
+            groupNicknamesMap,
+            async (username) => {
+              const c = await getContactCached(username)
+              if (c.success && c.contact) {
+                return c.contact.remark || c.contact.nickName || c.contact.alias || username
+              }
+              return username
+            }
+          )
+          if (transferDesc) {
+            enrichedContentValue = contentValue.replace('[转账]', `[转账] (${transferDesc})`)
+          }
+        }
+
         // 调试日志
         if (msg.localType === 3 || msg.localType === 47) {
         }
@@ -2793,7 +2894,7 @@ class ExportService {
         if (useCompactColumns) {
           worksheet.getCell(currentRow, 3).value = senderRole
           worksheet.getCell(currentRow, 4).value = this.getMessageTypeName(msg.localType)
-          worksheet.getCell(currentRow, 5).value = contentValue
+          worksheet.getCell(currentRow, 5).value = enrichedContentValue
         } else {
           worksheet.getCell(currentRow, 3).value = senderNickname
           worksheet.getCell(currentRow, 4).value = senderWxid
@@ -2801,7 +2902,7 @@ class ExportService {
           worksheet.getCell(currentRow, 6).value = senderGroupNickname
           worksheet.getCell(currentRow, 7).value = senderRole
           worksheet.getCell(currentRow, 8).value = this.getMessageTypeName(msg.localType)
-          worksheet.getCell(currentRow, 9).value = contentValue
+          worksheet.getCell(currentRow, 9).value = enrichedContentValue
         }
 
         // 设置每个单元格的样式
@@ -2948,6 +3049,11 @@ class ExportService {
       senderUsernames.add(sessionId)
       await this.preloadContacts(senderUsernames, contactCache)
 
+      // 获取群昵称（用于转账描述等）
+      const groupNicknamesMap = isGroup
+        ? await this.getGroupNicknamesForRoom(sessionId)
+        : new Map<string, string>()
+
       const sortedMessages = collected.rows.sort((a, b) => a.createTime - b.createTime)
 
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
@@ -3033,6 +3139,26 @@ class ExportService {
               voiceTranscriptMap.get(msg.localId)
             ))
 
+        // 转账消息：追加 "谁转账给谁" 信息
+        let enrichedContentValue = contentValue
+        if (contentValue.startsWith('[转账]') && msg.content) {
+          const transferDesc = await this.resolveTransferDesc(
+            msg.content,
+            cleanedMyWxid,
+            groupNicknamesMap,
+            async (username) => {
+              const c = await getContactCached(username)
+              if (c.success && c.contact) {
+                return c.contact.remark || c.contact.nickName || c.contact.alias || username
+              }
+              return username
+            }
+          )
+          if (transferDesc) {
+            enrichedContentValue = contentValue.replace('[转账]', `[转账] (${transferDesc})`)
+          }
+        }
+
         let senderRole: string
         let senderWxid: string
         let senderNickname: string
@@ -3067,7 +3193,7 @@ class ExportService {
         }
 
         lines.push(`${this.formatTimestamp(msg.createTime)} '${senderRole}'`)
-        lines.push(contentValue)
+        lines.push(enrichedContentValue)
         lines.push('')
 
         if ((i + 1) % 200 === 0) {
