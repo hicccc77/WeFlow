@@ -64,6 +64,9 @@ export interface Message {
   fileSize?: number         // 文件大小
   fileExt?: string          // 文件扩展名
   xmlType?: string          // XML 中的 type 字段
+  // 转账消息
+  transferPayerUsername?: string    // 转账付款方 wxid
+  transferReceiverUsername?: string // 转账收款方 wxid
   // 名片消息
   cardUsername?: string     // 名片的微信ID
   cardNickname?: string     // 名片的昵称

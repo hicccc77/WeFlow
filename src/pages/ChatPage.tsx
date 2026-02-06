@@ -1972,6 +1972,10 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
   const [voiceWaveform, setVoiceWaveform] = useState<number[]>([])
   const voiceAutoDecryptTriggered = useRef(false)
 
+  // 转账消息双方名称
+  const [transferPayerName, setTransferPayerName] = useState<string | undefined>(undefined)
+  const [transferReceiverName, setTransferReceiverName] = useState<string | undefined>(undefined)
+
   // 视频相关状态
   const [videoLoading, setVideoLoading] = useState(false)
   const [videoInfo, setVideoInfo] = useState<{ videoUrl?: string; coverUrl?: string; thumbUrl?: string; exists: boolean } | null>(null)
@@ -2135,6 +2139,26 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       })
     }
   }, [isGroupChat, isSent, message.senderUsername, myAvatarUrl])
+
+  // 解析转账消息的付款方和收款方显示名称
+  useEffect(() => {
+    const payerWxid = (message as any).transferPayerUsername
+    const receiverWxid = (message as any).transferReceiverUsername
+    if (!payerWxid && !receiverWxid) return
+    // 仅对转账消息类型处理
+    if (message.localType !== 49 && message.localType !== 8589934592049) return
+
+    window.electronAPI.chat.resolveTransferDisplayNames(
+      session.username,
+      payerWxid || '',
+      receiverWxid || ''
+    ).then((result: { payerName: string; receiverName: string }) => {
+      if (result) {
+        setTransferPayerName(result.payerName)
+        setTransferReceiverName(result.receiverName)
+      }
+    }).catch(() => { })
+  }, [(message as any).transferPayerUsername, (message as any).transferReceiverUsername, session.username])
 
   // 自动下载表情包
   useEffect(() => {
@@ -3002,6 +3026,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       let url = ''
       let appMsgType = ''
       let textAnnouncement = ''
+      let parsedDoc: Document | null = null
 
       try {
         const content = message.rawContent || message.parsedContent || ''
@@ -3009,13 +3034,13 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         const xmlContent = content.substring(content.indexOf('<msg>'))
 
         const parser = new DOMParser()
-        const doc = parser.parseFromString(xmlContent, 'text/xml')
+        parsedDoc = parser.parseFromString(xmlContent, 'text/xml')
 
-        title = doc.querySelector('title')?.textContent || '链接'
-        desc = doc.querySelector('des')?.textContent || ''
-        url = doc.querySelector('url')?.textContent || ''
-        appMsgType = doc.querySelector('appmsg > type')?.textContent || doc.querySelector('type')?.textContent || ''
-        textAnnouncement = doc.querySelector('textannouncement')?.textContent || ''
+        title = parsedDoc.querySelector('title')?.textContent || '链接'
+        desc = parsedDoc.querySelector('des')?.textContent || ''
+        url = parsedDoc.querySelector('url')?.textContent || ''
+        appMsgType = parsedDoc.querySelector('appmsg > type')?.textContent || parsedDoc.querySelector('type')?.textContent || ''
+        textAnnouncement = parsedDoc.querySelector('textannouncement')?.textContent || ''
       } catch (e) {
         console.error('解析 AppMsg 失败:', e)
       }
@@ -3143,25 +3168,21 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
       // 转账消息 (type=2000)
       if (appMsgType === '2000') {
         try {
-          const content = message.rawContent || message.content || message.parsedContent || ''
-
-          // 添加调试日志
-
-
-          const parser = new DOMParser()
-          const doc = parser.parseFromString(content, 'text/xml')
-
-          const feedesc = doc.querySelector('feedesc')?.textContent || ''
-          const payMemo = doc.querySelector('pay_memo')?.textContent || ''
-          const paysubtype = doc.querySelector('paysubtype')?.textContent || '1'
-
-
+          // 使用外层已解析好的 parsedDoc（已去除 wxid 前缀）
+          const feedesc = parsedDoc?.querySelector('feedesc')?.textContent || ''
+          const payMemo = parsedDoc?.querySelector('pay_memo')?.textContent || ''
+          const paysubtype = parsedDoc?.querySelector('paysubtype')?.textContent || '1'
 
           // paysubtype: 1=待收款, 3=已收款
           const isReceived = paysubtype === '3'
 
           // 如果 feedesc 为空，使用 title 作为降级
           const displayAmount = feedesc || title || '微信转账'
+
+          // 构建转账描述：A 转账给 B
+          const transferDesc = transferPayerName && transferReceiverName
+            ? `${transferPayerName} 转账给 ${transferReceiverName}`
+            : undefined
 
           return (
             <div className={`transfer-message ${isReceived ? 'received' : ''}`}>
@@ -3173,6 +3194,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
               </div>
               <div className="transfer-info">
                 <div className="transfer-amount">{displayAmount}</div>
+                {transferDesc && <div className="transfer-desc">{transferDesc}</div>}
                 {payMemo && <div className="transfer-memo">{payMemo}</div>}
                 <div className="transfer-label">{isReceived ? '已收款' : '微信转账'}</div>
               </div>

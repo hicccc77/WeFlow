@@ -1120,6 +1120,9 @@ class ChatService {
       // 名片消息
       let cardUsername: string | undefined
       let cardNickname: string | undefined
+      // 转账消息
+      let transferPayerUsername: string | undefined
+      let transferReceiverUsername: string | undefined
       // 聊天记录
       let chatRecordTitle: string | undefined
       let chatRecordList: Array<{
@@ -1151,8 +1154,8 @@ class ChatService {
         const cardInfo = this.parseCardInfo(content)
         cardUsername = cardInfo.username
         cardNickname = cardInfo.nickname
-      } else if (localType === 49 && content) {
-        // Type 49 消息（链接、文件、小程序、转账等）
+      } else if ((localType === 49 || localType === 8589934592049) && content) {
+        // Type 49 消息（链接、文件、小程序、转账等），8589934592049 也是转账类型
         const type49Info = this.parseType49Message(content)
         xmlType = type49Info.xmlType
         linkTitle = type49Info.linkTitle
@@ -1163,6 +1166,8 @@ class ChatService {
         fileExt = type49Info.fileExt
         chatRecordTitle = type49Info.chatRecordTitle
         chatRecordList = type49Info.chatRecordList
+        transferPayerUsername = type49Info.transferPayerUsername
+        transferReceiverUsername = type49Info.transferReceiverUsername
       } else if (localType === 244813135921 || (content && content.includes('<type>57</type>'))) {
         const quoteInfo = this.parseQuoteMessage(content)
         quotedContent = quoteInfo.content
@@ -1199,6 +1204,8 @@ class ChatService {
         xmlType,
         cardUsername,
         cardNickname,
+        transferPayerUsername,
+        transferReceiverUsername,
         chatRecordTitle,
         chatRecordList
       })
@@ -1663,6 +1670,8 @@ class ChatService {
     fileName?: string
     fileSize?: number
     fileExt?: string
+    transferPayerUsername?: string
+    transferReceiverUsername?: string
     chatRecordTitle?: string
     chatRecordList?: Array<{
       datatype: number
@@ -1785,6 +1794,16 @@ class ChatService {
             result.linkTitle = payMemo
           } else if (feedesc) {
             result.linkTitle = feedesc
+          }
+
+          // 提取转账双方 wxid
+          const payerUsername = this.extractXmlValue(content, 'payer_username')
+          const receiverUsername = this.extractXmlValue(content, 'receiver_username')
+          if (payerUsername) {
+            result.transferPayerUsername = payerUsername
+          }
+          if (receiverUsername) {
+            result.transferReceiverUsername = receiverUsername
           }
           break
         }
@@ -2385,6 +2404,60 @@ class ChatService {
       return { avatarUrl, displayName }
     } catch {
       return null
+    }
+  }
+
+  /**
+   * 解析转账消息中的付款方和收款方显示名称
+   * 优先使用群昵称，群昵称为空时回退到微信昵称/备注
+   */
+  async resolveTransferDisplayNames(
+    chatroomId: string,
+    payerUsername: string,
+    receiverUsername: string
+  ): Promise<{ payerName: string; receiverName: string }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { payerName: payerUsername, receiverName: receiverUsername }
+      }
+
+      // 如果是群聊，尝试获取群昵称
+      let groupNicknames: Record<string, string> = {}
+      if (chatroomId.endsWith('@chatroom')) {
+        const nickResult = await wcdbService.getGroupNicknames(chatroomId)
+        if (nickResult.success && nickResult.nicknames) {
+          groupNicknames = nickResult.nicknames
+        }
+      }
+
+      // 解析付款方名称：群昵称 > 备注 > 昵称 > alias > wxid
+      const resolveName = async (username: string): Promise<string> => {
+        // 先查群昵称
+        const groupNick = groupNicknames[username]
+        if (groupNick) return groupNick
+
+        // 再查联系人信息
+        const contact = await this.getContact(username)
+        if (contact) {
+          return contact.remark || contact.nickName || contact.alias || username
+        }
+
+        // 兜底：查缓存
+        const cached = this.avatarCache.get(username)
+        if (cached?.displayName) return cached.displayName
+
+        return username
+      }
+
+      const [payerName, receiverName] = await Promise.all([
+        resolveName(payerUsername),
+        resolveName(receiverUsername)
+      ])
+
+      return { payerName, receiverName }
+    } catch {
+      return { payerName: payerUsername, receiverName: receiverUsername }
     }
   }
 

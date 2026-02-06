@@ -864,6 +864,10 @@ function registerIpcHandlers() {
     return await chatService.getContactAvatar(username)
   })
 
+  ipcMain.handle('chat:resolveTransferDisplayNames', async (_, chatroomId: string, payerUsername: string, receiverUsername: string) => {
+    return await chatService.resolveTransferDisplayNames(chatroomId, payerUsername, receiverUsername)
+  })
+
   ipcMain.handle('chat:getContacts', async () => {
     return await chatService.getContacts()
   })
