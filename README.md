@@ -53,7 +53,7 @@ WeFlow 提供本地 HTTP API 服务，支持通过接口查询消息数据，可
 - **访问地址**：`http://127.0.0.1:5031`
 - **支持格式**：原始 JSON 或 [ChatLab](https://chatlab.fun/) 标准格式
 
-📖 完整接口文档：[docs/HTTP-API.md](docs/HTTP-API.md)
+📖 完整接口文档：[点击查看](docs/HTTP-API.md)
 
 
 ## 快速开始

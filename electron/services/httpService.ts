@@ -201,17 +201,178 @@ class HttpService {
   }
 
   /**
+   * 批量获取消息（循环游标直到满足 limit）
+   * 绕过 chatService 的单 batch 限制，直接操作 wcdbService 游标
+   */
+  private async fetchMessagesBatch(
+    talker: string,
+    offset: number,
+    limit: number,
+    startTime: number,
+    endTime: number,
+    ascending: boolean
+  ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
+    try {
+      // 使用固定 batch 大小（与 limit 相同或最大 500）来减少循环次数
+      const batchSize = Math.min(limit, 500)
+      const beginTimestamp = startTime > 10000000000 ? Math.floor(startTime / 1000) : startTime
+      const endTimestamp = endTime > 10000000000 ? Math.floor(endTime / 1000) : endTime
+
+      const cursorResult = await wcdbService.openMessageCursor(talker, batchSize, ascending, beginTimestamp, endTimestamp)
+      if (!cursorResult.success || !cursorResult.cursor) {
+        return { success: false, error: cursorResult.error || '打开消息游标失败' }
+      }
+
+      const cursor = cursorResult.cursor
+      try {
+        const allRows: Record<string, any>[] = []
+        let hasMore = true
+        let skipped = 0
+
+        // 循环获取消息，处理 offset 跳过 + limit 累积
+        while (allRows.length < limit && hasMore) {
+          const batch = await wcdbService.fetchMessageBatch(cursor)
+          if (!batch.success || !batch.rows || batch.rows.length === 0) {
+            hasMore = false
+            break
+          }
+
+          let rows = batch.rows
+          hasMore = batch.hasMore === true
+
+          // 处理 offset: 跳过前 N 条
+          if (skipped < offset) {
+            const remaining = offset - skipped
+            if (remaining >= rows.length) {
+              skipped += rows.length
+              continue
+            }
+            rows = rows.slice(remaining)
+            skipped = offset
+          }
+
+          allRows.push(...rows)
+        }
+
+        const trimmedRows = allRows.slice(0, limit)
+        const finalHasMore = hasMore || allRows.length > limit
+        const messages = this.mapRowsToMessagesSimple(trimmedRows)
+        return { success: true, messages, hasMore: finalHasMore }
+      } finally {
+        await wcdbService.closeMessageCursor(cursor)
+      }
+    } catch (e) {
+      console.error('[HttpService] fetchMessagesBatch error:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  /**
+   * 简单的行数据到 Message 映射（用于 API 输出）
+   */
+  private mapRowsToMessagesSimple(rows: Record<string, any>[]): Message[] {
+    const myWxid = this.configService.get('myWxid') || ''
+    const messages: Message[] = []
+
+    for (const row of rows) {
+      const content = this.getField(row, ['message_content', 'messageContent', 'content', 'msg_content', 'WCDB_CT_message_content']) || ''
+      const localType = parseInt(this.getField(row, ['local_type', 'localType', 'type', 'msg_type', 'WCDB_CT_local_type']) || '1', 10)
+      const isSendRaw = this.getField(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send'])
+      const senderUsername = this.getField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username']) || ''
+      const createTime = parseInt(this.getField(row, ['create_time', 'createTime', 'msg_create_time', 'WCDB_CT_create_time']) || '0', 10)
+      const localId = parseInt(this.getField(row, ['local_id', 'localId', 'WCDB_CT_local_id', 'rowid']) || '0', 10)
+      const serverId = this.getField(row, ['server_id', 'serverId', 'WCDB_CT_server_id']) || ''
+
+      let isSend: number
+      if (isSendRaw !== null && isSendRaw !== undefined) {
+        isSend = parseInt(isSendRaw, 10)
+      } else if (senderUsername && myWxid) {
+        isSend = senderUsername.toLowerCase() === myWxid.toLowerCase() ? 1 : 0
+      } else {
+        isSend = 0
+      }
+
+      // 解析消息内容中的特殊字段
+      let parsedContent = content
+      let xmlType: string | undefined
+      let linkTitle: string | undefined
+      let fileName: string | undefined
+      let emojiCdnUrl: string | undefined
+      let emojiMd5: string | undefined
+      let imageMd5: string | undefined
+      let videoMd5: string | undefined
+      let cardNickname: string | undefined
+
+      if (localType === 49 && content) {
+        // 提取 type 子标签
+        const typeMatch = /<type>(\d+)<\/type>/i.exec(content)
+        if (typeMatch) xmlType = typeMatch[1]
+        // 提取 title
+        const titleMatch = /<title>([^<]*)<\/title>/i.exec(content)
+        if (titleMatch) linkTitle = titleMatch[1]
+        // 提取文件名
+        const fnMatch = /<title>([^<]*)<\/title>/i.exec(content)
+        if (fnMatch) fileName = fnMatch[1]
+      }
+
+      if (localType === 47 && content) {
+        const cdnMatch = /cdnurl\s*=\s*"([^"]+)"/i.exec(content)
+        if (cdnMatch) emojiCdnUrl = cdnMatch[1]
+        const md5Match = /md5\s*=\s*"([^"]+)"/i.exec(content)
+        if (md5Match) emojiMd5 = md5Match[1]
+      }
+
+      messages.push({
+        localId,
+        talker: '',
+        localType,
+        createTime,
+        sortSeq: createTime,
+        content: parsedContent,
+        isSend,
+        senderUsername,
+        serverId: serverId ? parseInt(serverId, 10) || 0 : 0,
+        rawContent: content,
+        parsedContent: content,
+        emojiCdnUrl,
+        emojiMd5,
+        imageMd5,
+        videoMd5,
+        xmlType,
+        linkTitle,
+        fileName,
+        cardNickname
+      } as Message)
+    }
+
+    return messages
+  }
+
+  /**
+   * 从行数据中获取字段值（兼容多种字段名）
+   */
+  private getField(row: Record<string, any>, keys: string[]): string | null {
+    for (const key of keys) {
+      if (row[key] !== undefined && row[key] !== null) {
+        return String(row[key])
+      }
+    }
+    return null
+  }
+
+  /**
    * 处理消息查询
    * GET /api/v1/messages?talker=xxx&limit=100&start=20260101&chatlab=1
    */
   private async handleMessages(url: URL, res: http.ServerResponse): Promise<void> {
     const talker = url.searchParams.get('talker')
-    const limit = parseInt(url.searchParams.get('limit') || '100', 10)
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10), 10000)
     const offset = parseInt(url.searchParams.get('offset') || '0', 10)
     const startParam = url.searchParams.get('start')
     const endParam = url.searchParams.get('end')
     const chatlab = url.searchParams.get('chatlab') === '1'
-    const format = url.searchParams.get('format') || (chatlab ? 'chatlab' : 'json')
+    const formatParam = url.searchParams.get('format')
+    const format = formatParam || (chatlab ? 'chatlab' : 'json')
 
     if (!talker) {
       this.sendError(res, 400, 'Missing required parameter: talker')
@@ -222,8 +383,8 @@ class HttpService {
     const startTime = this.parseTimeParam(startParam)
     const endTime = this.parseTimeParam(endParam, true)
 
-    // 获取消息
-    const result = await chatService.getMessages(talker, offset, limit, startTime, endTime, true)
+    // 使用批量获取方法，绕过 chatService 的单 batch 限制
+    const result = await this.fetchMessagesBatch(talker, offset, limit, startTime, endTime, true)
     if (!result.success || !result.messages) {
       this.sendError(res, 500, result.error || 'Failed to get messages')
       return
