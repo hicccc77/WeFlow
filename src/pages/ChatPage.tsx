@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon, Link, Mic, CheckCircle, Copy, Check, Download } from 'lucide-react'
+import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon, Link, Mic, CheckCircle, Copy, Check, Download, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useChatStore } from '../stores/chatStore'
@@ -1257,6 +1257,15 @@ function ChatPage(_props: ChatPageProps) {
     })
   }, [currentSessionId, navigate])
 
+  const handleGroupAnalytics = useCallback(() => {
+    if (!currentSessionId || !isGroupChat(currentSessionId)) return
+    navigate('/group-analytics', {
+      state: {
+        preselectGroupIds: [currentSessionId]
+      }
+    })
+  }, [currentSessionId, navigate])
+
   // 确认批量转写
   const confirmBatchTranscribe = useCallback(async () => {
     if (!currentSessionId) return
@@ -1477,6 +1486,15 @@ function ChatPage(_props: ChatPageProps) {
                 )}
               </div>
               <div className="header-actions">
+                {isGroupChat(currentSession.username) && (
+                  <button
+                    className="icon-btn group-analytics-btn"
+                    onClick={handleGroupAnalytics}
+                    title="群聊分析"
+                  >
+                    <BarChart3 size={18} />
+                  </button>
+                )}
                 <button
                   className="icon-btn export-session-btn"
                   onClick={handleExportCurrentSession}

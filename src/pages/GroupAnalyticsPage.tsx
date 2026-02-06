@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, User, Medal, Search, X, ChevronLeft, Copy, Check, Download } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import ReactECharts from 'echarts-for-react'
@@ -30,6 +31,7 @@ interface GroupMessageRank {
 type AnalysisFunction = 'members' | 'ranking' | 'activeHours' | 'mediaStats'
 
 function GroupAnalyticsPage() {
+  const location = useLocation()
   const [groups, setGroups] = useState<GroupChatInfo[]>([])
   const [filteredGroups, setFilteredGroups] = useState<GroupChatInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -58,10 +60,27 @@ function GroupAnalyticsPage() {
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const preselectAppliedRef = useRef(false)
+
+  const preselectGroupIds = useMemo(() => {
+    const state = location.state as { preselectGroupIds?: unknown; preselectGroupId?: unknown } | null
+    const rawList = Array.isArray(state?.preselectGroupIds)
+      ? state.preselectGroupIds
+      : (typeof state?.preselectGroupId === 'string' ? [state.preselectGroupId] : [])
+
+    return rawList
+      .filter((item): item is string => typeof item === 'string')
+      .map(item => item.trim())
+      .filter(Boolean)
+  }, [location.state])
 
   useEffect(() => {
     loadGroups()
   }, [])
+
+  useEffect(() => {
+    preselectAppliedRef.current = false
+  }, [location.key, preselectGroupIds])
 
   useEffect(() => {
     if (searchQuery) {
@@ -70,6 +89,20 @@ function GroupAnalyticsPage() {
       setFilteredGroups(groups)
     }
   }, [searchQuery, groups])
+
+  useEffect(() => {
+    if (preselectAppliedRef.current) return
+    if (groups.length === 0 || preselectGroupIds.length === 0) return
+
+    const matchedGroup = groups.find(group => preselectGroupIds.includes(group.username))
+    preselectAppliedRef.current = true
+
+    if (matchedGroup) {
+      setSelectedGroup(matchedGroup)
+      setSelectedFunction(null)
+      setSearchQuery('')
+    }
+  }, [groups, preselectGroupIds])
 
   // 拖动调整宽度
   useEffect(() => {
