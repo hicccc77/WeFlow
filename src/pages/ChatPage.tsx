@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon, Link, Mic, CheckCircle, XCircle } from 'lucide-react'
+import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon, Link, Mic, CheckCircle, XCircle, Copy, Check } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
@@ -168,6 +168,7 @@ function ChatPage(_props: ChatPageProps) {
   const [showDetailPanel, setShowDetailPanel] = useState(false)
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
   const [highlightedMessageKeys, setHighlightedMessageKeys] = useState<string[]>([])
   const [isRefreshingSessions, setIsRefreshingSessions] = useState(false)
   const [hasInitialMessages, setHasInitialMessages] = useState(false)
@@ -242,6 +243,25 @@ function ChatPage(_props: ChatPageProps) {
     }
     setShowDetailPanel(!showDetailPanel)
   }, [showDetailPanel, currentSessionId, loadSessionDetail])
+
+  // 复制字段值到剪贴板
+  const handleCopyField = useCallback(async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 1500)
+    } catch {
+      // fallback
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 1500)
+    }
+  }, [])
 
   // 连接数据库
   const connect = useCallback(async () => {
@@ -1601,23 +1621,35 @@ function ChatPage(_props: ChatPageProps) {
                           <Hash size={14} />
                           <span className="label">微信ID</span>
                           <span className="value">{sessionDetail.wxid}</span>
+                          <button className="copy-btn" title="复制" onClick={() => handleCopyField(sessionDetail.wxid, 'wxid')}>
+                            {copiedField === 'wxid' ? <Check size={12} /> : <Copy size={12} />}
+                          </button>
                         </div>
                         {sessionDetail.remark && (
                           <div className="detail-item">
                             <span className="label">备注</span>
                             <span className="value">{sessionDetail.remark}</span>
+                            <button className="copy-btn" title="复制" onClick={() => handleCopyField(sessionDetail.remark!, 'remark')}>
+                              {copiedField === 'remark' ? <Check size={12} /> : <Copy size={12} />}
+                            </button>
                           </div>
                         )}
                         {sessionDetail.nickName && (
                           <div className="detail-item">
                             <span className="label">昵称</span>
                             <span className="value">{sessionDetail.nickName}</span>
+                            <button className="copy-btn" title="复制" onClick={() => handleCopyField(sessionDetail.nickName!, 'nickName')}>
+                              {copiedField === 'nickName' ? <Check size={12} /> : <Copy size={12} />}
+                            </button>
                           </div>
                         )}
                         {sessionDetail.alias && (
                           <div className="detail-item">
                             <span className="label">微信号</span>
                             <span className="value">{sessionDetail.alias}</span>
+                            <button className="copy-btn" title="复制" onClick={() => handleCopyField(sessionDetail.alias!, 'alias')}>
+                              {copiedField === 'alias' ? <Check size={12} /> : <Copy size={12} />}
+                            </button>
                           </div>
                         )}
                       </div>

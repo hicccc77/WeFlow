@@ -2016,11 +2016,42 @@
       text-align: right;
       color: var(--text-primary);
       word-break: break-all;
+      user-select: text;
 
       &.highlight {
         color: var(--primary);
         font-weight: 600;
       }
+    }
+
+    .copy-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+
+      &:hover {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+      }
+
+      svg {
+        color: inherit;
+      }
+    }
+
+    &:hover .copy-btn {
+      opacity: 1;
     }
   }
 
