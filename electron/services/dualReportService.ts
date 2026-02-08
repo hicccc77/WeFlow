@@ -26,13 +26,17 @@ export interface DualReportStats {
   friendTopEmojiMd5?: string
   myTopEmojiUrl?: string
   friendTopEmojiUrl?: string
+  myTopEmojiCount?: number
+  friendTopEmojiCount?: number
 }
 
 export interface DualReportData {
   year: number
   selfName: string
+  selfAvatarUrl?: string
   friendUsername: string
   friendName: string
+  friendAvatarUrl?: string
   firstChat: DualReportFirstChat | null
   firstChatMessages?: DualReportMessage[]
   yearFirstChat?: {
@@ -173,26 +177,258 @@ class DualReportService {
     return `${month}/${day} ${hour}:${minute}`
   }
 
-  private extractEmojiUrl(content: string): string | undefined {
-    if (!content) return undefined
-    const attrMatch = /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content)
-    if (attrMatch) {
-      let url = attrMatch[1].replace(/&amp;/g, '&')
-      try {
-        if (url.includes('%')) {
-          url = decodeURIComponent(url)
-        }
-      } catch { }
-      return url
+  private getRecordField(record: Record<string, any> | undefined | null, keys: string[]): any {
+    if (!record) return undefined
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== undefined && record[key] !== null) {
+        return record[key]
+      }
     }
-    const tagMatch = /cdnurl[^>]*>([^<]+)/i.exec(content)
-    return tagMatch?.[1]
+    return undefined
   }
 
-  private extractEmojiMd5(content: string): string | undefined {
+  private coerceNumber(raw: any): number {
+    if (raw === undefined || raw === null || raw === '') return NaN
+    if (typeof raw === 'number') return raw
+    if (typeof raw === 'bigint') return Number(raw)
+    if (Buffer.isBuffer(raw)) return parseInt(raw.toString('utf-8'), 10)
+    if (raw instanceof Uint8Array) return parseInt(Buffer.from(raw).toString('utf-8'), 10)
+    const parsed = parseInt(String(raw), 10)
+    return Number.isFinite(parsed) ? parsed : NaN
+  }
+
+  private coerceString(raw: any): string {
+    if (raw === undefined || raw === null) return ''
+    if (typeof raw === 'string') return raw
+    if (Buffer.isBuffer(raw)) return this.decodeBinaryContent(raw)
+    if (raw instanceof Uint8Array) return this.decodeBinaryContent(Buffer.from(raw))
+    return String(raw)
+  }
+
+  private coerceBoolean(raw: any): boolean | undefined {
+    if (raw === undefined || raw === null || raw === '') return undefined
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'number') return raw !== 0
+
+    const normalized = String(raw).trim().toLowerCase()
+    if (!normalized) return undefined
+
+    if (['1', 'true', 'yes', 'me', 'self', 'mine', 'sent', 'out', 'outgoing'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'friend', 'peer', 'other', 'recv', 'received', 'in', 'incoming'].includes(normalized)) return false
+    return undefined
+  }
+
+  private normalizeEmojiMd5(raw: string): string | undefined {
+    if (!raw) return undefined
+    const trimmed = raw.trim()
+    if (!trimmed) return undefined
+    const match = /([a-fA-F0-9]{16,64})/.exec(trimmed)
+    return match ? match[1].toLowerCase() : undefined
+  }
+
+  private normalizeEmojiUrl(raw: string): string | undefined {
+    if (!raw) return undefined
+    let url = raw.trim().replace(/&amp;/g, '&')
+    if (!url) return undefined
+    try {
+      if (url.includes('%')) {
+        url = decodeURIComponent(url)
+      }
+    } catch { }
+    return url || undefined
+  }
+
+  private extractEmojiUrl(content: string | undefined): string | undefined {
     if (!content) return undefined
-    const match = /md5="([^"]+)"/i.exec(content) || /<md5>([^<]+)<\/md5>/i.exec(content)
-    return match?.[1]
+    const direct = this.normalizeEmojiUrl(content)
+    if (direct && /^https?:\/\//i.test(direct)) return direct
+
+    const attrMatch = /(?:cdnurl|thumburl)\s*=\s*['"]([^'"]+)['"]/i.exec(content)
+      || /(?:cdnurl|thumburl)\s*=\s*([^'"\s>]+)/i.exec(content)
+    if (attrMatch) return this.normalizeEmojiUrl(attrMatch[1])
+
+    const tagMatch = /<(?:cdnurl|thumburl)>([^<]+)<\/(?:cdnurl|thumburl)>/i.exec(content)
+      || /(?:cdnurl|thumburl)[^>]*>([^<]+)/i.exec(content)
+    return this.normalizeEmojiUrl(tagMatch?.[1] || '')
+  }
+
+  private extractEmojiMd5(content: string | undefined): string | undefined {
+    if (!content) return undefined
+    const direct = this.normalizeEmojiMd5(content)
+    if (direct && direct.length >= 24) return direct
+
+    const match = /md5\s*=\s*['"]([a-fA-F0-9]{16,64})['"]/i.exec(content)
+      || /md5\s*=\s*([a-fA-F0-9]{16,64})/i.exec(content)
+      || /<md5>([a-fA-F0-9]{16,64})<\/md5>/i.exec(content)
+    return this.normalizeEmojiMd5(match?.[1] || '')
+  }
+
+  private resolveEmojiOwner(item: any, content: string): boolean | undefined {
+    const sentFlag = this.coerceBoolean(this.getRecordField(item, [
+      'isMe',
+      'is_me',
+      'isSent',
+      'is_sent',
+      'isSend',
+      'is_send',
+      'fromMe',
+      'from_me'
+    ]))
+    if (sentFlag !== undefined) return sentFlag
+
+    const sideRaw = this.coerceString(this.getRecordField(item, ['side', 'sender', 'from', 'owner', 'role', 'direction'])).trim().toLowerCase()
+    if (sideRaw) {
+      if (['me', 'self', 'mine', 'out', 'outgoing', 'sent'].includes(sideRaw)) return true
+      if (['friend', 'peer', 'other', 'in', 'incoming', 'received', 'recv'].includes(sideRaw)) return false
+    }
+
+    const prefixMatch = /^\s*([01])\s*:\s*/.exec(content)
+    if (prefixMatch) return prefixMatch[1] === '1'
+    return undefined
+  }
+
+  private stripEmojiOwnerPrefix(content: string): string {
+    if (!content) return ''
+    return content.replace(/^\s*[01]\s*:\s*/, '')
+  }
+
+  private parseEmojiCandidate(item: any): { isMe?: boolean; md5?: string; url?: string; count: number } {
+    const rawContent = this.coerceString(this.getRecordField(item, [
+      'content',
+      'xml',
+      'message_content',
+      'messageContent',
+      'msg',
+      'payload',
+      'raw'
+    ]))
+    const content = this.stripEmojiOwnerPrefix(rawContent)
+
+    const countRaw = this.getRecordField(item, ['count', 'cnt', 'times', 'total', 'num'])
+    const parsedCount = this.coerceNumber(countRaw)
+    const count = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 0
+
+    const directMd5 = this.normalizeEmojiMd5(this.coerceString(this.getRecordField(item, [
+      'md5',
+      'emojiMd5',
+      'emoji_md5',
+      'emd5'
+    ])))
+    const md5 = directMd5 || this.extractEmojiMd5(content)
+
+    const directUrl = this.normalizeEmojiUrl(this.coerceString(this.getRecordField(item, [
+      'cdnUrl',
+      'cdnurl',
+      'emojiUrl',
+      'emoji_url',
+      'url',
+      'thumbUrl',
+      'thumburl'
+    ])))
+    const url = directUrl || this.extractEmojiUrl(content)
+
+    return {
+      isMe: this.resolveEmojiOwner(item, rawContent),
+      md5,
+      url,
+      count
+    }
+  }
+
+  private getRowInt(row: Record<string, any>, keys: string[], fallback = 0): number {
+    const raw = this.getRecordField(row, keys)
+    const parsed = this.coerceNumber(raw)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  private decodeRowMessageContent(row: Record<string, any>): string {
+    const messageContent = this.getRecordField(row, [
+      'message_content',
+      'messageContent',
+      'content',
+      'msg_content',
+      'msgContent',
+      'WCDB_CT_message_content',
+      'WCDB_CT_messageContent'
+    ])
+    const compressContent = this.getRecordField(row, [
+      'compress_content',
+      'compressContent',
+      'compressed_content',
+      'WCDB_CT_compress_content',
+      'WCDB_CT_compressContent'
+    ])
+    return this.decodeMessageContent(messageContent, compressContent)
+  }
+
+  private async scanEmojiTopFallback(
+    sessionId: string,
+    beginTimestamp: number,
+    endTimestamp: number,
+    rawWxid: string,
+    cleanedWxid: string
+  ): Promise<{ my?: { md5: string; url?: string; count: number }; friend?: { md5: string; url?: string; count: number } }> {
+    const cursorResult = await wcdbService.openMessageCursor(sessionId, 500, true, beginTimestamp, endTimestamp)
+    if (!cursorResult.success || !cursorResult.cursor) return {}
+
+    const tallyMap = new Map<string, { isMe: boolean; md5: string; url?: string; count: number }>()
+    try {
+      let hasMore = true
+      while (hasMore) {
+        const batch = await wcdbService.fetchMessageBatch(cursorResult.cursor)
+        if (!batch.success || !Array.isArray(batch.rows)) break
+
+        for (const row of batch.rows) {
+          const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 0)
+          if (localType !== 47) continue
+
+          const rawContent = this.decodeRowMessageContent(row)
+          const content = this.stripEmojiOwnerPrefix(rawContent)
+          const directMd5 = this.normalizeEmojiMd5(this.coerceString(this.getRecordField(row, ['emoji_md5', 'emojiMd5', 'md5'])))
+          const md5 = directMd5 || this.extractEmojiMd5(content)
+          if (!md5) continue
+
+          const directUrl = this.normalizeEmojiUrl(this.coerceString(this.getRecordField(row, [
+            'emoji_cdn_url',
+            'emojiCdnUrl',
+            'cdnurl',
+            'cdn_url',
+            'emoji_url',
+            'emojiUrl',
+            'url',
+            'thumburl',
+            'thumb_url'
+          ])))
+          const url = directUrl || this.extractEmojiUrl(content)
+          const isMe = this.resolveIsSent(row, rawWxid, cleanedWxid)
+          const mapKey = `${isMe ? '1' : '0'}:${md5}`
+          const existing = tallyMap.get(mapKey)
+          if (existing) {
+            existing.count += 1
+            if (!existing.url && url) existing.url = url
+          } else {
+            tallyMap.set(mapKey, { isMe, md5, url, count: 1 })
+          }
+        }
+        hasMore = batch.hasMore === true
+      }
+    } finally {
+      await wcdbService.closeMessageCursor(cursorResult.cursor)
+    }
+
+    let myTop: { md5: string; url?: string; count: number } | undefined
+    let friendTop: { md5: string; url?: string; count: number } | undefined
+    for (const entry of tallyMap.values()) {
+      if (entry.isMe) {
+        if (!myTop || entry.count > myTop.count) {
+          myTop = { md5: entry.md5, url: entry.url, count: entry.count }
+        }
+      } else if (!friendTop || entry.count > friendTop.count) {
+        friendTop = { md5: entry.md5, url: entry.url, count: entry.count }
+      }
+    }
+
+    return { my: myTop, friend: friendTop }
   }
 
   private async getDisplayName(username: string, fallback: string): Promise<string> {
@@ -275,6 +511,18 @@ class DualReportService {
       let myName = await this.getDisplayName(rawWxid, rawWxid)
       if (myName === rawWxid && cleanedWxid && cleanedWxid !== rawWxid) {
         myName = await this.getDisplayName(cleanedWxid, rawWxid)
+      }
+      const avatarCandidates = Array.from(new Set([
+        friendUsername,
+        rawWxid,
+        cleanedWxid
+      ].filter(Boolean) as string[]))
+      let selfAvatarUrl: string | undefined
+      let friendAvatarUrl: string | undefined
+      const avatarResult = await wcdbService.getAvatarUrls(avatarCandidates)
+      if (avatarResult.success && avatarResult.map) {
+        selfAvatarUrl = avatarResult.map[rawWxid] || avatarResult.map[cleanedWxid]
+        friendAvatarUrl = avatarResult.map[friendUsername]
       }
 
       this.reportProgress('获取首条聊天记录...', 15, onProgress)
@@ -360,37 +608,52 @@ class DualReportService {
 
       if (cppData.emojis && Array.isArray(cppData.emojis)) {
         for (const item of cppData.emojis) {
-          const rawContent = item.content || ''
-          const isMe = rawContent.startsWith('1:')
-          const content = rawContent.substring(2) // Remove "1:" or "0:" prefix
-          const count = item.count || 0
+          const candidate = this.parseEmojiCandidate(item)
+          if (!candidate.md5 || candidate.isMe === undefined || candidate.count <= 0) continue
 
-          if (isMe) {
-            if (count > myTopCount) {
-              const md5 = this.extractEmojiMd5(content)
-              if (md5) {
-                myTopCount = count
-                myTopEmojiMd5 = md5
-                myTopEmojiUrl = this.extractEmojiUrl(content)
-              }
+          if (candidate.isMe) {
+            if (candidate.count > myTopCount) {
+              myTopCount = candidate.count
+              myTopEmojiMd5 = candidate.md5
+              myTopEmojiUrl = candidate.url
             }
-          } else {
-            if (count > friendTopCount) {
-              const md5 = this.extractEmojiMd5(content)
-              if (md5) {
-                friendTopCount = count
-                friendTopEmojiMd5 = md5
-                friendTopEmojiUrl = this.extractEmojiUrl(content)
-              }
-            }
+          } else if (candidate.count > friendTopCount) {
+            friendTopCount = candidate.count
+            friendTopEmojiMd5 = candidate.md5
+            friendTopEmojiUrl = candidate.url
           }
         }
       }
+
+      const needsEmojiFallback = stats.emojiCount > 0 && (!myTopEmojiMd5 || !friendTopEmojiMd5)
+      if (needsEmojiFallback) {
+        const fallback = await this.scanEmojiTopFallback(friendUsername, startTime, endTime, rawWxid, cleanedWxid)
+
+        if (!myTopEmojiMd5 && fallback.my?.md5) {
+          myTopEmojiMd5 = fallback.my.md5
+          myTopEmojiUrl = myTopEmojiUrl || fallback.my.url
+          myTopCount = fallback.my.count
+        }
+        if (!friendTopEmojiMd5 && fallback.friend?.md5) {
+          friendTopEmojiMd5 = fallback.friend.md5
+          friendTopEmojiUrl = friendTopEmojiUrl || fallback.friend.url
+          friendTopCount = fallback.friend.count
+        }
+      }
+
+      const [myEmojiUrlResult, friendEmojiUrlResult] = await Promise.all([
+        myTopEmojiMd5 && !myTopEmojiUrl ? wcdbService.getEmoticonCdnUrl(dbPath, myTopEmojiMd5) : Promise.resolve(null),
+        friendTopEmojiMd5 && !friendTopEmojiUrl ? wcdbService.getEmoticonCdnUrl(dbPath, friendTopEmojiMd5) : Promise.resolve(null)
+      ])
+      if (myEmojiUrlResult?.success && myEmojiUrlResult.url) myTopEmojiUrl = myEmojiUrlResult.url
+      if (friendEmojiUrlResult?.success && friendEmojiUrlResult.url) friendTopEmojiUrl = friendEmojiUrlResult.url
 
       stats.myTopEmojiMd5 = myTopEmojiMd5
       stats.myTopEmojiUrl = myTopEmojiUrl
       stats.friendTopEmojiMd5 = friendTopEmojiMd5
       stats.friendTopEmojiUrl = friendTopEmojiUrl
+      if (myTopCount >= 0) stats.myTopEmojiCount = myTopCount
+      if (friendTopCount >= 0) stats.friendTopEmojiCount = friendTopCount
 
       const topPhrases = (cppData.phrases || []).map((p: any) => ({
         phrase: p.phrase,
@@ -401,8 +664,10 @@ class DualReportService {
       const reportData: DualReportData = {
         year: reportYear,
         selfName: myName,
+        selfAvatarUrl,
         friendUsername,
         friendName,
+        friendAvatarUrl,
         firstChat,
         firstChatMessages,
         yearFirstChat,

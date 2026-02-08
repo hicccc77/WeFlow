@@ -1565,6 +1565,7 @@ function SettingsPage() {
     { value: 'json', label: 'JSON', desc: '详细格式，包含完整消息信息' },
     { value: 'html', label: 'HTML', desc: '网页格式，可直接浏览' },
     { value: 'txt', label: 'TXT', desc: '纯文本，通用格式' },
+    { value: 'weclone', label: 'WeClone CSV', desc: 'WeClone 兼容字段格式（CSV）' },
     { value: 'sql', label: 'PostgreSQL', desc: '数据库脚本，便于导入到数据库' }
   ]
   const exportDateRangeOptions = [

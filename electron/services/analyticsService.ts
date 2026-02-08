@@ -31,6 +31,7 @@ export interface ContactRanking {
   username: string
   displayName: string
   avatarUrl?: string
+  wechatId?: string
   messageCount: number
   sentCount: number
   receivedCount: number
@@ -576,7 +577,11 @@ class AnalyticsService {
     }
   }
 
-  async getContactRankings(limit: number = 20): Promise<{ success: boolean; data?: ContactRanking[]; error?: string }> {
+  async getContactRankings(
+    limit: number = 20,
+    beginTimestamp: number = 0,
+    endTimestamp: number = 0
+  ): Promise<{ success: boolean; data?: ContactRanking[]; error?: string }> {
     try {
       const conn = await this.ensureConnected()
       if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
@@ -586,7 +591,7 @@ class AnalyticsService {
         return { success: false, error: '未找到消息会话' }
       }
 
-      const result = await this.getAggregateWithFallback(sessionInfo.usernames, 0, 0)
+      const result = await this.getAggregateWithFallback(sessionInfo.usernames, beginTimestamp, endTimestamp)
       if (!result.success || !result.data) {
         return { success: false, error: result.error || '聚合统计失败' }
       }
@@ -594,9 +599,10 @@ class AnalyticsService {
       const d = result.data
       const sessions = this.normalizeAggregateSessions(d.sessions, d.idMap)
       const usernames = Object.keys(sessions)
-      const [displayNames, avatarUrls] = await Promise.all([
+      const [displayNames, avatarUrls, aliasMap] = await Promise.all([
         wcdbService.getDisplayNames(usernames),
-        wcdbService.getAvatarUrls(usernames)
+        wcdbService.getAvatarUrls(usernames),
+        this.getAliasMap(usernames)
       ])
 
       const rankings: ContactRanking[] = usernames
@@ -608,10 +614,13 @@ class AnalyticsService {
           const avatarUrl = avatarUrls.success && avatarUrls.map
             ? avatarUrls.map[username]
             : undefined
+          const alias = aliasMap[username] || ''
+          const wechatId = alias || (!username.startsWith('wxid_') ? username : '')
           return {
             username,
             displayName,
             avatarUrl,
+            wechatId,
             messageCount: stat.total,
             sentCount: stat.sent,
             receivedCount: stat.received,

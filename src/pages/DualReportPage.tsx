@@ -7,6 +7,7 @@ interface ContactRanking {
   username: string
   displayName: string
   avatarUrl?: string
+  wechatId?: string
   messageCount: number
   sentCount: number
   receivedCount: number
@@ -15,28 +16,29 @@ interface ContactRanking {
 
 function DualReportPage() {
   const navigate = useNavigate()
-  const [year, setYear] = useState<number>(0)
+  const [year] = useState<number>(() => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || '')
+    const yearParam = params.get('year')
+    const parsedYear = yearParam ? parseInt(yearParam, 10) : 0
+    return Number.isNaN(parsedYear) ? 0 : parsedYear
+  })
   const [rankings, setRankings] = useState<ContactRanking[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.split('?')[1] || '')
-    const yearParam = params.get('year')
-    const parsedYear = yearParam ? parseInt(yearParam, 10) : 0
-    setYear(Number.isNaN(parsedYear) ? 0 : parsedYear)
-  }, [])
+    void loadRankings(year)
+  }, [year])
 
-  useEffect(() => {
-    loadRankings()
-  }, [])
-
-  const loadRankings = async () => {
+  const loadRankings = async (reportYear: number) => {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const result = await window.electronAPI.analytics.getContactRankings(200)
+      const isAllTime = reportYear <= 0
+      const beginTimestamp = isAllTime ? 0 : Math.floor(new Date(reportYear, 0, 1).getTime() / 1000)
+      const endTimestamp = isAllTime ? 0 : Math.floor(new Date(reportYear, 11, 31, 23, 59, 59).getTime() / 1000)
+      const result = await window.electronAPI.analytics.getContactRankings(200, beginTimestamp, endTimestamp)
       if (result.success && result.data) {
         setRankings(result.data)
       } else {
@@ -55,7 +57,8 @@ function DualReportPage() {
     if (!keyword.trim()) return rankings
     const q = keyword.trim().toLowerCase()
     return rankings.filter((item) => {
-      return item.displayName.toLowerCase().includes(q) || item.username.toLowerCase().includes(q)
+      const wechatId = (item.wechatId || '').toLowerCase()
+      return item.displayName.toLowerCase().includes(q) || wechatId.includes(q)
     })
   }, [rankings, keyword])
 
@@ -99,7 +102,7 @@ function DualReportPage() {
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索好友（昵称/备注/wxid）"
+          placeholder="搜索好友（昵称/微信号）"
         />
       </div>
 
@@ -119,7 +122,7 @@ function DualReportPage() {
             </div>
             <div className="info">
               <div className="name">{item.displayName}</div>
-              <div className="sub">{item.username}</div>
+              <div className="sub">{item.wechatId || '\u672A\u8bbe\u7f6e\u5fae\u4fe1\u53f7'}</div>
             </div>
             <div className="meta">
               <div className="count">{item.messageCount.toLocaleString()} 条</div>

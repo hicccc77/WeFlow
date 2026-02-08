@@ -189,7 +189,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 数据分析
   analytics: {
     getOverallStatistics: (force?: boolean) => ipcRenderer.invoke('analytics:getOverallStatistics', force),
-    getContactRankings: (limit?: number) => ipcRenderer.invoke('analytics:getContactRankings', limit),
+    getContactRankings: (limit?: number, beginTimestamp?: number, endTimestamp?: number) =>
+      ipcRenderer.invoke('analytics:getContactRankings', limit, beginTimestamp, endTimestamp),
     getTimeDistribution: () => ipcRenderer.invoke('analytics:getTimeDistribution'),
     getExcludedUsernames: () => ipcRenderer.invoke('analytics:getExcludedUsernames'),
     setExcludedUsernames: (usernames: string[]) => ipcRenderer.invoke('analytics:setExcludedUsernames', usernames),

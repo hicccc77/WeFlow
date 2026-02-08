@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties } from 'react'
-import { Clock, Zap, MessageSquare, Type, Image as ImageIcon, Mic, Smile } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Clock, Zap, MessageCircle, MessageSquare, Type, Image as ImageIcon, Mic, Smile } from 'lucide-react'
 import ReportHeatmap from '../components/ReportHeatmap'
 import ReportWordCloud from '../components/ReportWordCloud'
 import './AnnualReportWindow.scss'
@@ -15,8 +15,10 @@ interface DualReportMessage {
 interface DualReportData {
   year: number
   selfName: string
+  selfAvatarUrl?: string
   friendUsername: string
   friendName: string
+  friendAvatarUrl?: string
   firstChat: {
     createTime: number
     createTimeStr: string
@@ -43,6 +45,8 @@ interface DualReportData {
     friendTopEmojiMd5?: string
     myTopEmojiUrl?: string
     friendTopEmojiUrl?: string
+    myTopEmojiCount?: number
+    friendTopEmojiCount?: number
   }
   topPhrases: Array<{ phrase: string; count: number }>
   heatmap?: number[][]
@@ -108,6 +112,8 @@ function DualReportWindow() {
   useEffect(() => {
     const loadEmojis = async () => {
       if (!reportData) return
+      setMyEmojiUrl(null)
+      setFriendEmojiUrl(null)
       const stats = reportData.stats
       if (stats.myTopEmojiUrl) {
         const res = await window.electronAPI.chat.downloadEmoji(stats.myTopEmojiUrl, stats.myTopEmojiMd5)
@@ -178,6 +184,9 @@ function DualReportWindow() {
     : null
   const yearFirstChat = reportData.yearFirstChat
   const stats = reportData.stats
+  const initiativeTotal = (reportData.initiative?.initiated || 0) + (reportData.initiative?.received || 0)
+  const initiatedPercent = initiativeTotal > 0 ? (reportData.initiative!.initiated / initiativeTotal) * 100 : 0
+  const receivedPercent = initiativeTotal > 0 ? (reportData.initiative!.received / initiativeTotal) * 100 : 0
   const statItems = [
     { label: '总消息数', value: stats.totalMessages, icon: MessageSquare, color: '#07C160' },
     { label: '总字数', value: stats.totalWords, icon: Type, color: '#10AEFF' },
@@ -196,6 +205,13 @@ function DualReportWindow() {
   )
 
   const stripCdata = (text: string) => text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  const compactMessageText = (text: string) => (
+    text
+      .replace(/\r\n/g, '\n')
+      .replace(/\s*\n+\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  )
 
   const extractXmlText = (content: string) => {
     const titleMatch = content.match(/<title>([\s\S]*?)<\/title>/i)
@@ -210,18 +226,18 @@ function DualReportWindow() {
   }
 
   const formatMessageContent = (content?: string) => {
-    const raw = String(content || '').trim()
+    const raw = compactMessageText(String(content || '').trim())
     if (!raw) return '（空）'
 
     // 1. 尝试提取 XML 关键字段
     const titleMatch = raw.match(/<title>([\s\S]*?)<\/title>/i)
-    if (titleMatch?.[1]) return decodeEntities(stripCdata(titleMatch[1]).trim())
+    if (titleMatch?.[1]) return compactMessageText(decodeEntities(stripCdata(titleMatch[1]).trim()))
 
     const descMatch = raw.match(/<des>([\s\S]*?)<\/des>/i)
-    if (descMatch?.[1]) return decodeEntities(stripCdata(descMatch[1]).trim())
+    if (descMatch?.[1]) return compactMessageText(decodeEntities(stripCdata(descMatch[1]).trim()))
 
     const summaryMatch = raw.match(/<summary>([\s\S]*?)<\/summary>/i)
-    if (summaryMatch?.[1]) return decodeEntities(stripCdata(summaryMatch[1]).trim())
+    if (summaryMatch?.[1]) return compactMessageText(decodeEntities(stripCdata(summaryMatch[1]).trim()))
 
     // 2. 检查是否是 XML 结构
     const hasXmlTag = /<\s*[a-zA-Z]+[^>]*>/.test(raw)
@@ -232,7 +248,7 @@ function DualReportWindow() {
     // 3. 最后的尝试：移除所有 XML 标签，看是否还有有意义的文本
     const stripped = raw.replace(/<[^>]+>/g, '').trim()
     if (stripped && stripped.length > 0 && stripped.length < 50) {
-      return decodeEntities(stripped)
+      return compactMessageText(decodeEntities(stripped))
     }
 
     return '（多媒体/卡片消息）'
@@ -245,6 +261,43 @@ function DualReportWindow() {
     const hour = String(d.getHours()).padStart(2, '0')
     const minute = String(d.getMinutes()).padStart(2, '0')
     return `${year}/${month}/${day} ${hour}:${minute}`
+  }
+
+  const getMostActiveTime = (data: number[][]) => {
+    let maxHour = 0
+    let maxWeekday = 0
+    let maxVal = -1
+    data.forEach((row, weekday) => {
+      row.forEach((value, hour) => {
+        if (value > maxVal) {
+          maxVal = value
+          maxHour = hour
+          maxWeekday = weekday
+        }
+      })
+    })
+    const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    return {
+      weekday: weekdayNames[maxWeekday] || '周一',
+      hour: maxHour,
+      value: Math.max(0, maxVal)
+    }
+  }
+
+  const mostActive = reportData.heatmap ? getMostActiveTime(reportData.heatmap) : null
+  const responseAvgMinutes = reportData.response ? Math.max(0, Math.round(reportData.response.avg / 60)) : 0
+  const getSceneAvatarUrl = (isSentByMe: boolean) => (isSentByMe ? reportData.selfAvatarUrl : reportData.friendAvatarUrl)
+  const getSceneAvatarFallback = (isSentByMe: boolean) => (isSentByMe ? '我' : reportData.friendName.substring(0, 1))
+  const renderSceneAvatar = (isSentByMe: boolean) => {
+    const avatarUrl = getSceneAvatarUrl(isSentByMe)
+    if (avatarUrl) {
+      return (
+        <div className="scene-avatar with-image">
+          <img src={avatarUrl} alt={isSentByMe ? 'me-avatar' : 'friend-avatar'} />
+        </div>
+      )
+    }
+    return <div className="scene-avatar fallback">{getSceneAvatarFallback(isSentByMe)}</div>
   }
 
   return (
@@ -284,9 +337,7 @@ function DualReportWindow() {
                   <div className="scene-messages">
                     {firstChatMessages.map((msg, idx) => (
                       <div key={idx} className={`scene-message ${msg.isSentByMe ? 'sent' : 'received'}`}>
-                        <div className="scene-avatar">
-                          {msg.isSentByMe ? '我' : reportData.friendName.substring(0, 1)}
-                        </div>
+                        {renderSceneAvatar(msg.isSentByMe)}
                         <div className="scene-content-wrapper">
                           <div className="scene-meta">
                             {formatFullDate(msg.createTime).split(' ')[1]}
@@ -322,9 +373,7 @@ function DualReportWindow() {
                 <div className="scene-messages">
                   {yearFirstChat.firstThreeMessages.map((msg, idx) => (
                     <div key={idx} className={`scene-message ${msg.isSentByMe ? 'sent' : 'received'}`}>
-                      <div className="scene-avatar">
-                        {msg.isSentByMe ? '我' : reportData.friendName.substring(0, 1)}
-                      </div>
+                      {renderSceneAvatar(msg.isSentByMe)}
                       <div className="scene-content-wrapper">
                         <div className="scene-meta">
                           {formatFullDate(msg.createTime).split(' ')[1]}
@@ -344,6 +393,11 @@ function DualReportWindow() {
             <section className="section">
               <div className="label-text">聊天习惯</div>
               <h2 className="hero-title">作息规律</h2>
+              {mostActive && (
+                <p className="hero-desc active-time dual-active-time">
+                  {'\u5728'} <span className="hl">{mostActive.weekday} {String(mostActive.hour).padStart(2, '0')}:00</span> {'\u6700\u6d3b\u8dc3\uff08'}{mostActive.value}{'\u6761\uff09'}
+                </p>
+              )}
               <ReportHeatmap data={reportData.heatmap} />
             </section>
           )}
@@ -358,22 +412,28 @@ function DualReportWindow() {
                 </div>
                 <div className="initiative-bar-wrapper">
                   <div className="initiative-side">
-                    <div className="avatar-placeholder">我</div>
-                    <div className="count">{reportData.initiative.initiated}次</div>
+                    <div className="avatar-placeholder">
+                      {reportData.selfAvatarUrl ? <img src={reportData.selfAvatarUrl} alt="me-avatar" /> : '\u6211'}
+                    </div>
+                    <div className="count">{reportData.initiative.initiated}{'\u6b21'}</div>
+                    <div className="percent">{initiatedPercent.toFixed(1)}%</div>
                   </div>
                   <div className="initiative-progress">
                     <div
                       className="bar-segment left"
-                      style={{ width: `${reportData.initiative.initiated / (reportData.initiative.initiated + reportData.initiative.received) * 100}%` }}
+                      style={{ width: `${initiatedPercent}%` }}
                     />
                     <div
                       className="bar-segment right"
-                      style={{ width: `${reportData.initiative.received / (reportData.initiative.initiated + reportData.initiative.received) * 100}%` }}
+                      style={{ width: `${receivedPercent}%` }}
                     />
                   </div>
                   <div className="initiative-side">
-                    <div className="avatar-placeholder">{reportData.friendName.substring(0, 1)}</div>
-                    <div className="count">{reportData.initiative.received}次</div>
+                    <div className="avatar-placeholder">
+                      {reportData.friendAvatarUrl ? <img src={reportData.friendAvatarUrl} alt="friend-avatar" /> : reportData.friendName.substring(0, 1)}
+                    </div>
+                    <div className="count">{reportData.initiative.received}{'\u6b21'}</div>
+                    <div className="percent">{receivedPercent.toFixed(1)}%</div>
                   </div>
                 </div>
               </div>
@@ -383,33 +443,43 @@ function DualReportWindow() {
           {reportData.response && (
             <section className="section">
               <div className="label-text">回复速度</div>
-              <h2 className="hero-title">秒回是并在乎</h2>
+              <h2 className="hero-title">{'\u79d2\u56de\uff0c\u662f\u56e0\u4e3a\u5728\u4e4e'}</h2>
               <div className="response-grid">
                 <div className="response-card">
                   <div className="icon-box">
                     <Clock size={24} />
                   </div>
-                  <div className="label">平均回复</div>
-                  <div className="value">{Math.round(reportData.response.avg / 60)}<span>分</span></div>
+                  <div className="label">{'\u5e73\u5747\u56de\u590d'}</div>
+                  <div className="value">{Math.round(reportData.response.avg / 60)}<span>{'\u5206'}</span></div>
                 </div>
                 <div className="response-card fastest">
                   <div className="icon-box">
                     <Zap size={24} />
                   </div>
-                  <div className="label">最快回复</div>
-                  <div className="value">{reportData.response.fastest}<span>秒</span></div>
+                  <div className="label">{'\u6700\u5feb\u56de\u590d'}</div>
+                  <div className="value">{reportData.response.fastest}<span>{'\u79d2'}</span></div>
+                </div>
+                <div className="response-card sample">
+                  <div className="icon-box">
+                    <MessageCircle size={24} />
+                  </div>
+                  <div className="label">{'\u7edf\u8ba1\u6837\u672c'}</div>
+                  <div className="value">{reportData.response.count}<span>{'\u6b21'}</span></div>
                 </div>
               </div>
+              <p className="hero-desc response-note">
+                {`\u5171\u7edf\u8ba1 ${reportData.response.count} \u6b21\u6709\u6548\u56de\u590d\uff0c\u5e73\u5747\u7ea6 ${responseAvgMinutes} \u5206\u949f\uff0c\u6700\u5feb ${reportData.response.fastest} \u79d2\u3002`}
+              </p>
             </section>
           )}
 
           {reportData.streak && (
             <section className="section">
-              <div className="label-text">聊天火花</div>
-              <h2 className="hero-title">最长连续聊天</h2>
+              <div className="label-text">{'\u804a\u5929\u706b\u82b1'}</div>
+              <h2 className="hero-title">{'\u6700\u957f\u8fde\u7eed\u804a\u5929'}</h2>
               <div className="streak-container">
-                <div className="streak-flame">🔥</div>
-                <div className="streak-days">{reportData.streak.days}<span>天</span></div>
+                <div className="streak-flame">{'\uD83D\uDD25'}</div>
+                <div className="streak-days">{reportData.streak.days}<span>{'\u5929'}</span></div>
                 <div className="streak-range">
                   {reportData.streak.startDate} ~ {reportData.streak.endDate}
                 </div>
@@ -461,6 +531,7 @@ function DualReportWindow() {
                 ) : (
                   <div className="emoji-placeholder">{stats.myTopEmojiMd5 || '暂无'}</div>
                 )}
+                <div className="emoji-count">{stats.myTopEmojiCount ? `${stats.myTopEmojiCount}\u6b21` : '\u6682\u65e0\u7edf\u8ba1'}</div>
               </div>
               <div className="emoji-card">
                 <div className="emoji-title">{reportData.friendName}常用的表情</div>
@@ -469,6 +540,7 @@ function DualReportWindow() {
                 ) : (
                   <div className="emoji-placeholder">{stats.friendTopEmojiMd5 || '暂无'}</div>
                 )}
+                <div className="emoji-count">{stats.friendTopEmojiCount ? `${stats.friendTopEmojiCount}\u6b21` : '\u6682\u65e0\u7edf\u8ba1'}</div>
               </div>
             </div>
           </section>

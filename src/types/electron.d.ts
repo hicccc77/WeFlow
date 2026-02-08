@@ -163,12 +163,13 @@ export interface ElectronAPI {
       }
       error?: string
     }>
-    getContactRankings: (limit?: number) => Promise<{
+    getContactRankings: (limit?: number, beginTimestamp?: number, endTimestamp?: number) => Promise<{
       success: boolean
       data?: Array<{
         username: string
         displayName: string
         avatarUrl?: string
+        wechatId?: string
         messageCount: number
         sentCount: number
         receivedCount: number
@@ -357,8 +358,10 @@ export interface ElectronAPI {
       data?: {
         year: number
         selfName: string
+        selfAvatarUrl?: string
         friendUsername: string
         friendName: string
+        friendAvatarUrl?: string
         firstChat: {
           createTime: number
           createTimeStr: string
@@ -395,8 +398,15 @@ export interface ElectronAPI {
           friendTopEmojiMd5?: string
           myTopEmojiUrl?: string
           friendTopEmojiUrl?: string
+          myTopEmojiCount?: number
+          friendTopEmojiCount?: number
         }
         topPhrases: Array<{ phrase: string; count: number }>
+        heatmap?: number[][]
+        initiative?: { initiated: number; received: number }
+        response?: { avg: number; fastest: number; count: number }
+        monthly?: Record<string, number>
+        streak?: { days: number; startDate: string; endDate: string }
       }
       error?: string
     }>

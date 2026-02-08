@@ -68,7 +68,7 @@ const MESSAGE_TYPE_MAP: Record<number, number> = {
 }
 
 export interface ExportOptions {
-  format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'html' | 'txt' | 'excel' | 'sql'
+  format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
   dateRange?: { start: number; end: number } | null
   exportMedia?: boolean
   exportAvatars?: boolean
@@ -809,6 +809,55 @@ class ExportService {
 
   private stripSenderPrefix(content: string): string {
     return content.replace(/^[\s]*([a-zA-Z0-9_-]+):(?!\/\/)/, '')
+  }
+
+  private getWeCloneTypeName(localType: number, content: string): string {
+    if (localType === 1) return 'text'
+    if (localType === 3) return 'image'
+    if (localType === 47) return 'sticker'
+    if (localType === 43) return 'video'
+    if (localType === 34) return 'voice'
+    if (localType === 48) return 'location'
+    if (localType === 49) {
+      const xmlType = this.extractXmlValue(content || '', 'type')
+      if (xmlType === '6') return 'file'
+      return 'text'
+    }
+    return 'text'
+  }
+
+  private getWeCloneSource(msg: any, typeName: string, mediaItem: MediaExportItem | null): string {
+    if (mediaItem?.relativePath) {
+      return mediaItem.relativePath
+    }
+
+    if (typeName === 'image') {
+      return msg.imageDatName || ''
+    }
+    if (typeName === 'sticker') {
+      return msg.emojiCdnUrl || ''
+    }
+    if (typeName === 'video') {
+      return ''
+    }
+    if (typeName === 'file') {
+      const xml = msg.content || ''
+      return this.extractXmlValue(xml, 'filename') || this.extractXmlValue(xml, 'title') || ''
+    }
+    return ''
+  }
+
+  private escapeCsvCell(value: unknown): string {
+    if (value === null || value === undefined) return ''
+    const text = String(value)
+    if (/[",\r\n]/.test(text)) {
+      return `"${text.replace(/"/g, '""')}"`
+    }
+    return text
+  }
+
+  private formatIsoTimestamp(timestamp: number): string {
+    return new Date(timestamp * 1000).toISOString()
   }
 
   /**
@@ -3577,6 +3626,253 @@ class ExportService {
     }
   }
 
+  /**
+   * 导出单个会话为 WeClone CSV 格式
+   */
+  async exportSessionToWeCloneCsv(
+    sessionId: string,
+    outputPath: string,
+    options: ExportOptions,
+    onProgress?: (progress: ExportProgress) => void
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const conn = await this.ensureConnected()
+      if (!conn.success || !conn.cleanedWxid) return { success: false, error: conn.error }
+
+      const cleanedMyWxid = conn.cleanedWxid
+      const isGroup = sessionId.includes('@chatroom')
+      const sessionInfo = await this.getContactInfo(sessionId)
+      const myInfo = await this.getContactInfo(cleanedMyWxid)
+
+      const contactCache = new Map<string, { success: boolean; contact?: any; error?: string }>()
+      const getContactCached = async (username: string) => {
+        if (contactCache.has(username)) {
+          return contactCache.get(username)!
+        }
+        const result = await wcdbService.getContact(username)
+        contactCache.set(username, result)
+        return result
+      }
+
+      onProgress?.({
+        current: 0,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'preparing'
+      })
+
+      const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
+      if (collected.rows.length === 0) {
+        return { success: false, error: '该会话在指定时间范围内没有消息' }
+      }
+
+      const senderUsernames = new Set<string>()
+      for (const msg of collected.rows) {
+        if (msg.senderUsername) senderUsernames.add(msg.senderUsername)
+      }
+      senderUsernames.add(sessionId)
+      await this.preloadContacts(senderUsernames, contactCache)
+
+      const groupNicknameCandidates = isGroup
+        ? this.buildGroupNicknameIdCandidates([
+          ...Array.from(senderUsernames.values()),
+          ...collected.rows.map(msg => msg.senderUsername),
+          cleanedMyWxid
+        ])
+        : []
+      const groupNicknamesMap = isGroup
+        ? await this.getGroupNicknamesForRoom(sessionId, groupNicknameCandidates)
+        : new Map<string, string>()
+
+      const sortedMessages = collected.rows.sort((a, b) => a.createTime - b.createTime)
+
+      const voiceMessages = options.exportVoiceAsText
+        ? sortedMessages.filter(msg => msg.localType === 34)
+        : []
+
+      if (options.exportVoiceAsText && voiceMessages.length > 0) {
+        await this.ensureVoiceModel(onProgress)
+      }
+
+      const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
+      const mediaMessages = exportMediaEnabled
+        ? sortedMessages.filter(msg => {
+          const t = msg.localType
+          return (t === 3 && options.exportImages) ||
+            (t === 47 && options.exportEmojis) ||
+            (t === 43 && options.exportVideos) ||
+            (t === 34 && options.exportVoices)
+        })
+        : []
+
+      const mediaCache = new Map<string, MediaExportItem | null>()
+
+      if (mediaMessages.length > 0) {
+        onProgress?.({
+          current: 25,
+          total: 100,
+          currentSession: sessionInfo.displayName,
+          phase: 'exporting-media',
+          phaseProgress: 0,
+          phaseTotal: mediaMessages.length,
+          phaseLabel: `导出媒体 0/${mediaMessages.length}`
+        })
+
+        const mediaConcurrency = this.getClampedConcurrency(options.exportConcurrency)
+        let mediaExported = 0
+        await parallelLimit(mediaMessages, mediaConcurrency, async (msg) => {
+          const mediaKey = `${msg.localType}_${msg.localId}`
+          if (!mediaCache.has(mediaKey)) {
+            const mediaItem = await this.exportMediaForMessage(msg, sessionId, mediaRootDir, mediaRelativePrefix, {
+              exportImages: options.exportImages,
+              exportVoices: options.exportVoices,
+              exportVideos: options.exportVideos,
+              exportEmojis: options.exportEmojis,
+              exportVoiceAsText: options.exportVoiceAsText
+            })
+            mediaCache.set(mediaKey, mediaItem)
+          }
+          mediaExported++
+          if (mediaExported % 5 === 0 || mediaExported === mediaMessages.length) {
+            onProgress?.({
+              current: 25,
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'exporting-media',
+              phaseProgress: mediaExported,
+              phaseTotal: mediaMessages.length,
+              phaseLabel: `导出媒体 ${mediaExported}/${mediaMessages.length}`
+            })
+          }
+        })
+      }
+
+      const voiceTranscriptMap = new Map<number, string>()
+
+      if (voiceMessages.length > 0) {
+        onProgress?.({
+          current: 45,
+          total: 100,
+          currentSession: sessionInfo.displayName,
+          phase: 'exporting-voice',
+          phaseProgress: 0,
+          phaseTotal: voiceMessages.length,
+          phaseLabel: `语音转文字 0/${voiceMessages.length}`
+        })
+
+        const VOICE_CONCURRENCY = 4
+        let voiceTranscribed = 0
+        await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
+          voiceTranscriptMap.set(msg.localId, transcript)
+          voiceTranscribed++
+          onProgress?.({
+            current: 45,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting-voice',
+            phaseProgress: voiceTranscribed,
+            phaseTotal: voiceMessages.length,
+            phaseLabel: `语音转文字 ${voiceTranscribed}/${voiceMessages.length}`
+          })
+        })
+      }
+
+      onProgress?.({
+        current: 60,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'exporting'
+      })
+
+      const lines: string[] = []
+      lines.push('id,MsgSvrID,type_name,is_sender,talker,msg,src,CreateTime')
+
+      for (let i = 0; i < sortedMessages.length; i++) {
+        const msg = sortedMessages[i]
+        const mediaKey = `${msg.localType}_${msg.localId}`
+        const mediaItem = mediaCache.get(mediaKey) || null
+
+        const typeName = this.getWeCloneTypeName(msg.localType, msg.content || '')
+        let senderWxid = cleanedMyWxid
+        if (!msg.isSend) {
+          senderWxid = isGroup && msg.senderUsername
+            ? msg.senderUsername
+            : sessionId
+        }
+
+        let talker = myInfo.displayName || '我'
+        if (!msg.isSend) {
+          const contactDetail = await getContactCached(senderWxid)
+          const senderNickname = contactDetail.success && contactDetail.contact
+            ? (contactDetail.contact.nickName || senderWxid)
+            : senderWxid
+          const senderRemark = contactDetail.success && contactDetail.contact
+            ? (contactDetail.contact.remark || '')
+            : ''
+          const senderGroupNickname = isGroup
+            ? this.resolveGroupNicknameByCandidates(groupNicknamesMap, [senderWxid])
+            : ''
+          talker = this.getPreferredDisplayName(
+            senderWxid,
+            senderNickname,
+            senderRemark,
+            senderGroupNickname,
+            options.displayNamePreference || 'remark'
+          )
+        }
+
+        const msgText = msg.localType === 34 && options.exportVoiceAsText
+          ? (voiceTranscriptMap.get(msg.localId) || '[语音消息 - 转文字失败]')
+          : (this.parseMessageContent(msg.content, msg.localType, sessionId, msg.createTime) || '')
+        const src = this.getWeCloneSource(msg, typeName, mediaItem)
+
+        const row = [
+          i + 1,
+          i + 1,
+          typeName,
+          msg.isSend ? 1 : 0,
+          talker,
+          msgText,
+          src,
+          this.formatIsoTimestamp(msg.createTime)
+        ]
+
+        lines.push(row.map((value) => this.escapeCsvCell(value)).join(','))
+
+        if ((i + 1) % 200 === 0) {
+          const progress = 60 + Math.floor((i + 1) / sortedMessages.length * 30)
+          onProgress?.({
+            current: progress,
+            total: 100,
+            currentSession: sessionInfo.displayName,
+            phase: 'exporting'
+          })
+        }
+      }
+
+      onProgress?.({
+        current: 92,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'writing'
+      })
+
+      fs.writeFileSync(outputPath, `\uFEFF${lines.join('\r\n')}`, 'utf-8')
+
+      onProgress?.({
+        current: 100,
+        total: 100,
+        currentSession: sessionInfo.displayName,
+        phase: 'complete'
+      })
+
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
   private getVirtualScrollScript(): string {
     return `
       class ChunkedRenderer {
@@ -4228,6 +4524,7 @@ class ExportService {
         if (options.format === 'chatlab-jsonl') ext = '.jsonl'
         else if (options.format === 'excel') ext = '.xlsx'
         else if (options.format === 'txt') ext = '.txt'
+        else if (options.format === 'weclone') ext = '.csv'
         else if (options.format === 'html') ext = '.html'
         const outputPath = path.join(sessionDir, `${safeName}${ext}`)
 
@@ -4240,6 +4537,8 @@ class ExportService {
           result = await this.exportSessionToExcel(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'txt') {
           result = await this.exportSessionToTxt(sessionId, outputPath, options, sessionProgress)
+        } else if (options.format === 'weclone') {
+          result = await this.exportSessionToWeCloneCsv(sessionId, outputPath, options, sessionProgress)
         } else if (options.format === 'html') {
           result = await this.exportSessionToHtml(sessionId, outputPath, options, sessionProgress)
         } else {

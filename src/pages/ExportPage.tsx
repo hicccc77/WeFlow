@@ -13,7 +13,7 @@ interface ChatSession {
 }
 
 interface ExportOptions {
-  format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'html' | 'txt' | 'excel' | 'sql'
+  format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
   dateRange: { start: Date; end: Date } | null
   useAllTime: boolean
   exportAvatars: boolean
@@ -360,7 +360,7 @@ function ExportPage() {
         } : null
       }
 
-      if (options.format === 'chatlab' || options.format === 'chatlab-jsonl' || options.format === 'json' || options.format === 'excel' || options.format === 'txt' || options.format === 'html') {
+      if (options.format === 'chatlab' || options.format === 'chatlab-jsonl' || options.format === 'json' || options.format === 'excel' || options.format === 'txt' || options.format === 'html' || options.format === 'weclone') {
         const result = await window.electronAPI.export.exportSessions(
           sessionList,
           exportFolder,
@@ -513,6 +513,7 @@ function ExportPage() {
     { value: 'html', label: 'HTML', icon: FileText, desc: '网页格式，可直接浏览' },
     { value: 'txt', label: 'TXT', icon: Table, desc: '纯文本，通用格式' },
     { value: 'excel', label: 'Excel', icon: FileSpreadsheet, desc: '电子表格，适合统计分析' },
+    { value: 'weclone', label: 'WeClone CSV', icon: Table, desc: 'WeClone 兼容字段格式（CSV）' },
     { value: 'sql', label: 'PostgreSQL', icon: Database, desc: '数据库脚本，便于导入到数据库' }
   ]
   const displayNameOptions = [

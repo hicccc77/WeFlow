@@ -985,8 +985,8 @@ function registerIpcHandlers() {
     return analyticsService.getOverallStatistics(force)
   })
 
-  ipcMain.handle('analytics:getContactRankings', async (_, limit?: number) => {
-    return analyticsService.getContactRankings(limit)
+  ipcMain.handle('analytics:getContactRankings', async (_, limit?: number, beginTimestamp?: number, endTimestamp?: number) => {
+    return analyticsService.getContactRankings(limit, beginTimestamp, endTimestamp)
   })
 
   ipcMain.handle('analytics:getTimeDistribution', async () => {
