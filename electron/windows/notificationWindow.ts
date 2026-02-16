@@ -76,12 +76,10 @@ export async function showNotification(data: any) {
         const isInList = filterList.includes(sessionId)
         if (filterMode === 'whitelist' && !isInList) {
             // 白名单模式：不在列表中则不显示
-            console.log('[NotificationWindow] Filtered by whitelist:', sessionId)
             return
         }
         if (filterMode === 'blacklist' && isInList) {
             // 黑名单模式：在列表中则不显示
-            console.log('[NotificationWindow] Filtered by blacklist:', sessionId)
             return
         }
     }

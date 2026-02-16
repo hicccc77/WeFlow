@@ -809,6 +809,60 @@
                             }
                         }
 
+
+
+                        .video-badge-container {
+                            position: absolute;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            z-index: 2;
+                            pointer-events: none;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+
+                            .video-badge {
+                                width: 44px;
+                                height: 44px;
+                                background: rgba(0, 0, 0, 0.3);
+                                backdrop-filter: blur(4px);
+                                border-radius: 50%;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                border: 1px solid rgba(255, 255, 255, 0.3);
+                                transition: all 0.2s;
+                                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+
+                                svg {
+                                    fill: white;
+                                    opacity: 0.9;
+                                }
+                            }
+
+                            .decrypting-badge {
+                                background: rgba(0, 0, 0, 0.6);
+                                backdrop-filter: blur(8px);
+                                padding: 8px 16px;
+                                border-radius: 20px;
+                                display: flex;
+                                align-items: center;
+                                gap: 8px;
+                                color: white;
+                                font-size: 13px;
+                                font-weight: 500;
+                                border: 1px solid rgba(255, 255, 255, 0.2);
+                                white-space: nowrap;
+                                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+
+                                .spin-icon {
+                                    animation: spin 1s linear infinite;
+                                }
+                            }
+                        }
+
                         &:hover {
                             .download-btn-overlay {
                                 opacity: 1;
@@ -1205,6 +1259,16 @@
                     box-shadow: 0 4px 12px rgba(var(--accent-color-rgb), 0.3);
                 }
             }
+        }
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
         }
     }
 }

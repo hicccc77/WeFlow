@@ -34,57 +34,218 @@ interface SnsPost {
     rawXml?: string  // 原始 XML 数据
 }
 
-const MediaItem = ({ media, onPreview }: { media: any; onPreview: (src: string) => void }) => {
+const MediaItem = ({ media, onPreview }: { media: any; onPreview: (src: string, isVideo?: boolean, liveVideoPath?: string) => void }) => {
     const [error, setError] = useState(false)
-    const [resolvedSrc, setResolvedSrc] = useState<string>('')
+    const [thumbSrc, setThumbSrc] = useState<string>('') // 缩略图
+    const [videoPath, setVideoPath] = useState<string>('') // 视频本地路径
+    const [liveVideoPath, setLiveVideoPath] = useState<string>('') // Live Photo 视频路径
+    const [isDecrypting, setIsDecrypting] = useState(false) // 解密状态
     const { url, thumb, livePhoto } = media
     const isLive = !!livePhoto
-    const targetUrl = thumb || url
+    const targetUrl = thumb || url // 默认显示缩略图
+
+    // 判断是否为视频
+    const isVideo = url && (url.includes('snsvideodownload') || url.includes('.mp4') || url.includes('video')) && !url.includes('vweixinthumb')
 
     useEffect(() => {
         let cancelled = false
         setError(false)
-        setResolvedSrc('')
+        setThumbSrc('')
+        setVideoPath('')
+        setLiveVideoPath('')
+        setIsDecrypting(false)
+
+        const extractFirstFrame = (videoUrl: string) => {
+            const video = document.createElement('video')
+            video.crossOrigin = 'anonymous'
+            video.style.display = 'none'
+            video.muted = true
+            video.src = videoUrl
+            video.currentTime = 0.1
+
+            const onLoadedData = () => {
+                if (cancelled) return cleanup()
+                try {
+                    const canvas = document.createElement('canvas')
+                    canvas.width = video.videoWidth
+                    canvas.height = video.videoHeight
+                    const ctx = canvas.getContext('2d')
+                    if (ctx) {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+                        if (!cancelled) {
+                            setThumbSrc(dataUrl)
+                            setIsDecrypting(false)
+                        }
+                    } else {
+                        if (!cancelled) setIsDecrypting(false)
+                    }
+                } catch (e) {
+                    console.warn('Frame extraction error', e)
+                    if (!cancelled) setIsDecrypting(false)
+                } finally {
+                    cleanup()
+                }
+            }
+
+            const onError = () => {
+                if (!cancelled) {
+                    setIsDecrypting(false)
+                    setThumbSrc(targetUrl) // Fallback
+                }
+                cleanup()
+            }
+
+            const cleanup = () => {
+                video.removeEventListener('seeked', onLoadedData)
+                video.removeEventListener('error', onError)
+                video.remove()
+            }
+
+            video.addEventListener('seeked', onLoadedData)
+            video.addEventListener('error', onError)
+            video.load()
+        }
 
         const run = async () => {
             try {
-                const result = await window.electronAPI.sns.proxyImage({
-                    url: targetUrl,
-                    key: media.key
-                })
-                if (cancelled) return
-                if (result.success && result.dataUrl) {
-                    setResolvedSrc(result.dataUrl)
+                if (isVideo) {
+                    setIsDecrypting(true)
+
+                    const videoResult = await window.electronAPI.sns.proxyImage({
+                        url: url,
+                        key: media.key
+                    })
+
+                    if (cancelled) return
+
+                    if (videoResult.success && videoResult.videoPath) {
+                        const localUrl = videoResult.videoPath.startsWith('file:')
+                            ? videoResult.videoPath
+                            : `file://${videoResult.videoPath.replace(/\\/g, '/')}`
+                        setVideoPath(localUrl)
+                        extractFirstFrame(localUrl)
+                    } else {
+                        console.warn('[MediaItem] Video decryption failed:', url, videoResult.error)
+                        setIsDecrypting(false)
+                        setError(true)
+                    }
                 } else {
-                    setResolvedSrc(targetUrl)
+                    const result = await window.electronAPI.sns.proxyImage({
+                        url: targetUrl,
+                        key: media.key
+                    })
+
+                    if (cancelled) return
+                    if (result.success) {
+                        if (result.dataUrl) {
+                            setThumbSrc(result.dataUrl)
+                        } else if (result.videoPath) {
+                            const localUrl = result.videoPath.startsWith('file:')
+                                ? result.videoPath
+                                : `file://${result.videoPath.replace(/\\/g, '/')}`
+                            setThumbSrc(localUrl)
+                        }
+                    } else {
+                        console.warn('[MediaItem] Image proxy failed:', targetUrl, result.error)
+                        setThumbSrc(targetUrl)
+                    }
+
+                    if (isLive && livePhoto && livePhoto.url) {
+                        window.electronAPI.sns.proxyImage({
+                            url: livePhoto.url,
+                            key: livePhoto.key || media.key
+                        }).then((res: any) => {
+                            if (cancelled) return
+                            if (res.success && res.videoPath) {
+                                const localUrl = res.videoPath.startsWith('file:')
+                                    ? res.videoPath
+                                    : `file://${res.videoPath.replace(/\\/g, '/')}`
+                                setLiveVideoPath(localUrl)
+                                console.log('[MediaItem] Live video ready:', localUrl)
+                            } else {
+                                console.warn('[MediaItem] Live video failed:', res.error)
+                            }
+                        }).catch((e: any) => console.error('[MediaItem] Live video err:', e))
+                    }
                 }
-            } catch {
-                if (!cancelled) setResolvedSrc(targetUrl)
+            } catch (err) {
+                if (!cancelled) {
+                    console.error('[MediaItem] run error:', err)
+                    setError(true)
+                    setIsDecrypting(false)
+                }
             }
         }
 
         run()
         return () => { cancelled = true }
-    }, [targetUrl, media.key])
+    }, [targetUrl, url, media.key, isVideo, isLive, livePhoto])
 
-    const handleDownload = (e: React.MouseEvent) => {
+    const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation()
-        // TODO: call backend download service
+        try {
+            const result = await window.electronAPI.sns.downloadImage({
+                url: url || targetUrl, // Use original url if available
+                key: media.key
+            })
+            if (!result.success && result.error !== '用户已取消') {
+                alert(`下载失败: ${result.error}`)
+            }
+        } catch (error) {
+            console.error('Download failed:', error)
+            alert('下载过程中发生错误')
+        }
     }
 
-    const displaySrc = resolvedSrc || targetUrl
-    const previewSrc = resolvedSrc || url || targetUrl
+    // 点击时：如果是视频，应该传视频地址给 Preview？
+    // ImagePreview 目前可能只支持图片。需要检查 ImagePreview 是否支持视频。
+    // 假设 ImagePreview 暂不支持视频播放，我们可以在这里直接点开播放？
+    // 或者，传视频 URL 给 onPreview，让父组件决定/ImagePreview 决定。
+    // 通常做法：传给 ImagePreview，ImagePreview 识别 mp4 后播放。
+
+    // 显示用的图片：始终显示缩略图
+    const displaySrc = thumbSrc || targetUrl
+
+    // 预览用的地址：如果是视频，优先使用本地路径
+    const previewSrc = isVideo ? (videoPath || url) : (thumbSrc || url || targetUrl)
+
+    // 点击处理：解密中禁止点击
+    const handleClick = () => {
+        if (isVideo && isDecrypting) return
+        onPreview(previewSrc, isVideo, liveVideoPath)
+    }
 
     return (
-        <div className={`media-item ${error ? 'error' : ''}`} onClick={() => onPreview(previewSrc)}>
-            <img
-                src={displaySrc}
-                alt=""
-                referrerPolicy="no-referrer"
-                loading="lazy"
-                onError={() => setError(true)}
-            />
-            {isLive && (
+        <div className={`media-item ${error ? 'error' : ''} ${isVideo && isDecrypting ? 'decrypting' : ''}`} onClick={handleClick}>
+            {isVideo && isDecrypting ? (
+                <div className="video-loading-overlay" style={{
+                    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', color: '#fff',
+                    zIndex: 2, backdropFilter: 'blur(4px)'
+                }}>
+                    <RefreshCw size={24} className="spin-icon" style={{ marginBottom: 8 }} />
+                    <span style={{ fontSize: 12 }}>解密中...</span>
+                </div>
+            ) : (
+                <img
+                    src={displaySrc}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    onError={() => setError(true)}
+                />
+            )}
+
+            {isVideo && !isDecrypting && (
+                <div className="video-badge-container">
+                    <div className="video-badge">
+                        <Play size={16} className="play-icon" />
+                    </div>
+                </div>
+            )}
+
+            {isLive && !isVideo && (
                 <div className="live-badge">
                     <LivePhotoIcon size={16} className="live-icon" />
                 </div>
@@ -120,7 +281,7 @@ export default function SnsPage() {
     const [contactsLoading, setContactsLoading] = useState(false)
     const [showJumpDialog, setShowJumpDialog] = useState(false)
     const [jumpTargetDate, setJumpTargetDate] = useState<Date | undefined>(undefined)
-    const [previewImage, setPreviewImage] = useState<string | null>(null)
+    const [previewImage, setPreviewImage] = useState<{ src: string, isVideo?: boolean, liveVideoPath?: string } | null>(null)
     const [debugPost, setDebugPost] = useState<SnsPost | null>(null)
 
     const postsContainerRef = useRef<HTMLDivElement>(null)
@@ -169,7 +330,7 @@ export default function SnsPage() {
                 const currentPosts = postsRef.current
                 if (currentPosts.length > 0) {
                     const topTs = currentPosts[0].createTime
-                    
+
 
                     const result = await window.electronAPI.sns.getTimeline(
                         limit,
@@ -301,10 +462,10 @@ export default function SnsPage() {
         const checkSchema = async () => {
             try {
                 const schema = await window.electronAPI.chat.execQuery('sns', null, "PRAGMA table_info(SnsTimeLine)");
-                
+
                 if (schema.success && schema.rows) {
                     const columns = schema.rows.map((r: any) => r.name);
-                    
+
                 }
             } catch (e) {
                 console.error('[SnsPage] Failed to check schema:', e);
@@ -355,7 +516,7 @@ export default function SnsPage() {
 
         // deltaY < 0 表示向上滚，scrollTop === 0 表示已经在最顶端
         if (e.deltaY < -20 && container.scrollTop <= 0 && hasNewer && !loading && !loadingNewer) {
-            
+
             loadPosts({ direction: 'newer' })
         }
     }
@@ -432,10 +593,6 @@ export default function SnsPage() {
                     </div>
 
                     <div className="sns-content-wrapper">
-                        <div className="sns-notice-banner">
-                            <AlertTriangle size={16} />
-                            <span>由于技术限制，当前无法解密显示视频加密资源文件</span>
-                        </div>
                         <div className="sns-content custom-scrollbar" onScroll={handleScroll} onWheel={handleWheel} ref={postsContainerRef}>
                             <div className="posts-list">
                                 {loadingNewer && (
@@ -483,15 +640,10 @@ export default function SnsPage() {
                                                     <div className="post-body">
                                                         {post.contentDesc && <div className="post-text">{post.contentDesc}</div>}
 
-                                                        {post.type === 15 ? (
-                                                            <div className="post-video-placeholder">
-                                                                <Play size={20} />
-                                                                <span>视频动态</span>
-                                                            </div>
-                                                        ) : post.media.length > 0 && (
+                                                        {post.media.length > 0 && (
                                                             <div className={`post-media-grid media-count-${Math.min(post.media.length, 9)}`}>
                                                                 {post.media.map((m, idx) => (
-                                                                    <MediaItem key={idx} media={m} onPreview={(src) => setPreviewImage(src)} />
+                                                                    <MediaItem key={idx} media={m} onPreview={(src, isVideo, liveVideoPath) => setPreviewImage({ src, isVideo, liveVideoPath })} />
                                                                 ))}
                                                             </div>
                                                         )}
@@ -664,7 +816,12 @@ export default function SnsPage() {
                 </aside>
             </div>
             {previewImage && (
-                <ImagePreview src={previewImage} onClose={() => setPreviewImage(null)} />
+                <ImagePreview
+                    src={previewImage.src}
+                    isVideo={previewImage.isVideo}
+                    liveVideoPath={previewImage.liveVideoPath}
+                    onClose={() => setPreviewImage(null)}
+                />
             )}
             <JumpToDateDialog
                 isOpen={showJumpDialog}

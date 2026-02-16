@@ -431,6 +431,13 @@ export class WcdbService {
     return this.callWorker('verifyUser', { message, hwnd })
   }
 
+  /**
+   * 解密朋友圈图片
+   */
+  async decryptSnsImage(encryptedData: Buffer, key: string): Promise<Buffer> {
+    return this.callWorker<Buffer>('decryptSnsImage', { encryptedData, key })
+  }
+
 }
 
 export const wcdbService = new WcdbService()

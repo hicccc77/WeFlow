@@ -18,7 +18,7 @@ import { exportService, ExportOptions, ExportProgress } from './services/exportS
 import { KeyService } from './services/keyService'
 import { voiceTranscribeService } from './services/voiceTranscribeService'
 import { videoService } from './services/videoService'
-import { snsService } from './services/snsService'
+import { snsService, isVideoUrl } from './services/snsService'
 import { contactExportService } from './services/contactExportService'
 import { windowsHelloService } from './services/windowsHelloService'
 import { llamaService } from './services/llamaService'
@@ -104,7 +104,8 @@ function createWindow(options: { autoShow?: boolean } = {}) {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false // Allow loading local files (video playback)
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -936,6 +937,42 @@ function registerIpcHandlers() {
     const url = typeof payload === 'string' ? payload : payload?.url
     const key = typeof payload === 'string' ? undefined : payload?.key
     return snsService.proxyImage(url, key)
+  })
+
+  ipcMain.handle('sns:downloadImage', async (_, payload: { url: string; key?: string | number }) => {
+    try {
+      const { url, key } = payload
+      const result = await snsService.downloadImage(url, key)
+
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || '下载图片失败' }
+      }
+
+      const { dialog } = await import('electron')
+      const ext = (result.contentType || '').split('/')[1] || 'jpg'
+      const defaultPath = `SNS_${Date.now()}.${ext}`
+
+
+      const filters = isVideoUrl(url)
+        ? [{ name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv'] }]
+        : [{ name: 'Images', extensions: [ext, 'jpg', 'jpeg', 'png', 'webp', 'gif'] }]
+
+      const { filePath, canceled } = await dialog.showSaveDialog({
+        defaultPath,
+        filters
+      })
+
+      if (canceled || !filePath) {
+        return { success: false, error: '用户已取消' }
+      }
+
+      const fs = await import('fs/promises')
+      await fs.writeFile(filePath, result.data)
+
+      return { success: true, filePath }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
   })
 
   // 私聊克隆

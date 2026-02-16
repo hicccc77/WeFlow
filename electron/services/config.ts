@@ -1,3 +1,5 @@
+import { join } from 'path'
+import { app } from 'electron'
 import Store from 'electron-store'
 
 interface ConfigSchema {
@@ -109,6 +111,14 @@ export class ConfigService {
 
   set<K extends keyof ConfigSchema>(key: K, value: ConfigSchema[K]): void {
     this.store.set(key, value)
+  }
+
+  getCacheBasePath(): string {
+    const configured = this.get('cachePath')
+    if (configured && configured.trim().length > 0) {
+      return configured
+    }
+    return join(app.getPath('documents'), 'WeFlow')
   }
 
   getAll(): ConfigSchema {

@@ -141,10 +141,10 @@ class ChatService {
 
   constructor() {
     this.configService = new ConfigService()
-    this.contactCacheService = new ContactCacheService(this.configService.get('cachePath'))
+    this.contactCacheService = new ContactCacheService(this.configService.getCacheBasePath())
     const persisted = this.contactCacheService.getAllEntries()
     this.avatarCache = new Map(Object.entries(persisted))
-    this.messageCacheService = new MessageCacheService(this.configService.get('cachePath'))
+    this.messageCacheService = new MessageCacheService(this.configService.getCacheBasePath())
   }
 
   /**

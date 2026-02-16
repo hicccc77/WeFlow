@@ -1,6 +1,7 @@
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { app } from 'electron'
+import { ConfigService } from './config'
 
 export interface SessionMessageCacheEntry {
   updatedAt: number
@@ -15,7 +16,7 @@ export class MessageCacheService {
   constructor(cacheBasePath?: string) {
     const basePath = cacheBasePath && cacheBasePath.trim().length > 0
       ? cacheBasePath
-      : join(app.getPath('documents'), 'WeFlow')
+      : ConfigService.getInstance().getCacheBasePath()
     this.cacheFilePath = join(basePath, 'session-messages.json')
     this.ensureCacheDir()
     this.loadCache()
