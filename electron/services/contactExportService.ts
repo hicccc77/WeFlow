@@ -10,6 +10,7 @@ interface ContactExportOptions {
         groups: boolean
         officials: boolean
     }
+    selectedUsernames?: string[]
 }
 
 /**
@@ -39,6 +40,11 @@ class ContactExportService {
                 if (c.type === 'official' && !options.contactTypes.officials) return false
                 return true
             })
+
+            if (Array.isArray(options.selectedUsernames) && options.selectedUsernames.length > 0) {
+                const selectedSet = new Set(options.selectedUsernames)
+                contacts = contacts.filter(c => selectedSet.has(c.username))
+            }
 
             if (contacts.length === 0) {
                 return { success: false, error: '没有符合条件的联系人' }

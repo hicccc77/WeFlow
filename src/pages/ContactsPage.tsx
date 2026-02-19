@@ -14,6 +14,7 @@ interface ContactInfo {
 function ContactsPage() {
     const [contacts, setContacts] = useState<ContactInfo[]>([])
     const [filteredContacts, setFilteredContacts] = useState<ContactInfo[]>([])
+    const [selectedUsernames, setSelectedUsernames] = useState<Set<string>>(new Set())
     const [isLoading, setIsLoading] = useState(true)
     const [searchKeyword, setSearchKeyword] = useState('')
     const [contactTypes, setContactTypes] = useState({
@@ -62,6 +63,7 @@ function ContactsPage() {
 
                 setContacts(contactsResult.contacts)
                 setFilteredContacts(contactsResult.contacts)
+                setSelectedUsernames(new Set())
             }
         } catch (e) {
             console.error('加载通讯录失败:', e)
@@ -111,6 +113,37 @@ function ContactsPage() {
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [showFormatSelect])
 
+    const selectedInFilteredCount = filteredContacts.reduce((count, contact) => {
+        return selectedUsernames.has(contact.username) ? count + 1 : count
+    }, 0)
+    const allFilteredSelected = filteredContacts.length > 0 && selectedInFilteredCount === filteredContacts.length
+
+    const toggleContactSelected = (username: string, checked: boolean) => {
+        setSelectedUsernames(prev => {
+            const next = new Set(prev)
+            if (checked) {
+                next.add(username)
+            } else {
+                next.delete(username)
+            }
+            return next
+        })
+    }
+
+    const toggleAllFilteredSelected = (checked: boolean) => {
+        setSelectedUsernames(prev => {
+            const next = new Set(prev)
+            filteredContacts.forEach(contact => {
+                if (checked) {
+                    next.add(contact.username)
+                } else {
+                    next.delete(contact.username)
+                }
+            })
+            return next
+        })
+    }
+
     const getAvatarLetter = (name: string) => {
         if (!name) return '?'
         return [...name][0] || '?'
@@ -154,6 +187,10 @@ function ContactsPage() {
             alert('请先选择导出位置')
             return
         }
+        if (selectedUsernames.size === 0) {
+            alert('请至少选择一个联系人')
+            return
+        }
 
         setIsExporting(true)
         try {
@@ -164,7 +201,8 @@ function ContactsPage() {
                     friends: contactTypes.friends,
                     groups: contactTypes.groups,
                     officials: contactTypes.officials
-                }
+                },
+                selectedUsernames: Array.from(selectedUsernames)
             }
 
             const result = await window.electronAPI.export.exportContacts(exportFolder, exportOptions)
@@ -251,6 +289,18 @@ function ContactsPage() {
                 <div className="contacts-count">
                     共 {filteredContacts.length} 个联系人
                 </div>
+                <div className="selection-toolbar">
+                    <label className="checkbox-item">
+                        <input
+                            type="checkbox"
+                            checked={allFilteredSelected}
+                            onChange={e => toggleAllFilteredSelected(e.target.checked)}
+                            disabled={filteredContacts.length === 0}
+                        />
+                        <span>全选当前筛选结果</span>
+                    </label>
+                    <span className="selection-count">已选 {selectedUsernames.size}（当前筛选 {selectedInFilteredCount} / {filteredContacts.length}）</span>
+                </div>
 
                 {isLoading ? (
                     <div className="loading-state">
@@ -263,27 +313,41 @@ function ContactsPage() {
                     </div>
                 ) : (
                     <div className="contacts-list">
-                        {filteredContacts.map(contact => (
-                            <div key={contact.username} className="contact-item">
-                                <div className="contact-avatar">
-                                    {contact.avatarUrl ? (
-                                        <img src={contact.avatarUrl} alt="" />
-                                    ) : (
-                                        <span>{getAvatarLetter(contact.displayName)}</span>
-                                    )}
+                        {filteredContacts.map(contact => {
+                            const isSelected = selectedUsernames.has(contact.username)
+                            return (
+                                <div
+                                    key={contact.username}
+                                    className={`contact-item ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => toggleContactSelected(contact.username, !isSelected)}
+                                >
+                                    <label className="contact-select" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={e => toggleContactSelected(contact.username, e.target.checked)}
+                                        />
+                                    </label>
+                                    <div className="contact-avatar">
+                                        {contact.avatarUrl ? (
+                                            <img src={contact.avatarUrl} alt="" />
+                                        ) : (
+                                            <span>{getAvatarLetter(contact.displayName)}</span>
+                                        )}
+                                    </div>
+                                    <div className="contact-info">
+                                        <div className="contact-name">{contact.displayName}</div>
+                                        {contact.remark && contact.remark !== contact.displayName && (
+                                            <div className="contact-remark">备注: {contact.remark}</div>
+                                        )}
+                                    </div>
+                                    <div className={`contact-type ${contact.type}`}>
+                                        {getContactTypeIcon(contact.type)}
+                                        <span>{getContactTypeName(contact.type)}</span>
+                                    </div>
                                 </div>
-                                <div className="contact-info">
-                                    <div className="contact-name">{contact.displayName}</div>
-                                    {contact.remark && contact.remark !== contact.displayName && (
-                                        <div className="contact-remark">备注: {contact.remark}</div>
-                                    )}
-                                </div>
-                                <div className={`contact-type ${contact.type}`}>
-                                    {getContactTypeIcon(contact.type)}
-                                    <span>{getContactTypeName(contact.type)}</span>
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 )}
             </div>
@@ -356,7 +420,7 @@ function ContactsPage() {
                     <button
                         className="export-btn"
                         onClick={startExport}
-                        disabled={!exportFolder || isExporting}
+                        disabled={!exportFolder || isExporting || selectedUsernames.size === 0}
                     >
                         {isExporting ? (
                             <>
