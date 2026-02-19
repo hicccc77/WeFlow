@@ -1116,6 +1116,13 @@ function registerIpcHandlers() {
     return groupAnalyticsService.exportGroupMembers(chatroomId, outputPath)
   })
 
+  ipcMain.handle(
+    'groupAnalytics:exportGroupMemberMessages',
+    async (_, chatroomId: string, memberUsername: string, outputPath: string, startTime?: number, endTime?: number) => {
+      return groupAnalyticsService.exportGroupMemberMessages(chatroomId, memberUsername, outputPath, startTime, endTime)
+    }
+  )
+
   // 打开协议窗口
   ipcMain.handle('window:openAgreementWindow', async () => {
     createAgreementWindow()
@@ -1350,7 +1357,8 @@ function registerIpcHandlers() {
   ipcMain.handle('http:status', async () => {
     return {
       running: httpService.isRunning(),
-      port: httpService.getPort()
+      port: httpService.getPort(),
+      mediaExportPath: httpService.getDefaultMediaExportPath()
     }
   })
 

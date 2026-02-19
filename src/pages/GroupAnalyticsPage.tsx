@@ -46,6 +46,7 @@ function GroupAnalyticsPage() {
   const [mediaStats, setMediaStats] = useState<{ typeCounts: Array<{ type: number; name: string; count: number }>; total: number } | null>(null)
   const [functionLoading, setFunctionLoading] = useState(false)
   const [isExportingMembers, setIsExportingMembers] = useState(false)
+  const [isExportingMemberMessages, setIsExportingMemberMessages] = useState(false)
 
   // 成员详情弹框
   const [selectedMember, setSelectedMember] = useState<GroupMember | null>(null)
@@ -323,6 +324,43 @@ function GroupAnalyticsPage() {
     }
   }
 
+  const handleExportMemberMessages = async (member: GroupMember) => {
+    if (!selectedGroup || !member || isExportingMemberMessages) return
+    setIsExportingMemberMessages(true)
+    try {
+      const downloadsPath = await window.electronAPI.app.getDownloadsPath()
+      const memberName = member.displayName || member.username
+      const baseName = sanitizeFileName(`${selectedGroup.displayName || selectedGroup.username}_${memberName}_消息记录`)
+      const separator = downloadsPath && downloadsPath.includes('\\') ? '\\' : '/'
+      const defaultPath = downloadsPath ? `${downloadsPath}${separator}${baseName}.xlsx` : `${baseName}.xlsx`
+      const saveResult = await window.electronAPI.dialog.saveFile({
+        title: `导出 ${memberName} 的群聊消息`,
+        defaultPath,
+        filters: [
+          { name: 'Excel', extensions: ['xlsx'] },
+          { name: 'CSV', extensions: ['csv'] }
+        ]
+      })
+      if (!saveResult || saveResult.canceled || !saveResult.filePath) return
+
+      const result = await window.electronAPI.groupAnalytics.exportGroupMemberMessages(
+        selectedGroup.username,
+        member.username,
+        saveResult.filePath
+      )
+      if (result.success) {
+        alert(`导出成功，共 ${result.count ?? 0} 条消息`)
+      } else {
+        alert(`导出失败：${result.error || '未知错误'}`)
+      }
+    } catch (e) {
+      console.error('导出成员消息失败:', e)
+      alert(`导出失败：${String(e)}`)
+    } finally {
+      setIsExportingMemberMessages(false)
+    }
+  }
+
   const handleCopy = async (text: string, field: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -351,6 +389,16 @@ function GroupAnalyticsPage() {
               <Avatar src={selectedMember.avatarUrl} name={selectedMember.displayName} size={96} />
             </div>
             <h3 className="member-display-name">{selectedMember.displayName}</h3>
+            <div className="member-action-row">
+              <button
+                className="export-member-btn"
+                onClick={() => handleExportMemberMessages(selectedMember)}
+                disabled={isExportingMemberMessages}
+              >
+                {isExportingMemberMessages ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
+                <span>{isExportingMemberMessages ? '导出中...' : '导出该成员全部消息'}</span>
+              </button>
+            </div>
             <div className="member-details">
               <div className="detail-row">
                 <span className="detail-label">微信ID</span>

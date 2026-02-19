@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { chatService } from './chatService'
+import type { Message } from './chatService'
 
 export interface GroupChatInfo {
   username: string
@@ -339,6 +340,92 @@ class GroupAnalyticsService {
     return `${year}-${month}-${day} ${hour}:${minute}:${second}`
   }
 
+  private formatUnixTime(createTime: number): string {
+    if (!Number.isFinite(createTime) || createTime <= 0) return ''
+    const milliseconds = createTime > 1e12 ? createTime : createTime * 1000
+    const date = new Date(milliseconds)
+    if (Number.isNaN(date.getTime())) return String(createTime)
+    return this.formatDateTime(date)
+  }
+
+  private getSimpleMessageTypeName(localType: number): string {
+    const typeMap: Record<number, string> = {
+      1: '文本',
+      3: '图片',
+      34: '语音',
+      42: '名片',
+      43: '视频',
+      47: '表情',
+      48: '位置',
+      49: '链接/文件',
+      50: '通话',
+      10000: '系统',
+      266287972401: '拍一拍',
+      8594229559345: '红包',
+      8589934592049: '转账'
+    }
+    return typeMap[localType] || `类型(${localType})`
+  }
+
+  private normalizeIdCandidates(values: Array<string | null | undefined>): string[] {
+    return this.buildIdCandidates(values).map(value => value.toLowerCase())
+  }
+
+  private isSameAccountIdentity(left: string | null | undefined, right: string | null | undefined): boolean {
+    const leftCandidates = this.normalizeIdCandidates([left])
+    const rightCandidates = this.normalizeIdCandidates([right])
+    if (leftCandidates.length === 0 || rightCandidates.length === 0) return false
+
+    const rightSet = new Set(rightCandidates)
+    for (const leftCandidate of leftCandidates) {
+      if (rightSet.has(leftCandidate)) return true
+      for (const rightCandidate of rightCandidates) {
+        if (leftCandidate.startsWith(`${rightCandidate}_`) || rightCandidate.startsWith(`${leftCandidate}_`)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  private resolveExportMessageContent(message: Message): string {
+    const parsed = String(message.parsedContent || '').trim()
+    if (parsed) return parsed
+    const raw = String(message.rawContent || '').trim()
+    if (raw) return raw
+    return ''
+  }
+
+  private async collectMessagesByMember(
+    chatroomId: string,
+    memberUsername: string,
+    startTime: number,
+    endTime: number
+  ): Promise<{ success: boolean; data?: Message[]; error?: string }> {
+    const batchSize = 500
+    const matchedMessages: Message[] = []
+    let offset = 0
+
+    while (true) {
+      const batch = await chatService.getMessages(chatroomId, offset, batchSize, startTime, endTime, true)
+      if (!batch.success || !batch.messages) {
+        return { success: false, error: batch.error || '获取群消息失败' }
+      }
+
+      for (const message of batch.messages) {
+        if (this.isSameAccountIdentity(memberUsername, message.senderUsername)) {
+          matchedMessages.push(message)
+        }
+      }
+
+      const fetchedCount = batch.messages.length
+      if (fetchedCount <= 0 || !batch.hasMore) break
+      offset += fetchedCount
+    }
+
+    return { success: true, data: matchedMessages }
+  }
+
   async getGroupChats(): Promise<{ success: boolean; data?: GroupChatInfo[]; error?: string }> {
     try {
       const conn = await this.ensureConnected()
@@ -606,6 +693,181 @@ class GroupAnalyticsService {
       const total = mediaCounts.reduce((sum, item) => sum + item.count, 0)
 
       return { success: true, data: { typeCounts: mediaCounts, total } }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async exportGroupMemberMessages(
+    chatroomId: string,
+    memberUsername: string,
+    outputPath: string,
+    startTime?: number,
+    endTime?: number
+  ): Promise<{ success: boolean; count?: number; error?: string }> {
+    try {
+      const conn = await this.ensureConnected()
+      if (!conn.success) return { success: false, error: conn.error }
+
+      const normalizedChatroomId = String(chatroomId || '').trim()
+      const normalizedMemberUsername = String(memberUsername || '').trim()
+      if (!normalizedChatroomId) return { success: false, error: '群聊ID不能为空' }
+      if (!normalizedMemberUsername) return { success: false, error: '成员ID不能为空' }
+
+      const beginTimestamp = Number.isFinite(startTime) && typeof startTime === 'number'
+        ? Math.max(0, Math.floor(startTime))
+        : 0
+      const endTimestampValue = Number.isFinite(endTime) && typeof endTime === 'number'
+        ? Math.max(0, Math.floor(endTime))
+        : 0
+
+      const exportDate = new Date()
+      const exportTime = this.formatDateTime(exportDate)
+      const exportVersion = '0.0.2'
+      const exportGenerator = 'WeFlow'
+      const exportPlatform = 'wechat'
+
+      const groupDisplay = await wcdbService.getDisplayNames([normalizedChatroomId, normalizedMemberUsername])
+      const groupName = groupDisplay.success && groupDisplay.map
+        ? (groupDisplay.map[normalizedChatroomId] || normalizedChatroomId)
+        : normalizedChatroomId
+      const defaultMemberDisplayName = groupDisplay.success && groupDisplay.map
+        ? (groupDisplay.map[normalizedMemberUsername] || normalizedMemberUsername)
+        : normalizedMemberUsername
+
+      let memberDisplayName = defaultMemberDisplayName
+      let memberAlias = ''
+      let memberRemark = ''
+      let memberGroupNickname = ''
+      const membersResult = await this.getGroupMembers(normalizedChatroomId)
+      if (membersResult.success && membersResult.data) {
+        const matchedMember = membersResult.data.find((item) =>
+          this.isSameAccountIdentity(item.username, normalizedMemberUsername)
+        )
+        if (matchedMember) {
+          memberDisplayName = matchedMember.displayName || defaultMemberDisplayName
+          memberAlias = matchedMember.alias || ''
+          memberRemark = matchedMember.remark || ''
+          memberGroupNickname = matchedMember.groupNickname || ''
+        }
+      }
+
+      const collected = await this.collectMessagesByMember(
+        normalizedChatroomId,
+        normalizedMemberUsername,
+        beginTimestamp,
+        endTimestampValue
+      )
+      if (!collected.success || !collected.data) {
+        return { success: false, error: collected.error || '获取成员消息失败' }
+      }
+
+      const records = collected.data.map((message, index) => ({
+        index: index + 1,
+        time: this.formatUnixTime(message.createTime),
+        sender: message.senderUsername || '',
+        messageType: this.getSimpleMessageTypeName(message.localType),
+        content: this.resolveExportMessageContent(message)
+      }))
+
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+      const ext = path.extname(outputPath).toLowerCase()
+      if (ext === '.csv') {
+        const infoTitleRow = ['会话信息']
+        const infoRow = ['群聊ID', normalizedChatroomId, '', '群聊名称', groupName, '成员wxid', normalizedMemberUsername, '']
+        const memberRow = ['成员显示名', memberDisplayName, '成员备注', memberRemark, '群昵称', memberGroupNickname, '微信号', memberAlias]
+        const metaRow = ['导出工具', exportGenerator, '导出版本', exportVersion, '平台', exportPlatform, '导出时间', exportTime]
+        const header = ['序号', '时间', '发送者wxid', '消息类型', '内容']
+
+        const csvRows: string[][] = [infoTitleRow, infoRow, memberRow, metaRow, header]
+        for (const record of records) {
+          csvRows.push([String(record.index), record.time, record.sender, record.messageType, record.content])
+        }
+
+        const csvLines = csvRows.map((row) => row.map((cell) => this.escapeCsvValue(cell)).join(','))
+        const content = '\ufeff' + csvLines.join('\n')
+        fs.writeFileSync(outputPath, content, 'utf8')
+      } else {
+        const workbook = new ExcelJS.Workbook()
+        const worksheet = workbook.addWorksheet(this.sanitizeWorksheetName('成员消息记录'))
+
+        worksheet.getCell(1, 1).value = '会话信息'
+        worksheet.getCell(1, 1).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getRow(1).height = 24
+
+        worksheet.getCell(2, 1).value = '群聊ID'
+        worksheet.getCell(2, 1).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.mergeCells(2, 2, 2, 3)
+        worksheet.getCell(2, 2).value = normalizedChatroomId
+
+        worksheet.getCell(2, 4).value = '群聊名称'
+        worksheet.getCell(2, 4).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(2, 5).value = groupName
+        worksheet.getCell(2, 6).value = '成员wxid'
+        worksheet.getCell(2, 6).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.mergeCells(2, 7, 2, 8)
+        worksheet.getCell(2, 7).value = normalizedMemberUsername
+
+        worksheet.getCell(3, 1).value = '成员显示名'
+        worksheet.getCell(3, 1).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(3, 2).value = memberDisplayName
+        worksheet.getCell(3, 3).value = '成员备注'
+        worksheet.getCell(3, 3).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(3, 4).value = memberRemark
+        worksheet.getCell(3, 5).value = '群昵称'
+        worksheet.getCell(3, 5).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(3, 6).value = memberGroupNickname
+        worksheet.getCell(3, 7).value = '微信号'
+        worksheet.getCell(3, 7).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(3, 8).value = memberAlias
+
+        worksheet.getCell(4, 1).value = '导出工具'
+        worksheet.getCell(4, 1).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(4, 2).value = exportGenerator
+        worksheet.getCell(4, 3).value = '导出版本'
+        worksheet.getCell(4, 3).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(4, 4).value = exportVersion
+        worksheet.getCell(4, 5).value = '平台'
+        worksheet.getCell(4, 5).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(4, 6).value = exportPlatform
+        worksheet.getCell(4, 7).value = '导出时间'
+        worksheet.getCell(4, 7).font = { name: 'Calibri', bold: true, size: 11 }
+        worksheet.getCell(4, 8).value = exportTime
+
+        const headerRow = worksheet.getRow(5)
+        const header = ['序号', '时间', '发送者wxid', '消息类型', '内容']
+        header.forEach((title, index) => {
+          const cell = headerRow.getCell(index + 1)
+          cell.value = title
+          cell.font = { name: 'Calibri', bold: true, size: 11 }
+        })
+        headerRow.height = 22
+
+        worksheet.getColumn(1).width = 10
+        worksheet.getColumn(2).width = 22
+        worksheet.getColumn(3).width = 30
+        worksheet.getColumn(4).width = 16
+        worksheet.getColumn(5).width = 90
+        worksheet.getColumn(6).width = 16
+        worksheet.getColumn(7).width = 20
+        worksheet.getColumn(8).width = 24
+
+        let currentRow = 6
+        for (const record of records) {
+          const row = worksheet.getRow(currentRow)
+          row.getCell(1).value = record.index
+          row.getCell(2).value = record.time
+          row.getCell(3).value = record.sender
+          row.getCell(4).value = record.messageType
+          row.getCell(5).value = record.content
+          row.alignment = { vertical: 'top', wrapText: true }
+          currentRow += 1
+        }
+
+        await workbook.xlsx.writeFile(outputPath)
+      }
+
+      return { success: true, count: records.length }
     } catch (e) {
       return { success: false, error: String(e) }
     }

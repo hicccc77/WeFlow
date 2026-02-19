@@ -273,6 +273,17 @@ export interface ElectronAPI {
       count?: number
       error?: string
     }>
+    exportGroupMemberMessages: (
+      chatroomId: string,
+      memberUsername: string,
+      outputPath: string,
+      startTime?: number,
+      endTime?: number
+    ) => Promise<{
+      success: boolean
+      count?: number
+      error?: string
+    }>
   }
   annualReport: {
     getAvailableYears: () => Promise<{
@@ -431,7 +442,7 @@ export interface ElectronAPI {
       success: boolean
       error?: string
     }>
-    exportContacts: (outputDir: string, options: { format: 'json' | 'csv' | 'vcf'; exportAvatars: boolean; contactTypes: { friends: boolean; groups: boolean; officials: boolean } }) => Promise<{
+    exportContacts: (outputDir: string, options: { format: 'json' | 'csv' | 'vcf'; exportAvatars: boolean; contactTypes: { friends: boolean; groups: boolean; officials: boolean }; selectedUsernames?: string[] }) => Promise<{
       success: boolean
       successCount?: number
       error?: string
