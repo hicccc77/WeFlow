@@ -1479,13 +1479,17 @@ class ExportService {
         result.localPath = thumbResult.localPath
       }
 
+      // 为每条消息生成稳定且唯一的文件名前缀，避免跨日期/消息发生同名覆盖
+      const messageId = String(msg.localId || Date.now())
+      const imageKey = (imageMd5 || imageDatName || 'image').replace(/[^a-zA-Z0-9_-]/g, '')
+
       // 从 data URL 或 file URL 获取实际路径
       let sourcePath = result.localPath
       if (sourcePath.startsWith('data:')) {
         // 是 data URL，需要保存为文件
         const base64Data = sourcePath.split(',')[1]
         const ext = this.getExtFromDataUrl(sourcePath)
-        const fileName = `${imageMd5 || imageDatName || msg.localId}${ext}`
+        const fileName = `${messageId}_${imageKey}${ext}`
         const destPath = path.join(imagesDir, fileName)
 
         fs.writeFileSync(destPath, Buffer.from(base64Data, 'base64'))
@@ -1501,7 +1505,7 @@ class ExportService {
       // 复制文件
       if (!fs.existsSync(sourcePath)) return null
       const ext = path.extname(sourcePath) || '.jpg'
-      const fileName = `${imageMd5 || imageDatName || msg.localId}${ext}`
+      const fileName = `${messageId}_${imageKey}${ext}`
       const destPath = path.join(imagesDir, fileName)
 
       if (!fs.existsSync(destPath)) {
@@ -4769,4 +4773,3 @@ class ExportService {
 }
 
 export const exportService = new ExportService()
-
