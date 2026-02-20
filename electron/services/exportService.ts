@@ -99,7 +99,7 @@ const TXT_COLUMN_DEFINITIONS: Array<{ id: string; label: string }> = [
 
 interface MediaExportItem {
   relativePath: string
-  kind: 'image' | 'voice' | 'emoji' | 'video'
+  kind: 'image' | 'voice' | 'emoji' | 'video' | 'file'
   posterDataUrl?: string
 }
 
@@ -1433,6 +1433,10 @@ class ExportService {
       return this.exportVideo(msg, sessionId, mediaRootDir, mediaRelativePrefix)
     }
 
+    if (localType === 49) {
+      return this.exportFileMessage(msg, sessionId, mediaRootDir, mediaRelativePrefix)
+    }
+
     return null
   }
 
@@ -1635,7 +1639,7 @@ class ExportService {
     mediaRelativePrefix: string
   ): Promise<MediaExportItem | null> {
     try {
-      const videoMd5 = msg.videoMd5
+      const videoMd5 = msg.videoMd5 || (msg.content ? this.extractVideoMd5(msg.content) : undefined)
       if (!videoMd5) return null
 
       const videosDir = path.join(mediaRootDir, mediaRelativePrefix, 'videos')
@@ -1660,6 +1664,64 @@ class ExportService {
         relativePath: path.posix.join(mediaRelativePrefix, 'videos', fileName),
         kind: 'video',
         posterDataUrl: videoInfo.coverUrl || videoInfo.thumbUrl
+      }
+    } catch (e) {
+      return null
+    }
+  }
+
+  private async exportFileMessage(
+    msg: any,
+    _sessionId: string,
+    mediaRootDir: string,
+    mediaRelativePrefix: string
+  ): Promise<MediaExportItem | null> {
+    try {
+      const meta = this.parseType49FileMeta(msg.content || '')
+      if (!meta) return null
+
+      const filesDir = path.join(mediaRootDir, mediaRelativePrefix, 'files')
+      if (!fs.existsSync(filesDir)) {
+        fs.mkdirSync(filesDir, { recursive: true })
+      }
+
+      const safeName = this.sanitizeExportFileName(meta.fileName)
+      const outputName = `${String(msg.localId || Date.now())}_${safeName}`
+      const outputPath = path.join(filesDir, outputName)
+
+      let sourcePath: string | null = null
+      if (meta.attachPath) {
+        if (path.isAbsolute(meta.attachPath) && fs.existsSync(meta.attachPath)) {
+          sourcePath = meta.attachPath
+        } else {
+          sourcePath = this.findFileInWechatRoots(meta.attachPath) || this.findFileInWechatRoots(path.basename(meta.attachPath))
+        }
+      }
+      if (!sourcePath) {
+        sourcePath = this.findFileInWechatRoots(meta.fileName)
+      }
+
+      if (sourcePath && fs.existsSync(sourcePath)) {
+        if (!fs.existsSync(outputPath)) {
+          fs.copyFileSync(sourcePath, outputPath)
+        }
+        return {
+          relativePath: path.posix.join(mediaRelativePrefix, 'files', outputName),
+          kind: 'file'
+        }
+      }
+
+      const fallbackName = `${String(msg.localId || Date.now())}_${safeName}.meta.txt`
+      const fallbackPath = path.join(filesDir, fallbackName)
+      const fallbackContent = [
+        `fileName: ${meta.fileName}`,
+        `attachPath: ${meta.attachPath || ''}`,
+        'status: source file not found in local WeChat storage'
+      ].join('\n')
+      fs.writeFileSync(fallbackPath, fallbackContent, 'utf-8')
+      return {
+        relativePath: path.posix.join(mediaRelativePrefix, 'files', fallbackName),
+        kind: 'file'
       }
     } catch (e) {
       return null
@@ -1726,12 +1788,23 @@ class ExportService {
 
   private extractVideoMd5(content: string): string | undefined {
     if (!content) return undefined
-    const attrMatch = /<videomsg[^>]*\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content)
-    if (attrMatch) {
-      return attrMatch[1].toLowerCase()
+    const attrPatterns = [
+      /<videomsg[^>]*\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+      /\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+      /\srawmd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+      /\snewmd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+      /\soriginsourcemd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i
+    ]
+    for (const pattern of attrPatterns) {
+      const match = pattern.exec(content)
+      if (match?.[1]) return match[1].toLowerCase()
     }
-    const tagMatch = /<md5>([^<]+)<\/md5>/i.exec(content)
-    return tagMatch?.[1]?.toLowerCase()
+    const tagPatterns = ['md5', 'rawmd5', 'newmd5', 'originsourcemd5']
+    for (const tag of tagPatterns) {
+      const match = new RegExp(`<${tag}>([^<]+)<\\/${tag}>`, 'i').exec(content)
+      if (match?.[1]) return match[1].toLowerCase()
+    }
+    return undefined
   }
 
   /**
@@ -1742,6 +1815,66 @@ class ExportService {
     if (dataUrl.includes('image/gif')) return '.gif'
     if (dataUrl.includes('image/webp')) return '.webp'
     return '.jpg'
+  }
+
+  private isType49FileMessage(content: string): boolean {
+    if (!content) return false
+    const xmlType = this.extractXmlValue(content, 'type')
+    if (xmlType === '6') return true
+    return content.includes('<appattach') || content.includes('<attachid>')
+  }
+
+  private parseType49FileMeta(content: string): { fileName: string; attachPath?: string } | null {
+    if (!content || !this.isType49FileMessage(content)) return null
+    const fileName =
+      this.extractXmlValue(content, 'filename') ||
+      this.extractXmlValue(content, 'title') ||
+      this.extractXmlValue(content, 'cdnattachurl')
+    const attachPath =
+      this.extractXmlValue(content, 'attachpath') ||
+      this.extractXmlValue(content, 'filefullpath') ||
+      this.extractXmlValue(content, 'filepath')
+    if (!fileName) return null
+    return { fileName, attachPath: attachPath || undefined }
+  }
+
+  private sanitizeExportFileName(name: string): string {
+    const cleaned = name.replace(/[\\/:*?"<>|\r\n]+/g, '_').trim()
+    return cleaned || 'file.bin'
+  }
+
+  private resolveWechatStorageRoots(): string[] {
+    const rawDbPath = this.configService.get('dbPath') || ''
+    const rawWxid = this.configService.get('myWxid') || ''
+    const wxid = this.cleanAccountDirName(rawWxid)
+    const candidates = new Set<string>()
+    if (rawDbPath) {
+      candidates.add(rawDbPath)
+      candidates.add(path.dirname(rawDbPath))
+      candidates.add(path.dirname(path.dirname(rawDbPath)))
+      if (wxid && !rawDbPath.toLowerCase().includes(wxid.toLowerCase())) {
+        candidates.add(path.join(rawDbPath, wxid))
+      }
+    }
+    return Array.from(candidates).filter(p => Boolean(p) && fs.existsSync(p))
+  }
+
+  private findFileInWechatRoots(fileName: string): string | null {
+    const roots = this.resolveWechatStorageRoots()
+    for (const root of roots) {
+      const directCandidates = [
+        path.join(root, fileName),
+        path.join(root, 'FileStorage', 'File', fileName),
+        path.join(root, 'msg', 'file', fileName),
+        path.join(root, 'msg', 'attach', fileName)
+      ]
+      for (const candidate of directCandidates) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate
+        }
+      }
+    }
+    return null
   }
 
   private getMediaLayout(outputPath: string, options: ExportOptions): {
@@ -1758,6 +1891,16 @@ class ExportService {
       ? path.posix.join('media', outputBaseName)
       : 'media'
     return { exportMediaEnabled, mediaRootDir: outputDir, mediaRelativePrefix }
+  }
+
+  private shouldExportMediaMessage(msg: any, options: ExportOptions): boolean {
+    const t = msg.localType
+    if (t === 3) return options.exportImages === true
+    if (t === 47) return options.exportEmojis === true
+    if (t === 43) return options.exportVideos === true
+    if (t === 34) return options.exportVoices === true
+    if (t === 49) return this.isType49FileMessage(msg.content || '')
+    return false
   }
 
   /**
@@ -1891,10 +2034,14 @@ class ExportService {
             // 视频消息
             videoMd5 = this.extractVideoMd5(content)
           } else if (localType === 49 && content) {
-            // 检查是否是聊天记录消息（type=19）
             const xmlType = this.extractXmlValue(content, 'type')
+            // type=19 合并聊天记录
             if (xmlType === '19') {
               chatRecordList = this.parseChatHistory(content)
+            }
+            // 某些视频消息通过 appmsg(type=4/5) 落在 localType=49
+            if (!videoMd5 && (xmlType === '4' || xmlType === '5' || content.includes('<videomsg'))) {
+              videoMd5 = this.extractVideoMd5(content)
             }
           }
 
@@ -2346,13 +2493,7 @@ class ExportService {
 
       // ========== 阶段1：并行导出媒体文件 ==========
       const mediaMessages = exportMediaEnabled
-        ? allMessages.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||   // 图片
-            (t === 47 && options.exportEmojis) ||  // 表情
-            (t === 43 && options.exportVideos) ||  // 视频
-            (t === 34 && options.exportVoices)  // 语音文件
-        })
+        ? allMessages.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -2718,13 +2859,7 @@ class ExportService {
 
       // ========== 阶段1：并行导出媒体文件 ==========
       const mediaMessages = exportMediaEnabled
-        ? collected.rows.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||
-            (t === 47 && options.exportEmojis) ||
-            (t === 43 && options.exportVideos) ||
-            (t === 34 && options.exportVoices)
-        })
+        ? collected.rows.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -3178,13 +3313,7 @@ class ExportService {
 
       // ========== 并行预处理：媒体文件 ==========
       const mediaMessages = exportMediaEnabled
-        ? sortedMessages.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||
-            (t === 47 && options.exportEmojis) ||
-            (t === 43 && options.exportVideos) ||
-            (t === 34 && options.exportVoices)
-        })
+        ? sortedMessages.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -3551,13 +3680,7 @@ class ExportService {
 
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
       const mediaMessages = exportMediaEnabled
-        ? sortedMessages.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||
-            (t === 47 && options.exportEmojis) ||
-            (t === 43 && options.exportVideos) ||
-            (t === 34 && options.exportVoices)
-        })
+        ? sortedMessages.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -3828,13 +3951,7 @@ class ExportService {
 
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
       const mediaMessages = exportMediaEnabled
-        ? sortedMessages.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||
-            (t === 47 && options.exportEmojis) ||
-            (t === 43 && options.exportVideos) ||
-            (t === 34 && options.exportVoices)
-        })
+        ? sortedMessages.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -4167,13 +4284,7 @@ class ExportService {
 
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
       const mediaMessages = exportMediaEnabled
-        ? sortedMessages.filter(msg => {
-          const t = msg.localType
-          return (t === 3 && options.exportImages) ||
-            (t === 47 && options.exportEmojis) ||
-            (t === 34 && options.exportVoices) ||
-            (t === 43 && options.exportVideos)
-        })
+        ? sortedMessages.filter(msg => this.shouldExportMediaMessage(msg, options))
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
@@ -4410,7 +4521,21 @@ class ExportService {
         } else if (mediaItem?.kind === 'video') {
           const posterAttr = mediaItem.posterDataUrl ? ` poster="${this.escapeAttribute(mediaItem.posterDataUrl)}"` : ''
           mediaHtml = `<video class="message-media video" controls preload="metadata"${posterAttr} src="${this.escapeAttribute(encodeURI(mediaItem.relativePath))}"></video>`
+        } else if (mediaItem?.kind === 'file') {
+          const mediaPath = this.escapeAttribute(encodeURI(mediaItem.relativePath))
+          mediaHtml = `<a class="message-media file" href="${mediaPath}" download>[FILE] 下载文件</a>`
         }
+
+        const nestedRecordsHtml = Array.isArray(msg.chatRecordList) && msg.chatRecordList.length > 0
+          ? `<div class="message-text"><strong>转发聊天记录</strong><br />${msg.chatRecordList
+            .slice(0, 20)
+            .map((record: any) => {
+              const sender = this.escapeHtml(record.sourcename || '未知')
+              const desc = this.escapeHtml(record.datadesc || record.datatitle || '[消息]')
+              return `- ${sender}: ${desc}`
+            })
+            .join('<br />')}</div>`
+          : ''
 
         const textHtml = linkCard
           ? `<div class="message-text"><a class="message-link-card" href="${this.escapeAttribute(linkCard.url)}" target="_blank" rel="noopener noreferrer">${this.renderTextWithEmoji(linkCard.title).replace(/\r?\n/g, '<br />')}</a></div>`
@@ -4421,7 +4546,7 @@ class ExportService {
           ? `<div class="sender-name">${this.escapeHtml(senderName)}</div>`
           : ''
         const timeHtml = `<div class="message-time">${this.escapeHtml(timeText)}</div>`
-        const messageBody = `${timeHtml}${senderNameHtml}<div class="message-content">${mediaHtml}${textHtml}</div>`
+        const messageBody = `${timeHtml}${senderNameHtml}<div class="message-content">${mediaHtml}${textHtml}${nestedRecordsHtml}</div>`
 
         // Compact JSON object
         const itemObj = {

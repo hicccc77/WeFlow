@@ -647,22 +647,20 @@ class ChatService {
 
       // 转换为ContactInfo
       const contacts: (ContactInfo & { lastContactTime: number })[] = []
+      const contactMap = new Map<string, ContactInfo & { lastContactTime: number }>()
+      const systemAccounts = new Set([
+        'filehelper', 'fmessage', 'floatbottle', 'medianote', 'newsapp',
+        'weixin', 'qmessage', 'qqmail', 'tmessage'
+      ])
 
       for (const row of rows) {
         const username = row.username || ''
 
-        // 过滤系统账号和特殊账号 - 完全复制cipher的逻辑
+        // 过滤系统账号和无效账号
         if (!username) continue
-        if (username === 'filehelper' || username === 'fmessage' || username === 'floatbottle' ||
-          username === 'medianote' || username === 'newsapp' || username.startsWith('fake_') ||
-          username === 'weixin' || username === 'qmessage' || username === 'qqmail' ||
-          username === 'tmessage' || username.startsWith('wxid_') === false &&
-          username.includes('@') === false && username.startsWith('gh_') === false &&
-          /^[a-zA-Z0-9_-]+$/.test(username) === false) {
-          continue
-        }
+        if (username.startsWith('fake_') || systemAccounts.has(username)) continue
 
-        // 判断类型 - 正确规则：wxid开头且有alias的是好友
+        // 判断类型：尽量保留联系人，避免漏掉有备注/昵称的真实好友
         let type: 'friend' | 'group' | 'official' | 'other' = 'other'
         const localType = row.local_type || 0
 
@@ -672,30 +670,22 @@ class ChatService {
           type = 'official'
         } else if (localType === 3 || localType === 4) {
           type = 'official'
-        } else if (username.startsWith('wxid_') && row.alias) {
-          // wxid开头且有alias的是好友
+        } else if (localType === 1 || localType === 2) {
           type = 'friend'
-        } else if (localType === 1) {
-          // local_type=1 也是好友
+        } else if (localType === 0 && (row.remark || row.nick_name || row.alias || username.startsWith('wxid_'))) {
           type = 'friend'
-        } else if (localType === 2) {
-          // local_type=2 是群成员但非好友，跳过
-          continue
-        } else if (localType === 0) {
-          // local_type=0 可能是好友或其他，检查是否有备注或昵称
-          if (row.remark || row.nick_name) {
+        } else {
+          // 保留未知类型中仍有可识别名称的联系人，避免通讯录缺失
+          if (row.remark || row.nick_name || row.alias) {
             type = 'friend'
           } else {
             continue
           }
-        } else {
-          // 其他未知类型，跳过
-          continue
         }
 
         const displayName = row.remark || row.nick_name || row.alias || username
 
-        contacts.push({
+        contactMap.set(username, {
           username,
           displayName,
           remark: row.remark || undefined,
@@ -705,6 +695,8 @@ class ChatService {
           lastContactTime: lastContactTimeMap.get(username) || 0
         })
       }
+
+      contacts.push(...contactMap.values())
 
 
 
@@ -1524,13 +1516,17 @@ class ChatService {
     if (!content) return undefined
 
     try {
-      // 提取 md5，这是用于查询 hardlink.db 的值
-      const md5 =
-        this.extractXmlAttribute(content, 'videomsg', 'md5') ||
-        this.extractXmlValue(content, 'md5') ||
-        undefined
-
-      return md5?.toLowerCase()
+      const candidates = [
+        this.extractXmlAttribute(content, 'videomsg', 'md5'),
+        this.extractXmlAttribute(content, 'videomsg', 'rawmd5'),
+        this.extractXmlAttribute(content, 'videomsg', 'newmd5'),
+        this.extractXmlAttribute(content, 'videomsg', 'originsourcemd5'),
+        this.extractXmlValue(content, 'md5'),
+        this.extractXmlValue(content, 'rawmd5'),
+        this.extractXmlValue(content, 'newmd5'),
+        this.extractXmlValue(content, 'originsourcemd5')
+      ].filter(Boolean) as string[]
+      return candidates[0]?.toLowerCase()
     } catch {
       return undefined
     }

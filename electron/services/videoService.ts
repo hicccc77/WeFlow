@@ -253,20 +253,22 @@ class VideoService {
             // 注意：不是 rawmd5，rawmd5 是另一个值
             // 格式: md5="xxx" 或 <md5>xxx</md5>
 
-            // 尝试从videomsg标签中提取md5
-            const videoMsgMatch = /<videomsg[^>]*\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content)
-            if (videoMsgMatch) {
-                return videoMsgMatch[1].toLowerCase()
+            const attrPatterns = [
+                /<videomsg[^>]*\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+                /\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+                /\srawmd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+                /\snewmd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i,
+                /\soriginsourcemd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i
+            ]
+            for (const pattern of attrPatterns) {
+                const match = pattern.exec(content)
+                if (match?.[1]) return match[1].toLowerCase()
             }
 
-            const attrMatch = /\smd5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content)
-            if (attrMatch) {
-                return attrMatch[1].toLowerCase()
-            }
-
-            const md5Match = /<md5>([a-fA-F0-9]+)<\/md5>/i.exec(content)
-            if (md5Match) {
-                return md5Match[1].toLowerCase()
+            const tagPatterns = ['md5', 'rawmd5', 'newmd5', 'originsourcemd5']
+            for (const tag of tagPatterns) {
+                const match = new RegExp(`<${tag}>([a-fA-F0-9]+)<\\/${tag}>`, 'i').exec(content)
+                if (match?.[1]) return match[1].toLowerCase()
             }
         } catch (e) {
             console.error('[VideoService] 解析视频MD5失败:', e)
