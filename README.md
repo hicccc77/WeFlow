@@ -41,6 +41,12 @@ WeFlow 是一个**完全本地**的微信**实时**聊天记录查看、分析�
 - 导出聊天记录为 HTML 等格式
 - HTTP API 接口（供开发者集成）
 
+## 平台支持
+
+- Windows x64（推荐，当前主要支持平台）
+- Windows arm64（暂未正式支持）
+- macOS / Linux（暂未正式支持）
+
 
 ## HTTP API
 
@@ -54,7 +60,48 @@ WeFlow 提供本地 HTTP API 服务，支持通过接口查询消息数据，可
 - **访问地址**：`http://127.0.0.1:5031`
 - **支持格式**：原始 JSON 或 [ChatLab](https://chatlab.fun/) 标准格式
 
+> [!TIP]
+> 浏览器直接访问根路径返回 `{"error":"Not Found"}` 属于预期行为。  
+> 请使用文档中的具体接口路径（例如 `/health`、`/api/v1/messages`）。
+
 📖 完整接口文档：[点击查看](docs/HTTP-API.md)
+
+---
+
+## English (Quick Guide)
+
+WeFlow is a **fully local** WeChat chat viewer/exporter with analytics features.
+
+### Key Features
+
+- Real-time local chat history viewing
+- Moments image/video/live preview and decryption
+- Statistics and group analytics
+- Annual report and visualization
+- Export chat history (HTML and other formats)
+- Local HTTP API for integrations
+
+### Platform Status
+
+- Windows x64: supported (primary target)
+- Windows arm64: not officially supported yet
+- macOS / Linux: not officially supported yet
+
+### HTTP API (Important)
+
+After enabling API service in Settings, default address is:
+
+`http://127.0.0.1:5031`
+
+If you open the root URL in a browser and see `{"error":"Not Found"}`, that is expected.  
+Use concrete endpoints instead:
+
+- `GET /health`
+- `GET /api/v1/messages`
+- `GET /api/v1/sessions`
+- `GET /api/v1/contacts`
+
+Full API docs: `docs/HTTP-API.md`
 
 
 ## 快速开始
