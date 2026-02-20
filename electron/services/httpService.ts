@@ -10,6 +10,7 @@ import { chatService, Message } from './chatService'
 import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
 import { videoService } from './videoService'
+import { exportService, ExportOptions } from './exportService'
 
 // ChatLab 格式定义
 interface ChatLabHeader {
@@ -69,6 +70,28 @@ interface ApiExportedMedia {
   kind: MediaKind
   fileName: string
   fullPath: string
+}
+
+interface ApiExportRequest {
+  talkers?: string[]
+  format?: ExportOptions['format']
+  outputDir?: string
+  start?: string
+  end?: string
+  senderUsername?: string
+  fileNameSuffix?: string
+  exportMedia?: boolean
+  exportAvatars?: boolean
+  exportImages?: boolean
+  exportVoices?: boolean
+  exportVideos?: boolean
+  exportEmojis?: boolean
+  exportVoiceAsText?: boolean
+  excelCompactColumns?: boolean
+  txtColumns?: string[]
+  sessionLayout?: 'shared' | 'per-session'
+  displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
+  exportConcurrency?: number
 }
 
 // ChatLab 消息类型映射
@@ -193,7 +216,7 @@ class HttpService {
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // 设置 CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
     if (req.method === 'OPTIONS') {
@@ -215,12 +238,118 @@ class HttpService {
         await this.handleSessions(url, res)
       } else if (pathname === '/api/v1/contacts') {
         await this.handleContacts(url, res)
+      } else if (pathname === '/api/v1/export' && req.method === 'POST') {
+        await this.handleExport(req, res)
       } else {
         this.sendError(res, 404, 'Not Found')
       }
     } catch (error) {
       console.error('[HttpService] Request error:', error)
       this.sendError(res, 500, String(error))
+    }
+  }
+
+  private readRequestBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      let total = 0
+      const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2MB
+
+      req.on('data', (chunk: Buffer) => {
+        total += chunk.length
+        if (total > MAX_BODY_BYTES) {
+          reject(new Error('Request body too large'))
+          req.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      req.on('end', () => {
+        resolve(Buffer.concat(chunks).toString('utf-8'))
+      })
+      req.on('error', reject)
+    })
+  }
+
+  private normalizeExportFormat(value?: string): ExportOptions['format'] {
+    const format = (value || 'html').toLowerCase()
+    if (format === 'json' || format === 'chatlab' || format === 'chatlab-jsonl' || format === 'html' || format === 'txt' || format === 'excel' || format === 'weclone' || format === 'sql') {
+      return format
+    }
+    return 'html'
+  }
+
+  private parseBool(value: unknown, fallback: boolean): boolean {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value !== 0
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+      if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+    }
+    return fallback
+  }
+
+  private async handleExport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const rawBody = await this.readRequestBody(req)
+      const payload = (rawBody ? JSON.parse(rawBody) : {}) as ApiExportRequest
+      const talkers = Array.isArray(payload.talkers)
+        ? payload.talkers.map((t) => String(t || '').trim()).filter(Boolean)
+        : []
+
+      if (talkers.length === 0) {
+        this.sendError(res, 400, 'Missing required field: talkers (string[])')
+        return
+      }
+
+      const outputDir = payload.outputDir && payload.outputDir.trim()
+        ? payload.outputDir.trim()
+        : path.join(this.configService.getCacheBasePath(), 'api-export')
+
+      const start = this.parseTimeParam(payload.start || null)
+      const end = this.parseTimeParam(payload.end || null, true)
+      const dateRange = (start > 0 || end > 0)
+        ? { start, end: end > 0 ? end : Number.MAX_SAFE_INTEGER }
+        : null
+
+      const exportOptions: ExportOptions = {
+        format: this.normalizeExportFormat(payload.format),
+        dateRange,
+        senderUsername: payload.senderUsername?.trim() || undefined,
+        fileNameSuffix: payload.fileNameSuffix?.trim() || undefined,
+        exportMedia: this.parseBool(payload.exportMedia, true),
+        exportAvatars: this.parseBool(payload.exportAvatars, true),
+        exportImages: this.parseBool(payload.exportImages, true),
+        exportVoices: this.parseBool(payload.exportVoices, true),
+        exportVideos: this.parseBool(payload.exportVideos, true),
+        exportEmojis: this.parseBool(payload.exportEmojis, true),
+        exportVoiceAsText: this.parseBool(payload.exportVoiceAsText, false),
+        excelCompactColumns: this.parseBool(payload.excelCompactColumns, false),
+        txtColumns: Array.isArray(payload.txtColumns) ? payload.txtColumns.map((v) => String(v || '').trim()).filter(Boolean) : undefined,
+        sessionLayout: payload.sessionLayout === 'shared' ? 'shared' : 'per-session',
+        displayNamePreference: payload.displayNamePreference === 'group-nickname' || payload.displayNamePreference === 'nickname'
+          ? payload.displayNamePreference
+          : 'remark',
+        exportConcurrency: typeof payload.exportConcurrency === 'number' ? payload.exportConcurrency : 2
+      }
+
+      const result = await exportService.exportSessions(talkers, outputDir, exportOptions)
+      if (!result.success) {
+        this.sendError(res, 500, result.error || 'Export failed')
+        return
+      }
+
+      this.sendJson(res, {
+        success: true,
+        outputDir,
+        format: exportOptions.format,
+        talkerCount: talkers.length,
+        successCount: result.successCount,
+        failCount: result.failCount
+      })
+    } catch (error) {
+      this.sendError(res, 400, `Invalid request body: ${String(error)}`)
     }
   }
 
@@ -903,4 +1032,3 @@ class HttpService {
 }
 
 export const httpService = new HttpService()
-

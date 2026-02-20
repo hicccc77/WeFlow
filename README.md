@@ -100,6 +100,7 @@ Use concrete endpoints instead:
 - `GET /api/v1/messages`
 - `GET /api/v1/sessions`
 - `GET /api/v1/contacts`
+- `POST /api/v1/export` (trigger structured export jobs by payload)
 
 Full API docs: `docs/HTTP-API.md`
 

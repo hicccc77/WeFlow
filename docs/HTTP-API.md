@@ -237,6 +237,70 @@ GET http://127.0.0.1:5031/api/v1/contacts?keyword=张三
 
 ---
 
+### 5. 触发导出任务（批量）
+
+通过 HTTP 请求直接调用 WeFlow 内部导出流程，适合自动化脚本/二次开发。
+
+**请求**
+```
+POST /api/v1/export
+Content-Type: application/json
+```
+
+**请求体字段**
+
+| 字段名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| `talkers` | string[] | ✅ | 要导出的会话 ID 列表（可用于“选择性好友导出”） |
+| `format` | string | ❌ | 导出格式：`html`（默认）、`json`、`chatlab`、`chatlab-jsonl`、`txt`、`excel`、`weclone`、`sql` |
+| `outputDir` | string | ❌ | 导出目录，默认 `api-export` 目录 |
+| `start` | string | ❌ | 开始时间，支持 `YYYYMMDD` 或时间戳 |
+| `end` | string | ❌ | 结束时间，支持 `YYYYMMDD` 或时间戳 |
+| `senderUsername` | string | ❌ | 仅导出指定发送者消息 |
+| `fileNameSuffix` | string | ❌ | 文件名后缀 |
+| `exportMedia` | boolean | ❌ | 是否导出媒体（默认 true） |
+| `exportImages` | boolean | ❌ | 是否导出图片（默认 true） |
+| `exportVoices` | boolean | ❌ | 是否导出语音（默认 true） |
+| `exportVideos` | boolean | ❌ | 是否导出视频（默认 true） |
+| `exportEmojis` | boolean | ❌ | 是否导出表情（默认 true） |
+| `exportAvatars` | boolean | ❌ | 是否导出头像（默认 true） |
+| `exportVoiceAsText` | boolean | ❌ | 是否语音转文字（默认 false） |
+| `sessionLayout` | string | ❌ | `per-session`（默认）或 `shared` |
+| `displayNamePreference` | string | ❌ | `remark`（默认）/`nickname`/`group-nickname` |
+| `exportConcurrency` | number | ❌ | 导出并发度（默认 2） |
+
+**示例请求**
+
+```bash
+curl -X POST "http://127.0.0.1:5031/api/v1/export" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "talkers": ["wxid_xxx", "123456@chatroom"],
+    "format": "html",
+    "start": "20260101",
+    "end": "20260201",
+    "exportMedia": true,
+    "exportImages": true,
+    "exportVideos": true,
+    "exportVoices": false
+  }'
+```
+
+**响应**
+
+```json
+{
+  "success": true,
+  "outputDir": "C:\\Users\\Alice\\Documents\\WeFlow\\api-export",
+  "format": "html",
+  "talkerCount": 2,
+  "successCount": 2,
+  "failCount": 0
+}
+```
+
+---
+
 ## ChatLab 格式说明
 
 ChatLab 是一种标准化的聊天记录交换格式，版本 0.0.2。
