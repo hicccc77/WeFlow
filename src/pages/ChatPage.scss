@@ -494,6 +494,12 @@
             position: relative;
             display: flex;
             align-items: center;
+            isolation: isolate;
+            z-index: 20;
+
+            .jump-date-popover {
+              z-index: 2600;
+            }
           }
 
           .icon-btn {
@@ -1637,6 +1643,7 @@
       position: relative;
       display: flex;
       align-items: center;
+      isolation: isolate;
     }
   }
 
