@@ -98,7 +98,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openImageViewerWindow: (imagePath: string, liveVideoPath?: string) =>
       ipcRenderer.invoke('window:openImageViewerWindow', imagePath, liveVideoPath),
     openChatHistoryWindow: (sessionId: string, messageId: number) =>
-      ipcRenderer.invoke('window:openChatHistoryWindow', sessionId, messageId)
+      ipcRenderer.invoke('window:openChatHistoryWindow', sessionId, messageId),
+    openSessionChatWindow: (sessionId: string) =>
+      ipcRenderer.invoke('window:openSessionChatWindow', sessionId)
   },
 
   // 数据库路径

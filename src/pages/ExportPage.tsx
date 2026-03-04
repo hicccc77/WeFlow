@@ -4047,7 +4047,7 @@ function ExportPage() {
               <>
                 <div className="contacts-list-header">
                   <span className="contacts-list-header-main">联系人（头像/名称/微信号）</span>
-                  <span className="contacts-list-header-count">总消息</span>
+                  <span className="contacts-list-header-count">总消息数</span>
                   <span className="contacts-list-header-actions">操作</span>
                 </div>
                 <div className="contacts-list" ref={contactsListRef} onScroll={onContactsListScroll}>
@@ -4091,16 +4091,25 @@ function ExportPage() {
                             </div>
                             <div className="row-message-count">
                               <div className="row-message-stats">
-                                <span className="row-message-stat total">
-                                  <span className="label">总消息</span>
-                                  <strong className={`row-message-count-value ${typeof displayedMessageCount === 'number' ? '' : 'muted'}`}>
-                                    {messageCountLabel}
-                                  </strong>
-                                </span>
+                                <strong className={`row-message-count-value ${typeof displayedMessageCount === 'number' ? '' : 'muted'}`}>
+                                  {messageCountLabel}
+                                </strong>
                               </div>
                             </div>
                             <div className="row-action-cell">
                               <div className="row-action-main">
+                                <button
+                                  className="row-open-chat-btn"
+                                  disabled={!canExport}
+                                  title={canExport ? '在新窗口打开该会话' : '该联系人暂无会话记录'}
+                                  onClick={() => {
+                                    if (!canExport) return
+                                    void window.electronAPI.window.openSessionChatWindow(contact.username)
+                                  }}
+                                >
+                                  <ExternalLink size={13} />
+                                  打开对话
+                                </button>
                                 <button
                                   className={`row-detail-btn ${showSessionDetailPanel && sessionDetail?.wxid === contact.username ? 'active' : ''}`}
                                   onClick={() => openSessionDetail(contact.username)}

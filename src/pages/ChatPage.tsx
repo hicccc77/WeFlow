@@ -202,7 +202,8 @@ function formatYmdHmDateTime(timestamp?: number): string {
 }
 
 interface ChatPageProps {
-  // 保留接口以备将来扩展
+  standaloneSessionWindow?: boolean
+  initialSessionId?: string | null
 }
 
 
@@ -403,7 +404,9 @@ const SessionItem = React.memo(function SessionItem({
 
 
 
-function ChatPage(_props: ChatPageProps) {
+function ChatPage(props: ChatPageProps) {
+  const { standaloneSessionWindow = false, initialSessionId = null } = props
+  const normalizedInitialSessionId = useMemo(() => String(initialSessionId || '').trim(), [initialSessionId])
   const navigate = useNavigate()
 
   const {
@@ -2223,34 +2226,30 @@ function ChatPage(_props: ChatPageProps) {
   }, [appendMessages, getMessageKey])
 
   // 选择会话
-  const handleSelectSession = (session: ChatSession) => {
-    // 点击折叠群入口，切换到折叠群视图
-    if (session.username.toLowerCase().includes('placeholder_foldgroup')) {
-      setFoldedView(true)
-      return
-    }
-    if (session.username === currentSessionId) return
+  const selectSessionById = useCallback((sessionId: string) => {
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId || normalizedSessionId === currentSessionId) return
     const switchRequestSeq = sessionSwitchRequestSeqRef.current + 1
     sessionSwitchRequestSeqRef.current = switchRequestSeq
 
-    setCurrentSession(session.username, { preserveMessages: false })
+    setCurrentSession(normalizedSessionId, { preserveMessages: false })
     setNoMessageTable(false)
 
-    const restoredFromWindowCache = restoreSessionWindowCache(session.username)
+    const restoredFromWindowCache = restoreSessionWindowCache(normalizedSessionId)
     if (restoredFromWindowCache) {
       pendingSessionLoadRef.current = null
       initialLoadRequestedSessionRef.current = null
       setIsSessionSwitching(false)
-      void refreshSessionIncrementally(session.username, switchRequestSeq)
+      void refreshSessionIncrementally(normalizedSessionId, switchRequestSeq)
     } else {
-      pendingSessionLoadRef.current = session.username
-      initialLoadRequestedSessionRef.current = session.username
+      pendingSessionLoadRef.current = normalizedSessionId
+      initialLoadRequestedSessionRef.current = normalizedSessionId
       setIsSessionSwitching(true)
-      void hydrateSessionPreview(session.username)
+      void hydrateSessionPreview(normalizedSessionId)
       setCurrentOffset(0)
       setJumpStartTime(0)
       setJumpEndTime(0)
-      void loadMessages(session.username, 0, 0, 0, false, {
+      void loadMessages(normalizedSessionId, 0, 0, 0, false, {
         preferLatestPath: true,
         deferGroupSenderWarmup: true,
         forceInitialLimit: 30,
@@ -2269,6 +2268,23 @@ function ChatPage(_props: ChatPageProps) {
     setSessionDetail(null)
     setIsRefreshingDetailStats(false)
     setIsLoadingRelationStats(false)
+  }, [
+    currentSessionId,
+    setCurrentSession,
+    restoreSessionWindowCache,
+    refreshSessionIncrementally,
+    hydrateSessionPreview,
+    loadMessages
+  ])
+
+  // 选择会话
+  const handleSelectSession = (session: ChatSession) => {
+    // 点击折叠群入口，切换到折叠群视图
+    if (session.username.toLowerCase().includes('placeholder_foldgroup')) {
+      setFoldedView(true)
+      return
+    }
+    selectSessionById(session.username)
   }
 
   // 搜索过滤
@@ -2697,6 +2713,21 @@ function ChatPage(_props: ChatPageProps) {
   }, [groupMemberSearchKeyword, groupPanelMembers])
   const isCurrentSessionExporting = Boolean(currentSessionId && inProgressExportSessionIds.has(currentSessionId))
   const isExportActionBusy = isCurrentSessionExporting || isPreparingExportDialog
+
+  useEffect(() => {
+    if (!standaloneSessionWindow) return
+    if (!normalizedInitialSessionId) return
+    if (!isConnected || isConnecting) return
+    if (currentSessionId === normalizedInitialSessionId) return
+    selectSessionById(normalizedInitialSessionId)
+  }, [
+    standaloneSessionWindow,
+    normalizedInitialSessionId,
+    isConnected,
+    isConnecting,
+    currentSessionId,
+    selectSessionById
+  ])
 
   // 从通讯录跳转时，会话不在列表中，主动加载联系人显示名称
   useEffect(() => {
@@ -3264,7 +3295,7 @@ function ChatPage(_props: ChatPageProps) {
   }
 
   return (
-    <div className={`chat-page ${isResizing ? 'resizing' : ''}`}>
+    <div className={`chat-page ${isResizing ? 'resizing' : ''} ${standaloneSessionWindow ? 'standalone session-only' : ''}`}>
       {/* 自定义删除确认对话框 */}
       {deleteConfirm.show && (
         <div className="delete-confirm-overlay">
@@ -3336,6 +3367,7 @@ function ChatPage(_props: ChatPageProps) {
         </div>
       )}
       {/* 左侧会话列表 */}
+      {!standaloneSessionWindow && (
       <div
         className="session-sidebar"
         ref={sidebarRef}
@@ -3470,9 +3502,10 @@ function ChatPage(_props: ChatPageProps) {
 
 
       </div>
+      )}
 
       {/* 拖动调节条 */}
-      <div className="resize-handle" onMouseDown={handleResizeStart} />
+      {!standaloneSessionWindow && <div className="resize-handle" onMouseDown={handleResizeStart} />}
 
       {/* 右侧消息区域 */}
       <div className="message-area">
@@ -4052,7 +4085,8 @@ function ChatPage(_props: ChatPageProps) {
         ) : (
           <div className="empty-chat">
             <MessageSquare />
-            <p>选择一个会话开始查看聊天记录</p>
+            <p>{standaloneSessionWindow ? '会话加载中或暂无会话记录' : '选择一个会话开始查看聊天记录'}</p>
+            {standaloneSessionWindow && connectionError && <p className="hint">{connectionError}</p>}
           </div>
         )}
       </div>

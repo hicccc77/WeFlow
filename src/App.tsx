@@ -60,6 +60,7 @@ function App() {
   const isOnboardingWindow = location.pathname === '/onboarding-window'
   const isVideoPlayerWindow = location.pathname === '/video-player-window'
   const isChatHistoryWindow = location.pathname.startsWith('/chat-history/')
+  const isStandaloneChatWindow = location.pathname === '/chat-window'
   const isNotificationWindow = location.pathname === '/notification-window'
   const isExportRoute = location.pathname === '/export'
   const [themeHydrated, setThemeHydrated] = useState(false)
@@ -359,6 +360,12 @@ function App() {
   // 独立聊天记录窗口
   if (isChatHistoryWindow) {
     return <ChatHistoryPage />
+  }
+
+  // 独立会话聊天窗口（仅显示聊天内容区域）
+  if (isStandaloneChatWindow) {
+    const sessionId = new URLSearchParams(location.search).get('sessionId') || ''
+    return <ChatPage standaloneSessionWindow initialSessionId={sessionId} />
   }
 
   // 独立通知窗口

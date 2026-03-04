@@ -1115,8 +1115,8 @@
 }
 
 .table-wrap {
-  --contacts-message-col-width: 420px;
-  --contacts-action-col-width: 172px;
+  --contacts-message-col-width: 120px;
+  --contacts-action-col-width: 280px;
   overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: 10px;
@@ -1257,7 +1257,7 @@
 
   .contacts-list-header-count {
     width: var(--contacts-message-col-width);
-    text-align: right;
+    text-align: center;
     flex-shrink: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -1382,17 +1382,16 @@
     min-width: var(--contacts-message-col-width);
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
     flex-shrink: 0;
-    text-align: right;
+    text-align: center;
   }
 
   .row-message-stats {
     width: 100%;
     display: flex;
-    justify-content: flex-end;
-    align-items: baseline;
-    gap: 8px;
+    justify-content: center;
+    align-items: center;
     white-space: nowrap;
   }
 
@@ -1567,7 +1566,7 @@
   }
 }
 
-.row-action-cell {
+  .row-action-cell {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -1579,6 +1578,33 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .row-open-chat-btn {
+    border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border-color));
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: color-mix(in srgb, var(--primary) 12%, var(--bg-secondary));
+    color: var(--primary);
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--primary) 18%, var(--bg-secondary));
+      border-color: color-mix(in srgb, var(--primary) 55%, var(--border-color));
+    }
+
+    &:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      color: var(--text-tertiary);
+      border-color: var(--border-color);
+      background: var(--bg-secondary);
+    }
   }
 
   .row-detail-btn {
@@ -2351,8 +2377,8 @@
 
 @media (max-width: 720px) {
   .table-wrap {
-    --contacts-message-col-width: 280px;
-    --contacts-action-col-width: 148px;
+    --contacts-message-col-width: 104px;
+    --contacts-action-col-width: 236px;
   }
 
   .table-wrap .contacts-list-header {

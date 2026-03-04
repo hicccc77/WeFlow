@@ -13,6 +13,7 @@ export interface ElectronAPI {
     resizeToFitVideo: (videoWidth: number, videoHeight: number) => Promise<void>
     openImageViewerWindow: (imagePath: string, liveVideoPath?: string) => Promise<void>
     openChatHistoryWindow: (sessionId: string, messageId: number) => Promise<boolean>
+    openSessionChatWindow: (sessionId: string) => Promise<boolean>
   }
   config: {
     get: (key: string) => Promise<unknown>

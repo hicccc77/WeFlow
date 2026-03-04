@@ -85,6 +85,7 @@ let agreementWindow: BrowserWindow | null = null
 let onboardingWindow: BrowserWindow | null = null
 // Splash 启动窗口
 let splashWindow: BrowserWindow | null = null
+const sessionChatWindows = new Map<string, BrowserWindow>()
 const keyService = new KeyService()
 
 let mainWindowReady = false
@@ -683,6 +684,87 @@ function createChatHistoryWindow(sessionId: string, messageId: number) {
   return win
 }
 
+/**
+ * 创建独立的会话聊天窗口（单会话，复用聊天页右侧消息区域）
+ */
+function createSessionChatWindow(sessionId: string) {
+  const normalizedSessionId = String(sessionId || '').trim()
+  if (!normalizedSessionId) return null
+
+  const existing = sessionChatWindows.get(normalizedSessionId)
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) {
+      existing.restore()
+    }
+    existing.focus()
+    return existing
+  }
+
+  const isDev = !!process.env.VITE_DEV_SERVER_URL
+  const iconPath = isDev
+    ? join(__dirname, '../public/icon.ico')
+    : join(process.resourcesPath, 'icon.ico')
+
+  const isDark = nativeTheme.shouldUseDarkColors
+
+  const win = new BrowserWindow({
+    width: 980,
+    height: 820,
+    minWidth: 560,
+    minHeight: 560,
+    icon: iconPath,
+    webPreferences: {
+      preload: join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#00000000',
+      symbolColor: isDark ? '#ffffff' : '#1a1a1a',
+      height: 40
+    },
+    show: false,
+    backgroundColor: isDark ? '#1A1A1A' : '#F0F0F0',
+    autoHideMenuBar: true
+  })
+
+  const sessionParam = `sessionId=${encodeURIComponent(normalizedSessionId)}`
+  if (process.env.VITE_DEV_SERVER_URL) {
+    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/chat-window?${sessionParam}`)
+
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+        if (win.webContents.isDevToolsOpened()) {
+          win.webContents.closeDevTools()
+        } else {
+          win.webContents.openDevTools()
+        }
+        event.preventDefault()
+      }
+    })
+  } else {
+    win.loadFile(join(__dirname, '../dist/index.html'), {
+      hash: `/chat-window?${sessionParam}`
+    })
+  }
+
+  win.once('ready-to-show', () => {
+    win.show()
+    win.focus()
+  })
+
+  win.on('closed', () => {
+    const tracked = sessionChatWindows.get(normalizedSessionId)
+    if (tracked === win) {
+      sessionChatWindows.delete(normalizedSessionId)
+    }
+  })
+
+  sessionChatWindows.set(normalizedSessionId, win)
+  return win
+}
+
 function showMainWindow() {
   shouldShowMain = true
   if (mainWindowReady) {
@@ -913,6 +995,12 @@ function registerIpcHandlers() {
   ipcMain.handle('window:openChatHistoryWindow', (_, sessionId: string, messageId: number) => {
     createChatHistoryWindow(sessionId, messageId)
     return true
+  })
+
+  // 打开会话聊天窗口（同会话仅保留一个窗口并聚焦）
+  ipcMain.handle('window:openSessionChatWindow', (_, sessionId: string) => {
+    const win = createSessionChatWindow(sessionId)
+    return Boolean(win)
   })
 
   // 根据视频尺寸调整窗口大小
