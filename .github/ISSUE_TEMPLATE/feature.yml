@@ -31,24 +31,24 @@ body:
     id: problem
     attributes:
       label: 问题或痛点
-      description: 描述你当前遇到的问题或不便之处
-      placeholder: 例如：目前无法批量导出聊天记录，每次只能手动复制单条消息，非常耗时
+      description: 【为什么需要】你现在做某件事遇到了什么困难？缺少什么能力？
+      placeholder: 例如：目前无法批量导出聊天记录，每次只能手动复制单条消息，处理 100 条消息需要半小时
     validations:
       required: true
   - type: textarea
     id: solution
     attributes:
       label: 期望的解决方案
-      description: 详细描述你希望的功能是如何工作的
-      placeholder: 例如：希望能在聊天窗口右键菜单中添加"导出聊天记录"选项，支持选择时间范围和导出格式（TXT/JSON）
+      description: 【怎么实现】详细描述功能的操作流程、界面位置、可选参数等
+      placeholder: 例如：在聊天窗口右键菜单添加"导出记录"，点击后弹窗可选时间范围、导出格式（TXT/JSON）、筛选用户，最后保存到本地
     validations:
       required: true
   - type: textarea
     id: use-case
     attributes:
       label: 使用场景
-      description: 描述这个功能的典型使用场景
-      placeholder: 例如：工作中需要定期备份重要的项目讨论记录，或者需要将聊天内容整理成文档
+      description: 【什么时候用】你会在哪些具体情况下使用这个功能？
+      placeholder: 例如：每周五整理工作讨论记录；保存客户沟通记录作为合同依据；备份重要群聊内容
     validations:
       required: true
   - type: textarea
