@@ -1,0 +1,43 @@
+name: Auto Sync Upstream Dev
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 每10分钟运行一次
+  workflow_dispatch:     # 允许手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current repo (dev branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以便合并
+          ref: dev        # 【关键】明确检出当前仓库的 dev 分支
+
+      - name: Add upstream remote and fetch dev
+        run: |
+          # 添加上游远程仓库
+          git remote add upstream https://github.com/hicccc77/WeFlow.git
+          # 只获取上游的 dev 分支，节省时间
+          git fetch upstream dev
+
+      - name: Merge upstream dev into local dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 尝试合并上游 dev 分支
+          # 如果合并成功，git merge 返回 0；如果冲突或失败，返回非 0 并停止脚本
+          if ! git merge upstream/dev --no-edit; then
+            echo "::error::Merge failed! Possible conflicts or unrelated histories."
+            exit 1
+          fi
+          
+          echo "Merge completed successfully."
+
+      - name: Push changes to dev
+        run: |
+          git push origin dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
