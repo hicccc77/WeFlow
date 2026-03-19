@@ -113,8 +113,20 @@ export interface Message {
     datatype: number
     sourcename: string
     sourcetime: string
-    datadesc: string
+    sourceheadurl?: string
+    datadesc?: string
     datatitle?: string
+    fileext?: string
+    datasize?: number
+    messageuuid?: string
+    dataurl?: string
+    datathumburl?: string
+    datacdnurl?: string
+    aeskey?: string
+    md5?: string
+    imgheight?: number
+    imgwidth?: number
+    duration?: number
   }>
   _db_path?: string // 内部字段：记录消息所属数据库路径
 }
@@ -277,6 +289,100 @@ class ChatService {
     // 初始化LRU缓存，限制大小防止内存泄漏
     this.voiceWavCache = new LRUCache(this.voiceWavCacheMaxEntries)
     this.voiceTranscriptCache = new LRUCache(1000) // 最多缓存1000条转写记录
+  }
+
+  private parseChatRecordDataItem(body: string, datatype = 0) {
+    const sourcename = this.extractXmlValue(body, 'sourcename')
+    const sourcetime = this.extractXmlValue(body, 'sourcetime')
+    const sourceheadurl = this.extractXmlValue(body, 'sourceheadurl') || undefined
+    const datadesc = this.extractXmlValue(body, 'datadesc')
+    const datatitle = this.extractXmlValue(body, 'datatitle')
+    const fileext = this.extractXmlValue(body, 'fileext') || undefined
+    const datasizeRaw = this.extractXmlValue(body, 'datasize')
+    const messageuuid = this.extractXmlValue(body, 'messageuuid') || undefined
+    const dataurl = this.extractXmlValue(body, 'dataurl')
+    const datathumburl = this.extractXmlValue(body, 'datathumburl') || this.extractXmlValue(body, 'thumburl')
+    const datacdnurl = this.extractXmlValue(body, 'datacdnurl') || this.extractXmlValue(body, 'cdnurl')
+    const aeskey = this.extractXmlValue(body, 'aeskey') || this.extractXmlValue(body, 'qaeskey')
+    const md5 = this.extractXmlValue(body, 'md5') || this.extractXmlValue(body, 'datamd5')
+    const imgheightRaw = this.extractXmlValue(body, 'imgheight')
+    const imgwidthRaw = this.extractXmlValue(body, 'imgwidth')
+    const durationRaw = this.extractXmlValue(body, 'duration')
+
+    const datasize = datasizeRaw ? parseInt(datasizeRaw, 10) : undefined
+    const imgheight = imgheightRaw ? parseInt(imgheightRaw, 10) : undefined
+    const imgwidth = imgwidthRaw ? parseInt(imgwidthRaw, 10) : undefined
+    const duration = durationRaw ? parseInt(durationRaw, 10) : undefined
+
+    return {
+      datatype,
+      sourcename,
+      sourcetime: sourcetime || '',
+      sourceheadurl,
+      datadesc: this.decodeHtmlEntities(datadesc) || undefined,
+      datatitle: this.decodeHtmlEntities(datatitle) || undefined,
+      fileext,
+      datasize: Number.isFinite(datasize) ? datasize : undefined,
+      messageuuid,
+      dataurl: this.decodeHtmlEntities(dataurl) || undefined,
+      datathumburl: this.decodeHtmlEntities(datathumburl) || undefined,
+      datacdnurl: this.decodeHtmlEntities(datacdnurl) || undefined,
+      aeskey: this.decodeHtmlEntities(aeskey) || undefined,
+      md5: md5 || undefined,
+      imgheight: Number.isFinite(imgheight) ? imgheight : undefined,
+      imgwidth: Number.isFinite(imgwidth) ? imgwidth : undefined,
+      duration: Number.isFinite(duration) ? duration : undefined
+    }
+  }
+
+  private parseChatRecordList(content: string): Array<{
+    datatype: number
+    sourcename: string
+    sourcetime: string
+    sourceheadurl?: string
+    datadesc?: string
+    datatitle?: string
+    fileext?: string
+    datasize?: number
+    messageuuid?: string
+    dataurl?: string
+    datathumburl?: string
+    datacdnurl?: string
+    aeskey?: string
+    md5?: string
+    imgheight?: number
+    imgwidth?: number
+    duration?: number
+  }> | undefined {
+    const cdataMatch = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/i.exec(content)
+    if (cdataMatch) {
+      const items: Array<ReturnType<typeof this.parseChatRecordDataItem>> = []
+      const itemRegex = /<dataitem\b([^>]*)>([\s\S]*?)<\/dataitem>/gi
+      let itemMatch: RegExpExecArray | null
+
+      while ((itemMatch = itemRegex.exec(cdataMatch[1])) !== null) {
+        const datatypeAttr = /datatype="(\d+)"/i.exec(itemMatch[1])
+        const datatype = datatypeAttr ? parseInt(datatypeAttr[1], 10) : 0
+        items.push(this.parseChatRecordDataItem(itemMatch[2], datatype))
+      }
+
+      if (items.length > 0) {
+        return items
+      }
+    }
+
+    const legacyItems: Array<ReturnType<typeof this.parseChatRecordDataItem>> = []
+    const recordItemRegex = /<recorditem>([\s\S]*?)<\/recorditem>/gi
+    let match: RegExpExecArray | null
+
+    while ((match = recordItemRegex.exec(content)) !== null) {
+      const itemXml = match[1]
+      const datatypeStr = this.extractXmlValue(itemXml, 'datatype')
+      const datatype = datatypeStr ? parseInt(datatypeStr, 10) : 0
+      legacyItems.push(this.parseChatRecordDataItem(itemXml, datatype))
+    }
+
+    return legacyItems.length > 0 ? legacyItems : undefined
   }
 
   /**
@@ -3950,8 +4056,20 @@ class ChatService {
       datatype: number
       sourcename: string
       sourcetime: string
-      datadesc: string
+      sourceheadurl?: string
+      datadesc?: string
       datatitle?: string
+      fileext?: string
+      datasize?: number
+      messageuuid?: string
+      dataurl?: string
+      datathumburl?: string
+      datacdnurl?: string
+      aeskey?: string
+      md5?: string
+      imgheight?: number
+      imgwidth?: number
+      duration?: number
     }>
   } {
     try {
@@ -4134,43 +4252,7 @@ class ChatService {
         case '19': {
           // 聊天记录
           result.chatRecordTitle = title || '聊天记录'
-
-          // 解析聊天记录列表
-          const recordList: Array<{
-            datatype: number
-            sourcename: string
-            sourcetime: string
-            datadesc: string
-            datatitle?: string
-          }> = []
-
-          // 查找所有 <recorditem> 标签
-          const recordItemRegex = /<recorditem>([\s\S]*?)<\/recorditem>/gi
-          let match: RegExpExecArray | null
-
-          while ((match = recordItemRegex.exec(content)) !== null) {
-            const itemXml = match[1]
-
-            const datatypeStr = this.extractXmlValue(itemXml, 'datatype')
-            const sourcename = this.extractXmlValue(itemXml, 'sourcename')
-            const sourcetime = this.extractXmlValue(itemXml, 'sourcetime')
-            const datadesc = this.extractXmlValue(itemXml, 'datadesc')
-            const datatitle = this.extractXmlValue(itemXml, 'datatitle')
-
-            if (sourcename && datadesc) {
-              recordList.push({
-                datatype: datatypeStr ? parseInt(datatypeStr, 10) : 0,
-                sourcename,
-                sourcetime: sourcetime || '',
-                datadesc,
-                datatitle: datatitle || undefined
-              })
-            }
-          }
-
-          if (recordList.length > 0) {
-            result.chatRecordList = recordList
-          }
+          result.chatRecordList = this.parseChatRecordList(content)
           break
         }
 

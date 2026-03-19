@@ -197,6 +197,71 @@ body {
   color: #1d4ed8;
 }
 
+.chat-record-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(79, 70, 229, 0.18);
+  border-radius: 14px;
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.chat-record-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-record-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chat-record-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-record-item {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(229, 231, 235, 0.9);
+}
+
+.message.sent .chat-record-item {
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.chat-record-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.chat-record-item-sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.chat-record-item-time {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chat-record-item-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  word-break: break-word;
+}
+
 .inline-emoji {
   width: 22px;
   height: 22px;

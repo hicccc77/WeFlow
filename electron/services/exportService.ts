@@ -1656,43 +1656,50 @@ class ExportService {
       const type = this.extractXmlValue(content, 'type')
       if (type !== '19') return undefined
 
-      // 提取 recorditem 中的 CDATA
-      const match = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(content)
-      if (!match) return undefined
+      const parseRecordItemBody = (body: string, datatype = 0) => {
+        const datasizeRaw = this.extractXmlValue(body, 'datasize')
+        const datasize = datasizeRaw ? parseInt(datasizeRaw, 10) : undefined
 
-      const innerXml = match[1]
-      const items: any[] = []
-      const itemRegex = /<dataitem\s+(.*?)>([\s\S]*?)<\/dataitem>/g
-      let itemMatch
-
-      while ((itemMatch = itemRegex.exec(innerXml)) !== null) {
-        const attrs = itemMatch[1]
-        const body = itemMatch[2]
-
-        const datatypeMatch = /datatype="(\d+)"/.exec(attrs)
-        const datatype = datatypeMatch ? parseInt(datatypeMatch[1]) : 0
-
-        const sourcename = this.extractXmlValue(body, 'sourcename')
-        const sourcetime = this.extractXmlValue(body, 'sourcetime')
-        const sourceheadurl = this.extractXmlValue(body, 'sourceheadurl')
-        const datadesc = this.extractXmlValue(body, 'datadesc')
-        const datatitle = this.extractXmlValue(body, 'datatitle')
-        const fileext = this.extractXmlValue(body, 'fileext')
-        const datasize = parseInt(this.extractXmlValue(body, 'datasize') || '0')
-
-        items.push({
+        return {
           datatype,
-          sourcename,
-          sourcetime,
-          sourceheadurl,
-          datadesc: this.decodeHtmlEntities(datadesc),
-          datatitle: this.decodeHtmlEntities(datatitle),
-          fileext,
-          datasize
-        })
+          sourcename: this.extractXmlValue(body, 'sourcename'),
+          sourcetime: this.extractXmlValue(body, 'sourcetime'),
+          sourceheadurl: this.extractXmlValue(body, 'sourceheadurl') || undefined,
+          datadesc: this.decodeHtmlEntities(this.extractXmlValue(body, 'datadesc')) || undefined,
+          datatitle: this.decodeHtmlEntities(this.extractXmlValue(body, 'datatitle')) || undefined,
+          fileext: this.extractXmlValue(body, 'fileext') || undefined,
+          datasize: Number.isFinite(datasize) ? datasize : undefined
+        }
       }
 
-      return items.length > 0 ? items : undefined
+      const cdataMatch = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/i.exec(content)
+      if (cdataMatch) {
+        const items: any[] = []
+        const itemRegex = /<dataitem\b([^>]*)>([\s\S]*?)<\/dataitem>/gi
+        let itemMatch: RegExpExecArray | null
+
+        while ((itemMatch = itemRegex.exec(cdataMatch[1])) !== null) {
+          const datatypeMatch = /datatype="(\d+)"/i.exec(itemMatch[1])
+          const datatype = datatypeMatch ? parseInt(datatypeMatch[1], 10) : 0
+          items.push(parseRecordItemBody(itemMatch[2], datatype))
+        }
+
+        if (items.length > 0) {
+          return items
+        }
+      }
+
+      const legacyItems: any[] = []
+      const recordItemRegex = /<recorditem>([\s\S]*?)<\/recorditem>/gi
+      let match: RegExpExecArray | null
+
+      while ((match = recordItemRegex.exec(content)) !== null) {
+        const datatypeStr = this.extractXmlValue(match[1], 'datatype')
+        const datatype = datatypeStr ? parseInt(datatypeStr, 10) : 0
+        legacyItems.push(parseRecordItemBody(match[1], datatype))
+      }
+
+      return legacyItems.length > 0 ? legacyItems : undefined
     } catch (e) {
       console.error('ExportService: 解析聊天记录失败:', e)
       return undefined
@@ -2082,6 +2089,96 @@ class ExportService {
       return this.escapeHtml(part)
     })
     return rendered.join('')
+  }
+
+  private getChatRecordPreviewText(record: {
+    datatype?: number
+    datadesc?: string
+    datatitle?: string
+    fileext?: string
+    duration?: number
+  }): string {
+    const text = record.datadesc || record.datatitle || ''
+    if (text) return text
+
+    switch (record.datatype) {
+      case 3:
+        return '[图片]'
+      case 34:
+        return record.duration ? `[语音] ${(record.duration / 1000).toFixed(0)}"` : '[语音]'
+      case 43:
+        return '[视频]'
+      case 47:
+        return '[动画表情]'
+      case 49:
+      case 8:
+      case 6:
+        return record.fileext ? `[文件] .${record.fileext}` : '[文件]'
+      default:
+        return '[消息]'
+    }
+  }
+
+  private formatChatRecordPlainText(input: {
+    title?: string
+    records?: Array<{
+      sourcename?: string
+      sourcetime?: string
+      datatype?: number
+      datadesc?: string
+      datatitle?: string
+      fileext?: string
+      duration?: number
+    }>
+  }): string {
+    const records = input.records || []
+    const header = input.title ? `[聊天记录] ${input.title}` : '[聊天记录]'
+    if (records.length === 0) return header
+
+    const lines = [header]
+    for (const record of records) {
+      const sender = record.sourcename || '未知发送者'
+      const time = record.sourcetime ? ` ${record.sourcetime}` : ''
+      const preview = this.getChatRecordPreviewText(record)
+      lines.push(`${sender}${time}: ${preview}`)
+    }
+    return lines.join('\n')
+  }
+
+  private renderHtmlChatRecordCard(input: {
+    title?: string
+    records?: Array<{
+      sourcename?: string
+      sourcetime?: string
+      datatype?: number
+      datadesc?: string
+      datatitle?: string
+      fileext?: string
+      duration?: number
+    }>
+  }): string {
+    const records = input.records || []
+    if (records.length === 0) return ''
+
+    const title = input.title || '聊天记录'
+    const itemsHtml = records.map((record) => {
+      const sender = record.sourcename || '未知发送者'
+      const time = record.sourcetime ? `<span class="chat-record-item-time">${this.escapeHtml(record.sourcetime)}</span>` : ''
+      const previewText = this.getChatRecordPreviewText(record)
+      return `<div class="chat-record-item">
+        <div class="chat-record-item-head">
+          <span class="chat-record-item-sender">${this.escapeHtml(sender)}</span>
+          ${time}
+        </div>
+        <div class="chat-record-item-body">${this.renderTextWithEmoji(previewText).replace(/\r?\n/g, '<br />')}</div>
+      </div>`
+    }).join('')
+
+    return `<div class="chat-record-card">
+      <div class="chat-record-card-title">${this.escapeHtml(title)}</div>
+      <div class="chat-record-card-meta">共 ${records.length} 条聊天记录</div>
+      <div class="chat-record-card-list">${itemsHtml}</div>
+    </div>`
   }
 
   private formatHtmlMessageText(content: string, localType: number, myWxid?: string, senderWxid?: string, isSend?: boolean): string {
@@ -2767,6 +2864,7 @@ class ExportService {
           let locationLng: number | undefined
           let locationPoiname: string | undefined
           let locationLabel: string | undefined
+          let chatRecordTitle: string | undefined
           let chatRecordList: any[] | undefined
 
           if (localType === 48 && content) {
@@ -2798,10 +2896,13 @@ class ExportService {
             } else if (localType === 43 && content) {
               // 视频消息
               videoMd5 = videoMd5 || this.extractVideoMd5(content)
-            } else if (collectMode === 'full' && localType === 49 && content) {
-              // 检查是否是聊天记录消息（type=19）
+            }
+
+            const looksLikeAppMsg = Boolean(content && (content.includes('<appmsg') || content.includes('&lt;appmsg')))
+            if (collectMode === 'full' && content && (localType === 49 || looksLikeAppMsg)) {
               const xmlType = this.extractXmlValue(content, 'type')
               if (xmlType === '19') {
+                chatRecordTitle = this.extractXmlValue(content, 'title') || '聊天记录'
                 chatRecordList = this.parseChatHistory(content)
               }
             }
@@ -2823,6 +2924,7 @@ class ExportService {
             locationLng,
             locationPoiname,
             locationLabel,
+            chatRecordTitle,
             chatRecordList
           })
 
@@ -4096,11 +4198,18 @@ class ExportService {
         if (appMsgMeta) {
           if (
             options.format === 'arkme-json' ||
-            (options.format === 'json' && (appMsgMeta.appMsgKind === 'quote' || appMsgMeta.appMsgKind === 'link'))
+            (options.format === 'json' && (
+              appMsgMeta.appMsgKind === 'quote' ||
+              appMsgMeta.appMsgKind === 'link' ||
+              appMsgMeta.appMsgKind === 'chat-record'
+            ))
           ) {
             Object.assign(msgObj, appMsgMeta)
           }
         }
+
+        if (msg.chatRecordTitle) msgObj.chatRecordTitle = msg.chatRecordTitle
+        if (msg.chatRecordList && msg.chatRecordList.length > 0) msgObj.chatRecordList = msg.chatRecordList
 
         if (options.format === 'arkme-json') {
           const contactCardMeta = this.extractArkmeContactCardMeta(msg.content, msg.localType)
@@ -4328,6 +4437,8 @@ class ExportService {
           if (message.contactCardCity) compactMessage.contactCardCity = message.contactCardCity
           if (message.contactCardSignature) compactMessage.contactCardSignature = message.contactCardSignature
           if (message.contactCardAvatar) compactMessage.contactCardAvatar = message.contactCardAvatar
+          if (message.chatRecordTitle) compactMessage.chatRecordTitle = message.chatRecordTitle
+          if (message.chatRecordList) compactMessage.chatRecordList = message.chatRecordList
           return compactMessage
         })
 
@@ -4862,6 +4973,12 @@ class ExportService {
             enrichedContentValue = this.appendTransferDesc(contentValue, transferDesc)
           }
         }
+        if (msg.chatRecordList && msg.chatRecordList.length > 0) {
+          enrichedContentValue = this.formatChatRecordPlainText({
+            title: msg.chatRecordTitle,
+            records: msg.chatRecordList
+          })
+        }
 
         // 调试日志
         if (msg.localType === 3 || msg.localType === 47) {
@@ -4888,7 +5005,8 @@ class ExportService {
         for (let col = 1; col <= maxColumns; col++) {
           const cell = worksheet.getCell(currentRow, col)
           cell.font = { name: 'Calibri', size: 11 }
-          cell.alignment = { vertical: 'middle', wrapText: false }
+          const hasMultiline = typeof cell.value === 'string' && String(cell.value).includes('\n')
+          cell.alignment = { vertical: 'middle', wrapText: hasMultiline }
         }
 
         currentRow++
@@ -5206,6 +5324,12 @@ class ExportService {
           if (transferDesc) {
             enrichedContentValue = this.appendTransferDesc(contentValue, transferDesc)
           }
+        }
+        if (msg.chatRecordList && msg.chatRecordList.length > 0) {
+          enrichedContentValue = this.formatChatRecordPlainText({
+            title: msg.chatRecordTitle,
+            records: msg.chatRecordList
+          })
         }
 
         let senderRole: string
@@ -5525,6 +5649,12 @@ class ExportService {
             msg.senderUsername,
             msg.isSend
           ) || '')
+        const enrichedMsgText = msg.chatRecordList && msg.chatRecordList.length > 0
+          ? this.formatChatRecordPlainText({
+            title: msg.chatRecordTitle,
+            records: msg.chatRecordList
+          })
+          : msgText
         const src = this.getWeCloneSource(msg, typeName, mediaItem)
 
         const row = [
@@ -5533,7 +5663,7 @@ class ExportService {
           typeName,
           msg.isSend ? 1 : 0,
           talker,
-          msgText,
+          enrichedMsgText,
           src,
           this.formatIsoTimestamp(msg.createTime)
         ]
@@ -5992,6 +6122,12 @@ class ExportService {
         }
 
         const linkCard = this.extractHtmlLinkCard(msg.content, msg.localType)
+        const chatRecordHtml = msg.chatRecordList && msg.chatRecordList.length > 0
+          ? this.renderHtmlChatRecordCard({
+            title: msg.chatRecordTitle,
+            records: msg.chatRecordList
+          })
+          : ''
 
         let mediaHtml = ''
         if (mediaItem?.kind === 'image') {
@@ -6007,7 +6143,9 @@ class ExportService {
           mediaHtml = `<video class="message-media video" controls preload="metadata"${posterAttr} src="${this.escapeAttribute(encodeURI(mediaItem.relativePath))}"></video>`
         }
 
-        const textHtml = linkCard
+        const textHtml = chatRecordHtml
+          ? chatRecordHtml
+          : linkCard
           ? `<div class="message-text"><a class="message-link-card" href="${this.escapeAttribute(linkCard.url)}" target="_blank" rel="noopener noreferrer">${this.renderTextWithEmoji(linkCard.title).replace(/\r?\n/g, '<br />')}</a></div>`
           : (textContent
             ? `<div class="message-text">${this.renderTextWithEmoji(textContent).replace(/\r?\n/g, '<br />')}</div>`

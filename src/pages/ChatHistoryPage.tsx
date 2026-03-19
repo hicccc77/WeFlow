@@ -36,61 +36,53 @@ export default function ChatHistoryPage() {
       const type = extractXmlValue(content, 'type')
       if (type !== '19') return undefined
 
-      const match = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(content)
-      if (!match) return undefined
+      const parseRecordItemBody = (body: string, datatype = 0): ChatRecordItem => ({
+        datatype,
+        sourcename: extractXmlValue(body, 'sourcename'),
+        sourcetime: extractXmlValue(body, 'sourcetime'),
+        sourceheadurl: extractXmlValue(body, 'sourceheadurl'),
+        datadesc: decodeHtmlEntities(extractXmlValue(body, 'datadesc')),
+        datatitle: decodeHtmlEntities(extractXmlValue(body, 'datatitle')),
+        fileext: extractXmlValue(body, 'fileext'),
+        datasize: parseInt(extractXmlValue(body, 'datasize') || '0'),
+        messageuuid: extractXmlValue(body, 'messageuuid'),
+        dataurl: decodeHtmlEntities(extractXmlValue(body, 'dataurl')),
+        datathumburl: decodeHtmlEntities(extractXmlValue(body, 'datathumburl') || extractXmlValue(body, 'thumburl')),
+        datacdnurl: decodeHtmlEntities(extractXmlValue(body, 'datacdnurl') || extractXmlValue(body, 'cdnurl')),
+        aeskey: decodeHtmlEntities(extractXmlValue(body, 'aeskey') || extractXmlValue(body, 'qaeskey')),
+        md5: extractXmlValue(body, 'md5') || extractXmlValue(body, 'datamd5'),
+        imgheight: parseInt(extractXmlValue(body, 'imgheight') || '0'),
+        imgwidth: parseInt(extractXmlValue(body, 'imgwidth') || '0'),
+        duration: parseInt(extractXmlValue(body, 'duration') || '0')
+      })
 
-      const innerXml = match[1]
-      const items: ChatRecordItem[] = []
-      const itemRegex = /<dataitem\s+(.*?)>([\s\S]*?)<\/dataitem>/g
-      let itemMatch: RegExpExecArray | null
+      const cdataMatch = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(content)
+      if (cdataMatch) {
+        const items: ChatRecordItem[] = []
+        const itemRegex = /<dataitem\b([^>]*)>([\s\S]*?)<\/dataitem>/gi
+        let itemMatch: RegExpExecArray | null
 
-      while ((itemMatch = itemRegex.exec(innerXml)) !== null) {
-        const attrs = itemMatch[1]
-        const body = itemMatch[2]
+        while ((itemMatch = itemRegex.exec(cdataMatch[1])) !== null) {
+          const datatypeMatch = /datatype="(\d+)"/i.exec(itemMatch[1])
+          const datatype = datatypeMatch ? parseInt(datatypeMatch[1], 10) : 0
+          items.push(parseRecordItemBody(itemMatch[2], datatype))
+        }
 
-        const datatypeMatch = /datatype="(\d+)"/.exec(attrs)
-        const datatype = datatypeMatch ? parseInt(datatypeMatch[1]) : 0
-
-        const sourcename = extractXmlValue(body, 'sourcename')
-        const sourcetime = extractXmlValue(body, 'sourcetime')
-        const sourceheadurl = extractXmlValue(body, 'sourceheadurl')
-        const datadesc = extractXmlValue(body, 'datadesc')
-        const datatitle = extractXmlValue(body, 'datatitle')
-        const fileext = extractXmlValue(body, 'fileext')
-        const datasize = parseInt(extractXmlValue(body, 'datasize') || '0')
-        const messageuuid = extractXmlValue(body, 'messageuuid')
-
-        const dataurl = extractXmlValue(body, 'dataurl')
-        const datathumburl = extractXmlValue(body, 'datathumburl') || extractXmlValue(body, 'thumburl')
-        const datacdnurl = extractXmlValue(body, 'datacdnurl') || extractXmlValue(body, 'cdnurl')
-        const aeskey = extractXmlValue(body, 'aeskey') || extractXmlValue(body, 'qaeskey')
-        const md5 = extractXmlValue(body, 'md5') || extractXmlValue(body, 'datamd5')
-        const imgheight = parseInt(extractXmlValue(body, 'imgheight') || '0')
-        const imgwidth = parseInt(extractXmlValue(body, 'imgwidth') || '0')
-        const duration = parseInt(extractXmlValue(body, 'duration') || '0')
-
-        items.push({
-          datatype,
-          sourcename,
-          sourcetime,
-          sourceheadurl,
-          datadesc: decodeHtmlEntities(datadesc),
-          datatitle: decodeHtmlEntities(datatitle),
-          fileext,
-          datasize,
-          messageuuid,
-          dataurl: decodeHtmlEntities(dataurl),
-          datathumburl: decodeHtmlEntities(datathumburl),
-          datacdnurl: decodeHtmlEntities(datacdnurl),
-          aeskey: decodeHtmlEntities(aeskey),
-          md5,
-          imgheight,
-          imgwidth,
-          duration
-        })
+        if (items.length > 0) {
+          return items
+        }
       }
 
-      return items.length > 0 ? items : undefined
+      const legacyItems: ChatRecordItem[] = []
+      const recordItemRegex = /<recorditem>([\s\S]*?)<\/recorditem>/gi
+      let match: RegExpExecArray | null
+
+      while ((match = recordItemRegex.exec(content)) !== null) {
+        const datatype = parseInt(extractXmlValue(match[1], 'datatype') || '0')
+        legacyItems.push(parseRecordItemBody(match[1], datatype))
+      }
+
+      return legacyItems.length > 0 ? legacyItems : undefined
     } catch (e) {
       console.error('前端解析聊天记录失败:', e)
       return undefined
@@ -131,8 +123,10 @@ export default function ChatHistoryPage() {
           let records: ChatRecordItem[] | undefined = msg.chatRecordList
 
           // 如果后端没有解析到，则在前端兜底解析一次
-          if ((!records || records.length === 0) && msg.content) {
-            records = parseChatHistory(msg.content) || []
+          const fallbackRecords = msg.content ? (parseChatHistory(msg.content) || []) : []
+
+          if ((!records || records.length === 0) && fallbackRecords.length > 0) {
+            records = fallbackRecords
           }
 
           if (records && records.length > 0) {
