@@ -1025,11 +1025,11 @@ export class KeyServiceMac {
       const decipher = crypto.createDecipheriv('aes-128-ecb', keyBytes, null)
       decipher.setAutoPadding(false)
       const dec = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF) return true
+      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF && (dec[3] === 0xE0 || dec[3] === 0xE1 || dec[3] === 0xDB || dec[3] === 0xEE)) return true
       if (dec[0] === 0x89 && dec[1] === 0x50 && dec[2] === 0x4E && dec[3] === 0x47) return true
       if (dec[0] === 0x52 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x46) return true
       if (dec[0] === 0x77 && dec[1] === 0x78 && dec[2] === 0x67 && dec[3] === 0x66) return true
-      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46) return true
+      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x38) return true
       return false
     } catch {
       return false
@@ -1137,11 +1137,11 @@ export class KeyServiceMac {
       const decipher = crypto.createDecipheriv('aes-128-ecb', keyBytes.subarray(0, 16), null)
       decipher.setAutoPadding(false)
       const dec = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF) return true
+      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF && (dec[3] === 0xE0 || dec[3] === 0xE1 || dec[3] === 0xDB || dec[3] === 0xEE)) return true
       if (dec[0] === 0x89 && dec[1] === 0x50 && dec[2] === 0x4E && dec[3] === 0x47) return true
       if (dec[0] === 0x52 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x46) return true
       if (dec[0] === 0x77 && dec[1] === 0x78 && dec[2] === 0x67 && dec[3] === 0x66) return true
-      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46) return true
+      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x38) return true
       return false
     } catch {
       return false
