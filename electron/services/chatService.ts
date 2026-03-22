@@ -153,6 +153,8 @@ export interface ContactInfo {
   remark?: string
   nickname?: string
   alias?: string
+  labels?: string[]
+  detailDescription?: string
   avatarUrl?: string
   type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
 }
@@ -1321,6 +1323,8 @@ class ChatService {
           continue
         }
 
+        const labels = this.parseContactLabels(row)
+        const detailDescription = this.getContactDetailDescription(row)
         const displayName = row.remark || row.nick_name || row.alias || username
 
         contacts.push({
@@ -1329,6 +1333,8 @@ class ChatService {
           remark: row.remark || undefined,
           nickname: row.nick_name || undefined,
           alias: row.alias || undefined,
+          labels: labels.length > 0 ? labels : undefined,
+          detailDescription: detailDescription || undefined,
           avatarUrl: undefined,
           type,
           lastContactTime: lastContactTimeMap.get(username) || 0
@@ -1878,6 +1884,59 @@ class ChatService {
     if (raw === undefined || raw === null || raw === '') return fallback
     const parsed = this.coerceRowNumber(raw)
     return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  private parseContactLabels(row: Record<string, any>): string[] {
+    const raw = this.getRowField(row, [
+      'label_list', 'labelList', 'labels', 'label_names', 'labelNames', 'tags', 'tag_list', 'tagList'
+    ])
+    const normalizedFromValue = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)))
+      }
+      const text = String(value || '').trim()
+      if (!text) return []
+      return Array.from(new Set(
+        text
+          .replace(/[；;、|]+/g, ',')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      ))
+    }
+
+    const direct = normalizedFromValue(raw)
+    if (direct.length > 0) return direct
+
+    for (const [key, value] of Object.entries(row)) {
+      const normalizedKey = key.toLowerCase()
+      if (!normalizedKey.includes('label') && !normalizedKey.includes('tag')) continue
+      if (normalizedKey.includes('img') || normalizedKey.includes('head')) continue
+      const fallback = normalizedFromValue(value)
+      if (fallback.length > 0) return fallback
+    }
+
+    return []
+  }
+
+  private getContactDetailDescription(row: Record<string, any>): string {
+    const value = this.getRowField(row, [
+      'detail_description', 'detailDescription', 'description', 'desc', 'contact_description', 'contactDescription',
+      'profile', 'introduction', 'phone', 'mobile', 'telephone', 'tel', 'vcard', 'card_info', 'cardInfo'
+    ])
+    const direct = String(value || '').trim()
+    if (direct) return direct
+
+    for (const [key, rawValue] of Object.entries(row)) {
+      const normalizedKey = key.toLowerCase()
+      const isCandidate = normalizedKey.includes('detail') || normalizedKey.includes('desc') || normalizedKey.includes('description') || normalizedKey.includes('profile') || normalizedKey.includes('intro') || normalizedKey.includes('phone') || normalizedKey.includes('mobile') || normalizedKey.includes('tel') || normalizedKey.includes('vcard') || normalizedKey.includes('card')
+      if (!isCandidate) continue
+      if (normalizedKey.includes('avatar') || normalizedKey.includes('img') || normalizedKey.includes('head')) continue
+      const text = String(rawValue || '').trim()
+      if (text) return text
+    }
+
+    return ''
   }
 
   private normalizeUnsignedIntegerToken(raw: any): string | undefined {

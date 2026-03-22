@@ -663,6 +663,8 @@ export interface ContactsListCacheContact {
   remark?: string
   nickname?: string
   alias?: string
+  labels?: string[]
+  detailDescription?: string
   type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
 }
 
@@ -1176,6 +1178,10 @@ export async function getContactsListCache(scopeKey: string): Promise<ContactsLi
       remark: typeof item.remark === 'string' ? item.remark : undefined,
       nickname: typeof item.nickname === 'string' ? item.nickname : undefined,
       alias: typeof item.alias === 'string' ? item.alias : undefined,
+      labels: Array.isArray(item.labels)
+        ? Array.from(new Set(item.labels.map((label) => String(label || '').trim()).filter(Boolean)))
+        : undefined,
+      detailDescription: typeof item.detailDescription === 'string' ? item.detailDescription : undefined,
       type: (type === 'friend' || type === 'group' || type === 'official' || type === 'former_friend' || type === 'other')
         ? type
         : 'other'
@@ -1210,6 +1216,10 @@ export async function setContactsListCache(scopeKey: string, contacts: ContactsL
       remark: contact?.remark ? String(contact.remark) : undefined,
       nickname: contact?.nickname ? String(contact.nickname) : undefined,
       alias: contact?.alias ? String(contact.alias) : undefined,
+      labels: Array.isArray(contact?.labels)
+        ? Array.from(new Set(contact.labels.map((label) => String(label || '').trim()).filter(Boolean)))
+        : undefined,
+      detailDescription: contact?.detailDescription ? String(contact.detailDescription) : undefined,
       type
     })
   }
