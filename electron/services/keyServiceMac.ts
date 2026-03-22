@@ -899,9 +899,13 @@ export class KeyServiceMac {
     const trimmed = String(value || '').trim()
     if (!trimmed) return ''
 
+    // Handle wxid_xxx_yyyy -> wxid_xxx
     if (trimmed.toLowerCase().startsWith('wxid_')) {
-      const match = trimmed.match(/^(wxid_[^_]+)/i)
-      return match?.[1] || trimmed
+      const parts = trimmed.split('_')
+      if (parts.length >= 2) {
+        return parts[0] + '_' + parts[1]
+      }
+      return trimmed
     }
 
     const suffixMatch = trimmed.match(/^(.+)_([a-zA-Z0-9]{4})$/)
@@ -1042,11 +1046,11 @@ export class KeyServiceMac {
       const decipher = crypto.createDecipheriv('aes-128-ecb', keyBytes, null)
       decipher.setAutoPadding(false)
       const dec = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF) return true
+      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF && (dec[3] === 0xE0 || dec[3] === 0xE1 || dec[3] === 0xDB || dec[3] === 0xEE)) return true
       if (dec[0] === 0x89 && dec[1] === 0x50 && dec[2] === 0x4E && dec[3] === 0x47) return true
       if (dec[0] === 0x52 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x46) return true
       if (dec[0] === 0x77 && dec[1] === 0x78 && dec[2] === 0x67 && dec[3] === 0x66) return true
-      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46) return true
+      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x38) return true
       return false
     } catch {
       return false
@@ -1055,18 +1059,26 @@ export class KeyServiceMac {
 
   private collectKvcommCodes(accountPath?: string): number[] {
     const codeSet = new Set<number>()
-    const pattern = /^key_(\d+)_.+\.statistic$/i
+    // Patterns: key_1234.statistic, monitordata_1234, etc.
+    const patterns = [
+      /^key_(\d+)/i,
+      /^monitordata_(\d+)/i
+    ]
 
     for (const kvcommDir of this.getKvcommCandidates(accountPath)) {
       if (!existsSync(kvcommDir)) continue
       try {
         const files = readdirSync(kvcommDir)
         for (const file of files) {
-          const match = file.match(pattern)
-          if (!match) continue
-          const code = Number(match[1])
-          if (!Number.isFinite(code) || code <= 0 || code > 0xFFFFFFFF) continue
-          codeSet.add(code)
+          for (const pattern of patterns) {
+            const match = file.match(pattern)
+            if (match) {
+              const code = Number(match[1])
+              if (Number.isFinite(code) && code > 0 && code <= 0xFFFFFFFF) {
+                codeSet.add(code)
+              }
+            }
+          }
         }
       } catch {
         // 忽略不可读目录，继续尝试其他候选路径
@@ -1146,11 +1158,11 @@ export class KeyServiceMac {
       const decipher = crypto.createDecipheriv('aes-128-ecb', keyBytes.subarray(0, 16), null)
       decipher.setAutoPadding(false)
       const dec = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF) return true
+      if (dec[0] === 0xFF && dec[1] === 0xD8 && dec[2] === 0xFF && (dec[3] === 0xE0 || dec[3] === 0xE1 || dec[3] === 0xDB || dec[3] === 0xEE)) return true
       if (dec[0] === 0x89 && dec[1] === 0x50 && dec[2] === 0x4E && dec[3] === 0x47) return true
       if (dec[0] === 0x52 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x46) return true
       if (dec[0] === 0x77 && dec[1] === 0x78 && dec[2] === 0x67 && dec[3] === 0x66) return true
-      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46) return true
+      if (dec[0] === 0x47 && dec[1] === 0x49 && dec[2] === 0x46 && dec[3] === 0x38) return true
       return false
     } catch {
       return false

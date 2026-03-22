@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { basename, dirname, extname, join } from 'path'
 import { pathToFileURL } from 'url'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, appendFileSync } from 'fs'
@@ -1790,13 +1790,21 @@ export class ImageDecryptService {
    */
   private getFfmpegPath(): string {
     const staticPath = getStaticFfmpegPath()
-    this.logInfo('ffmpeg 路径检测', { staticPath, exists: staticPath ? existsSync(staticPath) : false })
-
-    if (staticPath) {
+    
+    if (staticPath && existsSync(staticPath)) {
       return staticPath
     }
 
-    // 回退到系统 ffmpeg
+    // Fallback to common system paths, especially for Homebrew on Apple Silicon
+    const commonPaths = [
+      '/opt/homebrew/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg'
+    ]
+    for (const path of commonPaths) {
+      if (existsSync(path)) return path
+    }
+
     return 'ffmpeg'
   }
 
