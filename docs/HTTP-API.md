@@ -290,6 +290,134 @@ GET http://127.0.0.1:5031/api/v1/contacts?keyword=张三
 
 ---
 
+### 5. 朋友圈时间线
+
+获取朋友圈动态列表。
+
+**请求**
+```
+GET /api/v1/sns/timeline
+```
+
+**参数**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| `limit` | number | ❌ | 返回数量，默认 20，范围 `1~200` |
+| `offset` | number | ❌ | 偏移量，默认 0 |
+| `usernames` | string | ❌ | 发布者过滤，逗号分隔，如 `wxid_a,wxid_b` |
+| `keyword` | string | ❌ | 关键词过滤（正文） |
+| `start` | string | ❌ | 开始时间，支持 `YYYYMMDD` 或秒/毫秒时间戳 |
+| `end` | string | ❌ | 结束时间，支持 `YYYYMMDD` 或秒/毫秒时间戳 |
+
+**示例请求**
+```bash
+GET http://127.0.0.1:5031/api/v1/sns/timeline?limit=20
+GET http://127.0.0.1:5031/api/v1/sns/timeline?usernames=wxid_a,wxid_b&keyword=旅行
+GET http://127.0.0.1:5031/api/v1/sns/timeline?start=20250101&end=20251231
+```
+
+---
+
+### 6. 朋友圈发布者列表
+
+获取朋友圈中出现过的发布者账号。
+
+**请求**
+```
+GET /api/v1/sns/usernames
+```
+
+---
+
+### 7. 朋友圈导出统计
+
+获取朋友圈导出前的统计信息。
+
+**请求**
+```
+GET /api/v1/sns/export/stats
+```
+
+**参数**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| `fast` | number | ❌ | `1` 使用快速统计（优先缓存） |
+
+---
+
+### 8. 朋友圈媒体代理
+
+代理下载朋友圈图片/视频媒体，直接返回二进制内容。
+
+**请求**
+```
+GET /api/v1/sns/media/proxy
+```
+
+**参数**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| `url` | string | ✅ | 媒体原始 URL |
+| `key` | string/number | ❌ | 解密 key（部分资源需要） |
+
+---
+
+### 9. 导出朋友圈
+
+导出朋友圈到本地目录。
+
+**请求**
+```
+POST /api/v1/sns/export
+Content-Type: application/json
+```
+
+**Body**
+```json
+{
+  "outputDir": "C:\\\\Users\\\\Alice\\\\Desktop\\\\sns-export",
+  "format": "json",
+  "usernames": ["wxid_a", "wxid_b"],
+  "keyword": "旅行",
+  "exportMedia": true,
+  "exportImages": true,
+  "exportLivePhotos": true,
+  "exportVideos": true,
+  "start": "20250101",
+  "end": "20251231"
+}
+```
+
+`format` 支持：`json`、`html`、`arkmejson`（兼容写法：`arkme-json`）。
+
+---
+
+### 10. 朋友圈防删开关
+
+**接口**
+
+```bash
+GET  /api/v1/sns/block-delete/status
+POST /api/v1/sns/block-delete/install
+POST /api/v1/sns/block-delete/uninstall
+```
+
+---
+
+### 11. 删除单条朋友圈
+
+按帖子 ID 删除朋友圈记录。
+
+**请求**
+```
+DELETE /api/v1/sns/post/{postId}
+```
+
+---
+
 ## ChatLab 格式说明
 
 ChatLab 是一种标准化的聊天记录交换格式，版本 0.0.2。
