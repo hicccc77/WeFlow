@@ -512,6 +512,32 @@ class SnsService {
         return raw.trim()
     }
 
+    private async collectSnsUsernamesFromTimeline(maxRounds: number = 2000): Promise<string[]> {
+        const pageSize = 500
+        const uniqueUsers = new Set<string>()
+        let offset = 0
+
+        for (let round = 0; round < maxRounds; round++) {
+            const result = await wcdbService.getSnsTimeline(pageSize, offset, undefined, undefined, 0, 0)
+            if (!result.success || !Array.isArray(result.timeline)) {
+                throw new Error(result.error || '获取朋友圈发布者失败')
+            }
+
+            const rows = result.timeline
+            if (rows.length === 0) break
+
+            for (const row of rows) {
+                const username = this.pickTimelineUsername(row)
+                if (username) uniqueUsers.add(username)
+            }
+
+            if (rows.length < pageSize) break
+            offset += rows.length
+        }
+
+        return Array.from(uniqueUsers)
+    }
+
     private async getExportStatsFromTimeline(myWxid?: string): Promise<{ totalPosts: number; totalFriends: number; myPosts: number | null }> {
         const pageSize = 500
         const uniqueUsers = new Set<string>()
@@ -693,10 +719,20 @@ class SnsService {
             return { success: true, usernames: merged }
         }
 
-        // 两条查询都成功但无数据，说明确实没有朋友圈发布者。
-        if (primary.success || fallback.success) {
-            return { success: true, usernames: [] }
+        // 回退：通过 timeline 分页拉取收集用户名，兼容 SnsTimeLine 直接查询为空的场景。
+        try {
+            const timelineUsers = await this.collectSnsUsernamesFromTimeline()
+            if (timelineUsers.length > 0) {
+                return { success: true, usernames: timelineUsers }
+            }
+        } catch (timelineError) {
+            if (!primary.success && !fallback.success) {
+                return { success: false, error: String(timelineError) }
+            }
         }
+
+        // 直接查询成功但确实没有数据。
+        if (primary.success || fallback.success) return { success: true, usernames: [] }
 
         return { success: false, error: primary.error || fallback.error || '获取朋友圈联系人失败' }
     }
