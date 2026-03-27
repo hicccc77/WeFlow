@@ -69,7 +69,7 @@
       "immutable": ">=4.0.0",
       "lodash": ">=4.17.21",
       "brace-expansion": ">=1.1.11",
-      "picomatch": ">=2.3.1"
+      "picomatch": ">=2.3.2"
     }
   },
   "build": {
