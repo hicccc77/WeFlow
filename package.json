@@ -48,12 +48,12 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.2",
+    "@electron/rebuild": "^4.0.3",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^39.2.7",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.8.1",
     "sass": "^1.83.0",
     "sharp": "^0.34.5",
     "typescript": "^5.6.3",
