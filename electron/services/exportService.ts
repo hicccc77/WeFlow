@@ -481,7 +481,8 @@ class ExportService {
   }
 
   private isCloneUnsupportedError(code: string | undefined): boolean {
-    return code === 'ENOTSUP' || code === 'ENOSYS' || code === 'EINVAL' || code === 'EXDEV' || code === 'ENOTTY'
+    // EACCES: clonefile() fails on read-only hardlinked files on APFS — fall back to regular copy
+    return code === 'ENOTSUP' || code === 'ENOSYS' || code === 'EINVAL' || code === 'EXDEV' || code === 'ENOTTY' || code === 'EACCES'
   }
 
   private async copyFileOptimized(sourcePath: string, destPath: string): Promise<{ success: boolean; code?: string }> {
@@ -3768,13 +3769,34 @@ class ExportService {
   ): Promise<MediaExportItem | null> {
     try {
       const videoMd5 = msg.videoMd5
-      if (!videoMd5) return null
+      const videoLocalPath: string | undefined = msg.videoLocalPath
 
       const videosDir = path.join(mediaRootDir, mediaRelativePrefix, 'videos')
       if (!dirCache?.has(videosDir)) {
         await fs.promises.mkdir(videosDir, { recursive: true })
         dirCache?.add(videosDir)
       }
+
+      // 3.8.x: use direct local path (no videoMd5 in 3.8.x)
+      if (!videoMd5 && videoLocalPath) {
+        if (!fs.existsSync(videoLocalPath)) return null
+        const fileName = path.basename(videoLocalPath)
+        const destPath = path.join(videosDir, fileName)
+        const copied = await this.copyMediaWithCacheAndDedup('video', videoLocalPath, destPath)
+        if (!copied.success) return null
+        let posterDataUrl: string | undefined
+        const thumbPath: string | undefined = msg.videoThumbPath
+        if (includePoster && thumbPath && fs.existsSync(thumbPath)) {
+          posterDataUrl = `file://${thumbPath}`
+        }
+        return {
+          relativePath: path.posix.join(mediaRelativePrefix, 'videos', fileName),
+          kind: 'video',
+          posterDataUrl
+        }
+      }
+
+      if (!videoMd5) return null
 
       const videoInfo = await videoService.getVideoInfo(videoMd5, { includePoster })
       if (!videoInfo.exists || !videoInfo.videoUrl) {

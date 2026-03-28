@@ -44,6 +44,9 @@ if (parentPort) {
                     core.close()
                     result = { success: true }
                     break
+                case 'getSelfWxid':
+                    result = core.getSelfWxid()
+                    break
                 case 'isConnected':
                     result = core.isConnected()
                     break
@@ -263,6 +266,16 @@ if (parentPort) {
                 case 'cloudStop':
                     result = core.cloudStop()
                     break
+                case 'isIn38xMode':
+                    result = core.isIn38xMode()
+                    break
+                case 'getVoiceSilkData38x': {
+                    const buf = core.getVoiceSilkData38x(payload.sessionId, payload.localId, payload.createTime || 0)
+                    result = buf
+                        ? { success: true, data: buf.toString('base64') }
+                        : { success: false, error: 'silk file not found' }
+                    break
+                }
                 default:
                     result = { success: false, error: `Unknown method: ${type}` }
             }

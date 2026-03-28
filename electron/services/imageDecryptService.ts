@@ -491,6 +491,16 @@ export class ImageDecryptService {
       hardlinkOnly
     })
 
+    // WeChat 3.8.x: imageDatName is set to the absolute JPEG path directly
+    if (imageDatName && imageDatName.startsWith('/') && !imageDatName.toLowerCase().endsWith('.dat')) {
+      if (existsSync(imageDatName)) {
+        this.logInfo('[ImageDecrypt] 3.8x直接路径命中', { imageDatName })
+        if (imageMd5) this.resolvedCache.set(imageMd5, imageDatName)
+        this.resolvedCache.set(imageDatName, imageDatName)
+        return imageDatName
+      }
+    }
+
     if (!skipResolvedCache) {
       if (imageMd5) {
         const cached = this.resolvedCache.get(imageMd5)

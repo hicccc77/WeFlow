@@ -185,13 +185,20 @@ function Sidebar({ collapsed }: SidebarProps) {
       try {
         const wxid = await configService.getMyWxid()
         const resolvedWxidRaw = String(wxid || '').trim()
-        const cleanedWxid = normalizeAccountId(resolvedWxidRaw)
-        const resolvedWxid = cleanedWxid || resolvedWxidRaw
+        // For WeChat 3.8.x the stored wxid is the 32-char account-dir hash.
+        // Try to resolve the actual WeChat wxid from the DB.
+        const selfWxidFromDb: string | null = window.electronAPI.wcdb?.getSelfWxid
+          ? await window.electronAPI.wcdb.getSelfWxid().catch(() => null)
+          : null
+        const effectiveWxidRaw = selfWxidFromDb || resolvedWxidRaw
+        const cleanedWxid = normalizeAccountId(effectiveWxidRaw)
+        const resolvedWxid = cleanedWxid || effectiveWxidRaw
 
         if (!resolvedWxidRaw && !resolvedWxid) return
 
         const wxidCandidates = new Set<string>([
           resolvedWxidRaw.toLowerCase(),
+          effectiveWxidRaw.toLowerCase(),
           resolvedWxid.trim().toLowerCase(),
           cleanedWxid.trim().toLowerCase()
         ].filter(Boolean))
@@ -218,7 +225,7 @@ function Sidebar({ collapsed }: SidebarProps) {
         // 并行获取名称和头像
         const [contactResult, avatarResult] = await Promise.allSettled([
           (async () => {
-            const candidates = Array.from(new Set([resolvedWxidRaw, resolvedWxid, cleanedWxid].filter(Boolean)))
+            const candidates = Array.from(new Set([resolvedWxidRaw, effectiveWxidRaw, resolvedWxid, cleanedWxid].filter(Boolean)))
             for (const candidate of candidates) {
               const contact = await window.electronAPI.chat.getContact(candidate)
               if (contact?.remark || contact?.nickName || contact?.alias) {
@@ -235,7 +242,7 @@ function Sidebar({ collapsed }: SidebarProps) {
           myContact?.remark,
           myContact?.nickName,
           myContact?.alias
-        ) || resolvedWxid || '未识别用户'
+        ) || myContact?.nickName || resolvedWxid || '未识别用户'
 
         patchUserProfile({
           wxid: resolvedWxid,
@@ -259,7 +266,9 @@ function Sidebar({ collapsed }: SidebarProps) {
     const onWxidChanged = () => { void loadCurrentUser() }
     window.addEventListener('wxid-changed', onWxidChanged as EventListener)
     return () => window.removeEventListener('wxid-changed', onWxidChanged as EventListener)
-  }, [])
+  // Re-run when DB connects so getSelfWxid() resolves to the real wxid
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDbConnected])
 
   const getAvatarLetter = (name: string): string => {
     if (!name) return '?'

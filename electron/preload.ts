@@ -145,12 +145,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     open: (dbPath: string, hexKey: string, wxid: string) =>
       ipcRenderer.invoke('wcdb:open', dbPath, hexKey, wxid),
     close: () => ipcRenderer.invoke('wcdb:close'),
+    getSelfWxid: () => ipcRenderer.invoke('wcdb:getSelfWxid'),
 
   },
 
   // 密钥获取
   key: {
-    autoGetDbKey: () => ipcRenderer.invoke('key:autoGetDbKey'),
+    autoGetDbKey: (dbPath?: string) => ipcRenderer.invoke('key:autoGetDbKey', dbPath),
     autoGetImageKey: (manualDir?: string, wxid?: string) => ipcRenderer.invoke('key:autoGetImageKey', manualDir, wxid),
     scanImageKeyFromMemory: (userDir: string) => ipcRenderer.invoke('key:scanImageKeyFromMemory', userDir),
     onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => {

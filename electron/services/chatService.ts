@@ -1,4 +1,5 @@
 ﻿import { join, dirname, basename, extname } from 'path'
+import { pathToFileURL, fileURLToPath } from 'url'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, unlinkSync, watch, promises as fsPromises } from 'fs'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -29,6 +30,7 @@ export interface ChatSession {
   messageCountHint?: number
   displayName?: string
   avatarUrl?: string
+  alias?: string
   lastMsgSender?: string
   lastSenderDisplayName?: string
   selfWxid?: string
@@ -565,6 +567,7 @@ class ChatService {
       const now = Date.now()
       const myWxid = this.configService.get('myWxid')
 
+
       for (const row of rows) {
         const username =
           row.username ||
@@ -615,12 +618,15 @@ class ChatService {
           : undefined
 
         // 先尝试从缓存获取联系人信息（快速路径）
+        const rowDisplayName = row.displayName || row.display_name || ''
         let displayName = username
         let avatarUrl: string | undefined = undefined
         const cached = this.avatarCache.get(username)
         if (cached) {
-          displayName = cached.displayName || username
+          displayName = cached.displayName || rowDisplayName || username
           avatarUrl = cached.avatarUrl
+        } else if (rowDisplayName) {
+          displayName = rowDisplayName
         }
 
         const nextSession: ChatSession = {
@@ -634,6 +640,7 @@ class ChatService {
           messageCountHint,
           displayName,
           avatarUrl,
+          alias: row.alias || undefined,
           lastMsgSender: row.last_msg_sender,
           lastSenderDisplayName: row.last_sender_display_name,
           selfWxid: myWxid
@@ -1538,7 +1545,8 @@ class ChatService {
     try {
       const dbPath = await this.findInternalEmoticonDb()
       if (!dbPath) {
-        console.warn(`[ChatService] 表情包数据库未找到，无法恢复: md5=${msg.emojiMd5}`)
+        // No emoticon DB (e.g. 3.8x mode) — still try the local file cache
+        this.findEmojiInLocalCache(msg)
         return
       }
 
@@ -1573,8 +1581,9 @@ class ChatService {
     for (const ext of extensions) {
       const filePath = join(cacheDir, `${msg.emojiMd5}${ext}`)
       if (existsSync(filePath)) {
-        msg.emojiLocalPath = filePath
-        // 同步写入内存缓存，避免重复查找
+        const fileUrl = this.emojiPathToUrl(filePath)
+        msg.emojiLocalPath = fileUrl
+        // 同步写入内存缓存（存原始路径，existsSync 需要原始路径）
         emojiCache.set(msg.emojiMd5, filePath)
         return
       }
@@ -1658,10 +1667,10 @@ class ChatService {
       const messages = this.mapRowsToMessages(res.messages as Record<string, any>[])
       const normalized = this.normalizeMessageOrder(messages)
 
-      // 并发检查并修复缺失 CDN URL 的表情包
+      // 并发检查并修复表情包（同时填充本地缓存路径，即使 CDN URL 存在但可能 403）
       const fixPromises: Promise<void>[] = []
       for (const msg of normalized) {
-        if (msg.localType === 47 && !msg.emojiCdnUrl && msg.emojiMd5) {
+        if (msg.localType === 47 && msg.emojiMd5) {
           fixPromises.push(this.fallbackEmoticon(msg))
         }
       }
@@ -1763,7 +1772,9 @@ class ChatService {
   private async repairEmojiMessages(messages: Message[]): Promise<void> {
     const fixPromises: Promise<void>[] = []
     for (const msg of messages) {
-      if (msg.localType === 47 && !msg.emojiCdnUrl && msg.emojiMd5) {
+      if (msg.localType === 47 && msg.emojiMd5) {
+        // Always run fallback: populates emojiLocalPath from local cache even when
+        // emojiCdnUrl is present (CDN often returns 403 for 3.8.x stickers)
         fixPromises.push(this.fallbackEmoticon(msg))
       }
     }
@@ -3230,9 +3241,14 @@ class ChatService {
         encrypVer = imageInfo.encrypVer
         cdnThumbUrl = imageInfo.cdnThumbUrl
         imageDatName = this.parseImageDatNameFromRow(row)
-      } else if (localType === 43 && content) {
+          || (typeof row.imageDatName === 'string' && row.imageDatName ? row.imageDatName : undefined)
+          || (typeof row.image_dat_name === 'string' && row.image_dat_name ? row.image_dat_name : undefined)
+        } else if (localType === 43 && content) {
         // 视频消息
         videoMd5 = this.parseVideoMd5(content)
+        // 3.8x: 本地视频文件路径优先（文件名用绝对路径作标识）
+        const videoLocalPath38x = typeof row.videoLocalPath === 'string' && row.videoLocalPath ? row.videoLocalPath : ''
+        if (videoLocalPath38x) videoMd5 = videoLocalPath38x
       } else if (localType === 34 && content) {
         voiceDurationSeconds = this.parseVoiceDurationSeconds(content)
       } else if (localType === 42 && content) {
@@ -5212,6 +5228,11 @@ class ChatService {
     return join(documentsPath, 'WeFlow', 'Emojis')
   }
 
+  /** Convert an absolute file path to a file:// URL renderers can load */
+  private emojiPathToUrl(filePath: string): string {
+    return pathToFileURL(filePath).toString()
+  }
+
   clearCaches(options?: { includeMessages?: boolean; includeContacts?: boolean; includeEmojis?: boolean }): { success: boolean; error?: string } {
     const includeMessages = options?.includeMessages !== false
     const includeContacts = options?.includeContacts !== false
@@ -5271,7 +5292,7 @@ class ChatService {
     // 检查内存缓存
     const cached = emojiCache.get(cacheKey)
     if (cached && existsSync(cached)) {
-      return { success: true, localPath: cached }
+      return { success: true, localPath: this.emojiPathToUrl(cached) }
     }
 
     // 检查是否正在下载
@@ -5279,7 +5300,7 @@ class ChatService {
     if (downloading) {
       const result = await downloading
       if (result) {
-        return { success: true, localPath: result }
+        return { success: true, localPath: this.emojiPathToUrl(result) }
       }
       return { success: false, error: '下载失败' }
     }
@@ -5296,7 +5317,7 @@ class ChatService {
       const filePath = join(cacheDir, `${cacheKey}${ext}`)
       if (existsSync(filePath)) {
         emojiCache.set(cacheKey, filePath)
-        return { success: true, localPath: filePath }
+        return { success: true, localPath: this.emojiPathToUrl(filePath) }
       }
     }
 
@@ -5310,7 +5331,7 @@ class ChatService {
 
       if (localPath) {
         emojiCache.set(cacheKey, localPath)
-        return { success: true, localPath }
+        return { success: true, localPath: this.emojiPathToUrl(localPath) }
       }
       return { success: false, error: '下载失败' }
     } catch (e) {
@@ -5318,6 +5339,36 @@ class ChatService {
       emojiDownloading.delete(cacheKey)
       return { success: false, error: String(e) }
     }
+  }
+
+  /**
+   * 通过 md5 解析 emoji 本地原始路径（不含 file:// 前缀）。
+   * 优先查内存缓存和磁盘缓存目录；找不到时如有 cdnUrl 则尝试下载。
+   * 返回可直接用于 fs 操作的绝对路径，找不到返回 null。
+   */
+  async resolveEmojiFilePath(md5: string, cdnUrl?: string): Promise<string | null> {
+    if (!md5) return null
+    const cached = emojiCache.get(md5)
+    if (cached && existsSync(cached)) return cached
+    const cacheDir = this.getEmojiCacheDir()
+    const extensions = ['.gif', '.png', '.webp', '.jpg', '.jpeg']
+    for (const ext of extensions) {
+      const filePath = join(cacheDir, `${md5}${ext}`)
+      if (existsSync(filePath)) {
+        emojiCache.set(md5, filePath)
+        return filePath
+      }
+    }
+    if (cdnUrl) {
+      const result = await this.downloadEmoji(cdnUrl, md5)
+      if (result.localPath) {
+        const rawPath = result.localPath.startsWith('file://')
+          ? fileURLToPath(result.localPath)
+          : result.localPath
+        if (existsSync(rawPath)) return rawPath
+      }
+    }
+    return null
   }
 
   /**
@@ -5959,6 +6010,27 @@ class ChatService {
         logLookupPath('fail', '无效的消息ID')
         return { success: false, error: '无效的消息ID' }
       }
+
+      // ── WeChat 3.8.x: read plain .aud.silk from filesystem ─────────────────
+      if (await wcdbService.isIn38xMode()) {
+        lookupPath.push('3.8x模式: 从文件系统读取silk')
+        const ct38x = Number(createTime) > 0 ? Number(createTime) : 0
+        const silkResult = await wcdbService.getVoiceSilkData38x(sessionId, localId, ct38x)
+        if (!silkResult.success || !silkResult.data) {
+          logLookupPath('fail', '3.8x: silk文件未找到')
+          return { success: false, error: '未找到语音文件 (请确认微信曾播放过该语音)' }
+        }
+        const silkBytes = Buffer.from(silkResult.data, 'base64')
+        const pcmData = await this.decodeSilkToPcm(silkBytes, 24000)
+        if (!pcmData) {
+          logLookupPath('fail', '3.8x: silk解码失败')
+          return { success: false, error: 'SILK解码失败' }
+        }
+        const wavData = this.createWavBuffer(pcmData, 24000)
+        logLookupPath('success')
+        return { success: true, data: wavData.toString('base64') }
+      }
+      // ────────────────────────────────────────────────────────────────────────
 
       let msgCreateTime = createTime
       let senderWxid: string | null = senderWxidOpt || null
@@ -6967,6 +7039,8 @@ class ChatService {
       const imgInfo = this.parseImageInfo(rawContent)
       Object.assign(msg, imgInfo)
       msg.imageDatName = this.parseImageDatNameFromRow(row)
+        || (typeof row.imageDatName === 'string' && row.imageDatName ? row.imageDatName : undefined)
+        || (typeof row.image_dat_name === 'string' && row.image_dat_name ? row.image_dat_name : undefined)
     } else if (msg.localType === 47) { // Emoji
       const emojiInfo = this.parseEmojiInfo(rawContent)
       msg.emojiCdnUrl = emojiInfo.cdnUrl
@@ -7237,22 +7311,26 @@ class ChatService {
     if (!msg.emojiMd5) return null
     let url = msg.emojiCdnUrl
 
-    // 尝试获取 URL
-    if (!url && msg.emojiEncryptUrl) {
-      console.warn('[ChatService] Emoji has only encryptUrl:', msg.emojiMd5)
-    }
-
     if (!url) {
       await this.fallbackEmoticon(msg)
       url = msg.emojiCdnUrl
     }
 
-    if (!url) return null
+    // 即使没有 CDN URL，也先检查 WeFlow 本地缓存目录
+    if (!url) {
+      const cacheDir = this.getEmojiCacheDir()
+      const exts = ['.gif', '.png', '.webp', '.jpg', '.jpeg']
+      for (const ext of exts) {
+        const fp = join(cacheDir, `${msg.emojiMd5}${ext}`)
+        if (existsSync(fp)) return fp
+      }
+      return null
+    }
 
-    // Reuse existing downloadEmoji method
+    // Reuse existing downloadEmoji method (returns file:// URLs; convert to raw path for export)
     const result = await this.downloadEmoji(url, msg.emojiMd5)
     if (result.success && result.localPath) {
-      return result.localPath
+      return result.localPath.startsWith('file://') ? fileURLToPath(result.localPath) : result.localPath
     }
     return null
   }

@@ -355,6 +355,9 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       setWindowCloseBehavior(savedWindowCloseBehavior)
       setQuoteLayout(savedQuoteLayout)
 
+      const savedHttpApiPort = await configService.getHttpApiPort()
+      setHttpApiPort(savedHttpApiPort)
+
       const savedExcludeWords = await configService.getWordCloudExcludeWords()
       setWordCloudExcludeWords(savedExcludeWords)
       setExcludeWordsInput(savedExcludeWords.join('\n'))
@@ -757,7 +760,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     setIsManualStartPrompt(false)
     setDbKeyStatus('正在连接微信进程...')
     try {
-      const result = await window.electronAPI.key.autoGetDbKey()
+      const result = await window.electronAPI.key.autoGetDbKey(dbPath || undefined)
       if (result.success && result.key) {
         setDecryptKey(result.key)
         setDbKeyStatus('密钥获取成功')
@@ -1824,6 +1827,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     try {
       await window.electronAPI.http.stop()
       setHttpApiRunning(false)
+      await configService.setHttpApiAutoStart(false)
       showMessage('API 服务已停止', true)
     } catch (e: any) {
       showMessage(`操作失败: ${e}`, false)
@@ -1841,6 +1845,8 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       if (result.success) {
         setHttpApiRunning(true)
         if (result.port) setHttpApiPort(result.port)
+        await configService.setHttpApiAutoStart(true)
+        await configService.setHttpApiPort(result.port ?? httpApiPort)
         showMessage(`API 服务已启动，端口 ${result.port}`, true)
       } else {
         showMessage(`启动失败: ${result.error}`, false)

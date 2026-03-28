@@ -73,7 +73,11 @@ export const CONFIG_KEYS = {
 
   // 数据收集
   ANALYTICS_CONSENT: 'analyticsConsent',
-  ANALYTICS_DENY_COUNT: 'analyticsDenyCount'
+  ANALYTICS_DENY_COUNT: 'analyticsDenyCount',
+
+  // HTTP API
+  HTTP_API_AUTO_START: 'httpApiAutoStart',
+  HTTP_API_PORT: 'httpApiPort'
 } as const
 
 export interface WxidConfig {
@@ -1456,4 +1460,24 @@ export async function getAnalyticsDenyCount(): Promise<number> {
 // 设置数据收集拒绝次数
 export async function setAnalyticsDenyCount(count: number): Promise<void> {
   await config.set(CONFIG_KEYS.ANALYTICS_DENY_COUNT, count)
+}
+
+// HTTP API 自动启动
+export async function getHttpApiAutoStart(): Promise<boolean> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_AUTO_START)
+  return value === true
+}
+
+export async function setHttpApiAutoStart(enabled: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_AUTO_START, enabled)
+}
+
+// HTTP API 端口
+export async function getHttpApiPort(): Promise<number> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_PORT)
+  return typeof value === 'number' ? value : 5031
+}
+
+export async function setHttpApiPort(port: number): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_PORT, port)
 }

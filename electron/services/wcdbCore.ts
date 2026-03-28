@@ -1,6 +1,8 @@
 ﻿import { join, dirname, basename } from 'path'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
+import { is38xAccountPath } from './dbPathService'
+import { Wcdb38xService } from './wcdb38xService'
 
 // DLL 初始化错误信息，用于帮助用户诊断问题
 let lastDllInitError: string | null = null
@@ -109,6 +111,9 @@ export class WcdbCore {
   private monitorReconnectTimer: any = null
   private monitorPipePath: string = ''
 
+  // WeChat 3.8.x support
+  private wcdb38x: Wcdb38xService | null = null
+  private is38xMode = false
 
   private avatarUrlCache: Map<string, { url?: string; updatedAt: number }> = new Map()
   private readonly avatarCacheTtlMs = 10 * 60 * 1000
@@ -419,7 +424,8 @@ export class WcdbCore {
       const entries = readdirSync(dir)
 
       for (const entry of entries) {
-        if (entry.toLowerCase() === 'session.db') {
+        const lower = entry.toLowerCase()
+        if (lower === 'session.db' || lower === 'msg_0.db') {
           const fullPath = join(dir, entry)
           if (statSync(fullPath).isFile()) {
             return fullPath
@@ -458,6 +464,11 @@ export class WcdbCore {
       if (existsSync(viaWxid)) {
         return viaWxid
       }
+      // 3.8.x: Message 目录作为 db_storage 的替代
+      const viaWxidMsg = join(normalized, wxid, 'Message')
+      if (existsSync(viaWxidMsg)) {
+        return viaWxidMsg
+      }
       // 兼容目录名包含额外后缀（如 wxid_xxx_1234）
       try {
         const entries = readdirSync(normalized)
@@ -477,8 +488,18 @@ export class WcdbCore {
           if (existsSync(candidate)) {
             return candidate
           }
+          // 3.8.x fallback
+          const candidateMsg = join(normalized, entry, 'Message')
+          if (existsSync(candidateMsg)) {
+            return candidateMsg
+          }
         }
       } catch { }
+    }
+    // 3.8.x: 直接检查当前路径下的 Message 目录
+    const directMsg = join(normalized, 'Message')
+    if (existsSync(directMsg)) {
+      return directMsg
     }
     return null
   }
@@ -565,6 +586,41 @@ export class WcdbCore {
       } else if (localType === 0 && quanPin) {
         counts.former_friend += 1
       }
+    }
+
+    return counts
+  }
+
+  /** Derive contact type counts for WeChat 3.8.x from WCContact + GroupContact.
+   *  In 3.8.x, WCContact uses m_uiType: 0=friend, 2=subscription(gh_), 4=official(公众号).
+   *  Groups are NOT in WCContact — count them from GroupContact via getGroupMembers query. */
+  private derive38xContactTypeCounts(contacts: Array<Record<string, any>>): { private: number; group: number; official: number; former_friend: number } {
+    const counts = { private: 0, group: 0, official: 0, former_friend: 0 }
+    const EXCLUDE = new Set(['medianote', 'floatbottle', 'qmessage', 'qqmail', 'fmessage', 'newsapp', 'weixin'])
+
+    for (const row of contacts || []) {
+      const username = String(row.username || '')
+      if (!username || EXCLUDE.has(username)) continue
+
+      if (username.startsWith('gh_')) {
+        counts.official += 1
+      } else if (username.endsWith('@chatroom')) {
+        counts.group += 1
+      } else {
+        // m_uiType 4 = official/subscription; others = regular private contact
+        const uiType = Number(row.localType ?? row.local_type ?? 0)
+        if (uiType === 4) {
+          counts.official += 1
+        } else {
+          counts.private += 1
+        }
+      }
+    }
+
+    // Also count groups from GroupContact in group_new.db
+    if (this.wcdb38x) {
+      const groupResult = this.wcdb38x.countGroups()
+      counts.group = groupResult
     }
 
     return counts
@@ -1096,6 +1152,7 @@ export class WcdbCore {
 
       // 初始化
       const initResult = this.wcdbInit()
+      this.writeLog(`[bootstrap] wcdb_init result=${initResult}`, true)
       if (initResult !== 0) {
         console.error('WCDB 初始化失败:', initResult)
         lastDllInitError = this.formatInitProtectionError(initResult)
@@ -1119,6 +1176,11 @@ export class WcdbCore {
    */
   async testConnection(dbPath: string, hexKey: string, wxid: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
     try {
+      // WeChat 3.8.x: use direct sqlite3 path via Wcdb38xService
+      if (is38xAccountPath(dbPath)) {
+        return this.testConnection38x(dbPath, hexKey, wxid)
+      }
+
       // 如果当前已经有相同参数的活动连接，直接返回成功
       if (this.handle !== null &&
         this.currentPath === dbPath &&
@@ -1199,6 +1261,41 @@ export class WcdbCore {
       console.error('测试连接异常:', e)
       this.writeLog(`testConnection exception: ${String(e)}`)
       return { success: false, error: this.formatInitProtectionError(-3004) }
+    }
+  }
+
+  private testConnection38x(dbPath: string, hexKey: string, wxid: string): { success: boolean; error?: string; sessionCount?: number } {
+    try {
+      this.writeLog(`testConnection38x dbPath=${dbPath} wxid=${wxid}`, true)
+      const svc = this.getOrCreate38xService()
+      if (!svc) return { success: false, error: '无法初始化 3.8.x 数据库服务' }
+
+      // Resolve account path (dbPath may be the root version dir or account dir)
+      const accountPath = this.resolve38xAccountPath(dbPath, wxid)
+      if (!accountPath) {
+        this.writeLog(`testConnection38x: cannot resolve account path from ${dbPath}`, true)
+        return { success: false, error: '找不到 3.8.x 账号目录' }
+      }
+
+      const ok = svc.open(accountPath, hexKey)
+      if (!ok) {
+        svc.close()
+        return { success: false, error: '无法打开 3.8.x 数据库（密钥错误或文件不存在）' }
+      }
+
+      // Quick validation: get a session count
+      const sessResult = svc.getSessions()
+      const sessionCount = sessResult.sessions?.length || 0
+      this.writeLog(`testConnection38x ok sessionCount=${sessionCount}`, true)
+
+      // Keep it open if already connected with same params; otherwise close temp
+      if (!this.is38xMode) {
+        svc.close()
+      }
+      return { success: true, sessionCount }
+    } catch (e) {
+      this.writeLog(`testConnection38x exception: ${String(e)}`, true)
+      return { success: false, error: String(e) }
     }
   }
 
@@ -1296,6 +1393,9 @@ export class WcdbCore {
   }
 
   private ensureReady(): boolean {
+    // In 3.8.x mode, return false so methods without explicit 3.8x overrides
+    // return "not connected" gracefully rather than crashing on null handle.
+    if (this.is38xMode) return false
     return this.initialized && this.handle !== null
   }
 
@@ -1382,7 +1482,25 @@ export class WcdbCore {
   }
 
   isReady(): boolean {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.isOpen()
     return this.ensureReady()
+  }
+
+  isIn38xMode(): boolean {
+    return this.is38xMode
+  }
+
+  getVoiceSilkData38x(sessionId: string, localId: number, createTime = 0): Buffer | null {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getVoiceSilkData(sessionId, localId, createTime)
+    return null
+  }
+
+  /** Returns the actual WeChat wxid of the logged-in user.
+   *  In 3.8.x mode this resolves the account-dir hash → real wxid via WCContact.
+   *  In 4.0+ mode returns null (caller should use config.myWxid directly). */
+  getSelfWxid(): string | null {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getSelfWxid()
+    return null
   }
 
   /**
@@ -1391,6 +1509,12 @@ export class WcdbCore {
   async open(dbPath: string, hexKey: string, wxid: string): Promise<boolean> {
     try {
       lastDllInitError = null
+
+      // WeChat 3.8.x: use direct sqlite3 path via Wcdb38xService
+      if (is38xAccountPath(dbPath)) {
+        return this.open38x(dbPath, hexKey, wxid)
+      }
+
       if (!this.initialized) {
         const initOk = await this.initialize()
         if (!initOk) return false
@@ -1482,6 +1606,16 @@ export class WcdbCore {
    * 注意：wcdb_close_account 可能导致崩溃，使用 shutdown 代替
    */
   close(): void {
+    // Close 3.8.x service if active
+    if (this.is38xMode && this.wcdb38x) {
+      this.wcdb38x.close()
+      this.is38xMode = false
+      this.currentPath = null
+      this.currentKey = null
+      this.currentWxid = null
+      this.clearHardlinkCaches()
+      return
+    }
     if (this.handle !== null || this.initialized) {
       try {
         // 不调用 closeAccount，直接 shutdown
@@ -1511,10 +1645,108 @@ export class WcdbCore {
    * 检查是否已连接
    */
   isConnected(): boolean {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.isOpen()
     return this.initialized && this.handle !== null
   }
 
+  // ─── WeChat 3.8.x helpers ─────────────────────────────────────────────────
+
+  private getOrCreate38xService(): Wcdb38xService | null {
+    if (!this.wcdb38x) {
+      this.wcdb38x = new Wcdb38xService()
+    }
+    if (!this.wcdb38x['initialized']) {
+      const libPath = this.get38xLibPath()
+      if (!libPath) {
+        this.writeLog('[wcdb38x] libWCDB.dylib not found', true)
+        return null
+      }
+      const ok = this.wcdb38x.initialize(libPath)
+      if (!ok) {
+        this.writeLog('[wcdb38x] initialize failed', true)
+        return null
+      }
+    }
+    return this.wcdb38x
+  }
+
+  private get38xLibPath(): string | null {
+    if (process.platform !== 'darwin') return null
+    const candidates = [
+      this.resourcesPath ? join(this.resourcesPath, 'macos', 'libWCDB.dylib') : null,
+      join(process.cwd(), 'resources', 'macos', 'libWCDB.dylib'),
+    ].filter(Boolean) as string[]
+    return candidates.find(p => existsSync(p)) || null
+  }
+
+  /** Resolve the account-level directory for 3.8.x (contains Message/, Contact/ etc.) */
+  private resolve38xAccountPath(dbPath: string, wxid: string): string | null {
+    if (!dbPath) return null
+
+    // Case 1: dbPath is already the account dir (contains Message/msg_0.db)
+    const directMsg = join(dbPath, 'Message', 'msg_0.db')
+    if (existsSync(directMsg)) return dbPath
+
+    // Case 2: dbPath is the version root (2.0b4.0.9/) — look for wxid subdir
+    if (wxid) {
+      const viaWxid = join(dbPath, wxid)
+      if (existsSync(join(viaWxid, 'Message', 'msg_0.db'))) return viaWxid
+    }
+
+    // Case 3: scan for any 32-char hex subdir with Message/msg_0.db
+    try {
+      const entries = readdirSync(dbPath)
+      for (const entry of entries) {
+        if (!/^[0-9a-f]{32}$/i.test(entry)) continue
+        const candidate = join(dbPath, entry)
+        if (existsSync(join(candidate, 'Message', 'msg_0.db'))) return candidate
+      }
+    } catch {}
+
+    return null
+  }
+
+  private async open38x(dbPath: string, hexKey: string, wxid: string): Promise<boolean> {
+    try {
+      this.writeLog(`open38x dbPath=${dbPath} wxid=${wxid}`, true)
+      const svc = this.getOrCreate38xService()
+      if (!svc) return false
+
+      // If already open with same params, skip
+      if (this.is38xMode && this.currentPath === dbPath && this.currentKey === hexKey) {
+        return svc.isOpen()
+      }
+
+      const accountPath = this.resolve38xAccountPath(dbPath, wxid)
+      if (!accountPath) {
+        this.writeLog(`open38x: cannot resolve account path`, true)
+        lastDllInitError = '找不到 3.8.x 账号目录'
+        return false
+      }
+
+      const ok = svc.open(accountPath, hexKey)
+      if (!ok) {
+        this.writeLog(`open38x: failed to open databases`, true)
+        lastDllInitError = '无法打开 3.8.x 数据库（密钥可能错误）'
+        return false
+      }
+
+      this.is38xMode = true
+      this.currentPath = dbPath
+      this.currentKey = hexKey
+      this.currentWxid = wxid
+      lastDllInitError = null
+      this.writeLog(`open38x ok accountPath=${accountPath}`, true)
+      return true
+    } catch (e) {
+      this.writeLog(`open38x exception: ${String(e)}`, true)
+      lastDllInitError = String(e)
+      return false
+    }
+  }
+
   async getSessions(): Promise<{ success: boolean; sessions?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getSessions()
     if (!this.ensureReady()) {
       this.writeLog('getSessions skipped: not connected')
       return { success: false, error: 'WCDB 未连接' }
@@ -1545,6 +1777,7 @@ export class WcdbCore {
   }
 
   async getMessages(sessionId: string, limit: number, offset: number): Promise<{ success: boolean; messages?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getMessages(sessionId, limit, offset)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1567,6 +1800,19 @@ export class WcdbCore {
    * 获取指定时间之后的新消息
    */
   async getNewMessages(sessionId: string, minTime: number, limit: number = 1000): Promise<{ success: boolean; messages?: any[]; error?: string }> {
+    // For 3.8x, delegate through cursor (openMessageCursor already has 38x override)
+    if (this.is38xMode) {
+      const openRes = await this.openMessageCursor(sessionId, limit, true, minTime, 0)
+      if (!openRes.success || !openRes.cursor) return { success: false, error: openRes.error }
+      const cursor = openRes.cursor
+      try {
+        const fetchRes = await this.fetchMessageBatch(cursor)
+        if (!fetchRes.success) return { success: false, error: fetchRes.error }
+        return { success: true, messages: fetchRes.rows }
+      } finally {
+        await this.closeMessageCursor(cursor)
+      }
+    }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1595,6 +1841,7 @@ export class WcdbCore {
   }
 
   async getMessageCount(sessionId: string): Promise<{ success: boolean; count?: number; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getMessageCount(sessionId)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1611,6 +1858,14 @@ export class WcdbCore {
   }
 
   async getMessageCounts(sessionIds: string[]): Promise<{ success: boolean; counts?: Record<string, number>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const counts: Record<string, number> = {}
+      for (const id of sessionIds) {
+        const r = this.wcdb38x.getMessageCount(id)
+        counts[id] = r.count || 0
+      }
+      return { success: true, counts }
+    }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1645,6 +1900,7 @@ export class WcdbCore {
   }
 
   async getSessionMessageCounts(sessionIds: string[]): Promise<{ success: boolean; counts?: Record<string, number>; error?: string }> {
+    if (this.is38xMode) return this.getMessageCounts(sessionIds)
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     if (!this.wcdbGetSessionMessageCounts) return this.getMessageCounts(sessionIds)
     try {
@@ -1812,6 +2068,10 @@ export class WcdbCore {
     limit = 0,
     offset = 0
   ): Promise<{ success: boolean; rows?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const r = this.wcdb38x.getMessagesByType(sessionId, localType, ascending, limit, offset)
+      return r.success ? { success: true, rows: r.messages } : { success: false, error: r.error }
+    }
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     if (!this.wcdbGetMessagesByType) return { success: false, error: '接口未就绪' }
     try {
@@ -1836,6 +2096,10 @@ export class WcdbCore {
   }
 
   async getDisplayNames(usernames: string[]): Promise<{ success: boolean; map?: Record<string, string>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const r = this.wcdb38x.getDisplayNames(usernames)
+      return r.success ? { success: true, map: r.names } : { success: false, error: r.error }
+    }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1888,6 +2152,10 @@ export class WcdbCore {
   }
 
   async getAvatarUrls(usernames: string[]): Promise<{ success: boolean; map?: Record<string, string>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const r = this.wcdb38x.getAvatarUrls(usernames)
+      return r.success ? { success: true, map: r.avatars } : { success: false, error: r.error }
+    }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -1988,6 +2256,7 @@ export class WcdbCore {
   }
 
   async getGroupMemberCount(chatroomId: string): Promise<{ success: boolean; count?: number; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getGroupMemberCount(chatroomId)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2004,6 +2273,7 @@ export class WcdbCore {
   }
 
   async getGroupMemberCounts(chatroomIds: string[]): Promise<{ success: boolean; map?: Record<string, number>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getGroupMemberCounts(chatroomIds)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2034,6 +2304,7 @@ export class WcdbCore {
   }
 
   async getGroupMembers(chatroomId: string): Promise<{ success: boolean; members?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getGroupMembers(chatroomId)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2053,6 +2324,10 @@ export class WcdbCore {
   }
 
   async getGroupNicknames(chatroomId: string): Promise<{ success: boolean; nicknames?: Record<string, string>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const r = this.wcdb38x.getGroupNicknames(chatroomId, [])
+      return r.success ? { success: true, nicknames: r.map } : { success: false, error: r.error }
+    }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2094,6 +2369,7 @@ export class WcdbCore {
   }
 
   async getMessageDates(sessionId: string): Promise<{ success: boolean; dates?: string[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getMessageDates(sessionId)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2117,6 +2393,7 @@ export class WcdbCore {
   }
 
   async getMessageTableStats(sessionId: string): Promise<{ success: boolean; tables?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getMessageTableStats(sessionId)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2155,6 +2432,7 @@ export class WcdbCore {
   }
 
   async getContact(username: string): Promise<{ success: boolean; contact?: any; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getContact(username)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2269,7 +2547,17 @@ export class WcdbCore {
   }
 
   async getContactTypeCounts(): Promise<{ success: boolean; counts?: { private: number; group: number; official: number; former_friend: number }; error?: string }> {
-    if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
+    if (!this.ensureReady() && !this.is38xMode) return { success: false, error: 'WCDB 未连接' }
+
+    // In 3.8.x mode: derive counts from WCContact + GroupContact (groups not in WCContact)
+    if (this.is38xMode && this.wcdb38x) {
+      const contactsResult = await this.getContactsCompact()
+      const contacts = contactsResult.success ? (contactsResult.contacts as Array<Record<string, any>>) : []
+      const counts = this.derive38xContactTypeCounts(contacts)
+      this.writeLog(`[diag:getContactTypeCounts38x] private=${counts.private} group=${counts.group} official=${counts.official}`, true)
+      return { success: true, counts }
+    }
+
     const runFallback = async (reason: string) => {
       const contactsResult = await this.getContactsCompact()
       if (!contactsResult.success || !Array.isArray(contactsResult.contacts)) {
@@ -2303,6 +2591,7 @@ export class WcdbCore {
   }
 
   async getContactsCompact(usernames: string[] = []): Promise<{ success: boolean; contacts?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getContactsCompact()
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     const runFallback = async (reason: string) => {
       const fallback = await this.execQuery('contact', null, this.buildContactSelectSql(usernames))
@@ -2330,6 +2619,10 @@ export class WcdbCore {
   }
 
   async getContactAliasMap(usernames: string[]): Promise<{ success: boolean; map?: Record<string, string>; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) {
+      const r = this.wcdb38x.getDisplayNames(usernames)
+      return r.success ? { success: true, map: r.names } : { success: false, error: r.error }
+    }
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     if (!this.wcdbGetContactAliasMap) return { success: false, error: '接口未就绪' }
     try {
@@ -2379,6 +2672,7 @@ export class WcdbCore {
   }
 
   async getAggregateStats(sessionIds: string[], beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.computeAggregateStats(sessionIds, beginTimestamp, endTimestamp)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2437,6 +2731,7 @@ export class WcdbCore {
   }
 
   async getAvailableYears(sessionIds: string[]): Promise<{ success: boolean; data?: number[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getAvailableYears(sessionIds)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2460,6 +2755,7 @@ export class WcdbCore {
   }
 
   async getAnnualReportStats(sessionIds: string[], beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.computeAggregateStats(sessionIds, beginTimestamp, endTimestamp)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2489,6 +2785,8 @@ export class WcdbCore {
     peakDayBegin: number = 0,
     peakDayEnd: number = 0
   ): Promise<{ success: boolean; data?: any; error?: string }> {
+    // 3.8x: return empty extras — annual report handles missing extras gracefully
+    if (this.is38xMode) return { success: false, error: '3.8x 不支持扩展统计' }
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2521,6 +2819,7 @@ export class WcdbCore {
   }
 
   async getGroupStats(chatroomId: string, beginTimestamp: number = 0, endTimestamp: number = 0): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getGroupStats(chatroomId, beginTimestamp, endTimestamp)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2544,6 +2843,7 @@ export class WcdbCore {
   }
 
   async openMessageCursor(sessionId: string, batchSize: number, ascending: boolean, beginTimestamp: number, endTimestamp: number): Promise<{ success: boolean; cursor?: number; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.openMessageCursor(sessionId, batchSize, ascending, beginTimestamp, endTimestamp)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2575,6 +2875,7 @@ export class WcdbCore {
   }
 
   async openMessageCursorLite(sessionId: string, batchSize: number, ascending: boolean, beginTimestamp: number, endTimestamp: number): Promise<{ success: boolean; cursor?: number; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.openMessageCursor(sessionId, batchSize, ascending, beginTimestamp, endTimestamp)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2609,6 +2910,7 @@ export class WcdbCore {
   }
 
   async fetchMessageBatch(cursor: number): Promise<{ success: boolean; rows?: any[]; hasMore?: boolean; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.fetchMessageBatch(cursor)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2629,6 +2931,7 @@ export class WcdbCore {
   }
 
   async closeMessageCursor(cursor: number): Promise<{ success: boolean; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.closeMessageCursor(cursor)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2661,6 +2964,7 @@ export class WcdbCore {
   }
 
   async execQuery(kind: string, path: string | null, sql: string, params: any[] = []): Promise<{ success: boolean; rows?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.execQuery(kind, path, sql)
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
@@ -2809,6 +3113,7 @@ export class WcdbCore {
       return { success: false, error: String(e) }
     }
   } async getMessageById(sessionId: string, localId: number): Promise<{ success: boolean; message?: any; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.getMessageById(sessionId, localId)
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     try {
       const outPtr = [null as any]
@@ -3240,6 +3545,7 @@ export class WcdbCore {
   }
 
   async searchMessages(keyword: string, sessionId?: string, limit?: number, offset?: number, beginTimestamp?: number, endTimestamp?: number): Promise<{ success: boolean; messages?: any[]; error?: string }> {
+    if (this.is38xMode && this.wcdb38x) return this.wcdb38x.searchMessages(keyword, sessionId, limit, offset)
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     if (!this.wcdbSearchMessages) return { success: false, error: '当前 DLL 版本不支持搜索消息' }
     try {

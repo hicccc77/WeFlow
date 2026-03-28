@@ -176,6 +176,14 @@ export class WcdbService {
   }
 
   /**
+   * Get the actual WeChat wxid of the logged-in user.
+   * In 3.8.x mode this resolves the account-dir hash to the real wxid via WCContact.
+   */
+  async getSelfWxid(): Promise<string | null> {
+    return this.callWorker('getSelfWxid')
+  }
+
+  /**
    * 关闭服务
    */
   async shutdown(): Promise<void> {
@@ -636,6 +644,14 @@ export class WcdbService {
    */
   cloudStop(): Promise<{ success: boolean; error?: string }> {
     return this.callWorker('cloudStop', {})
+  }
+
+  async isIn38xMode(): Promise<boolean> {
+    return this.callWorker<boolean>('isIn38xMode')
+  }
+
+  async getVoiceSilkData38x(sessionId: string, localId: number, createTime = 0): Promise<{ success: boolean; data?: string; error?: string }> {
+    return this.callWorker('getVoiceSilkData38x', { sessionId, localId, createTime })
   }
 
 

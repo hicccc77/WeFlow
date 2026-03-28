@@ -433,6 +433,20 @@ class VideoService {
    * 文件命名: {md5}.mp4, {md5}.jpg, {md5}_thumb.jpg
    */
   async getVideoInfo(videoMd5: string, options?: { includePoster?: boolean }): Promise<VideoInfo> {
+    // WeChat 3.8.x: videoMd5 is an absolute path to a local .mp4 file
+    if (videoMd5 && videoMd5.startsWith('/') && videoMd5.endsWith('.mp4')) {
+      if (existsSync(videoMd5)) {
+        const thumbPath = videoMd5.replace(/\.mp4$/, '.video_thumb.jpg')
+        return {
+          exists: true,
+          videoUrl: `file://${videoMd5}`,
+          thumbUrl: existsSync(thumbPath) ? this.fileToDataUrl(thumbPath, 'image/jpeg') : undefined,
+          coverUrl: existsSync(thumbPath) ? this.fileToDataUrl(thumbPath, 'image/jpeg') : undefined,
+        }
+      }
+      return { exists: false }
+    }
+
     const normalizedMd5 = String(videoMd5 || '').trim().toLowerCase()
     const includePoster = options?.includePoster !== false
     const dbPath = this.getDbPath()

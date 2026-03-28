@@ -5,6 +5,7 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import crypto from 'crypto'
 import { homedir } from 'os'
+import { is38xAccountPath } from './dbPathService'
 
 type DbKeyResult = { success: boolean; key?: string; error?: string; logs?: string[] }
 type ImageKeyResult = { success: boolean; xorKey?: number; aesKey?: string; error?: string }
@@ -48,6 +49,79 @@ export class KeyServiceMac {
     }
 
     throw new Error('xkey_helper not found')
+  }
+
+  private getDumpkeyPath(): string {
+    const isPackaged = app.isPackaged
+    const candidates: string[] = []
+
+    if (isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'dumpkey'))
+      candidates.push(join(process.resourcesPath, 'dumpkey'))
+    } else {
+      const cwd = process.cwd()
+      candidates.push(join(cwd, 'resources', 'dumpkey'))
+      candidates.push(join(app.getAppPath(), 'resources', 'dumpkey'))
+    }
+
+    for (const path of candidates) {
+      if (existsSync(path)) return path
+    }
+
+    throw new Error('dumpkey not found')
+  }
+
+  private async getDbKeyByDumpkey(
+    pid: number,
+    dbPath: string,
+    onStatus?: (message: string, level: number) => void
+  ): Promise<string> {
+    const dumpkeyPath = this.getDumpkeyPath()
+    const timeoutSec = 60
+    const scriptLines = [
+      `set dumpkeyPath to ${JSON.stringify(dumpkeyPath)}`,
+      `set cmd to quoted form of dumpkeyPath & " ${pid} " & quoted form of ${JSON.stringify(dbPath)}`,
+      `set timeoutSec to ${timeoutSec}`,
+      'try',
+      'with timeout of timeoutSec seconds',
+      'set outText to do shell script cmd with administrator privileges',
+      'end timeout',
+      'return "WF_OK::" & outText',
+      'on error errMsg number errNum partial result pr',
+      'return "WF_ERR::" & errNum & "::" & errMsg & "::" & (pr as text)',
+      'end try'
+    ]
+    onStatus?.('正在请求管理员授权并执行 dumpkey...', 0)
+
+    let stdout = ''
+    try {
+      const result = await execFileAsync('/usr/bin/osascript', scriptLines.flatMap(line => ['-e', line]), {
+        timeout: timeoutSec * 1000 + 10_000
+      })
+      stdout = result.stdout
+    } catch (e: any) {
+      const msg = `${e?.stderr || ''}\n${e?.stdout || ''}\n${e?.message || ''}`.trim()
+      throw new Error(msg || 'dumpkey execution failed')
+    }
+
+    const lines = String(stdout).split(/\r?\n/).map(x => x.trim()).filter(Boolean)
+    if (!lines.length) throw new Error('dumpkey returned empty output')
+    const joined = lines.join('\n')
+
+    if (joined.startsWith('WF_ERR::')) {
+      const parts = joined.split('::')
+      const errNum = parts[1] || 'unknown'
+      const errMsg = parts[2] || 'unknown'
+      const partial = parts.slice(3).join('::')
+      if (errNum === '-128') throw new Error('User canceled')
+      throw new Error(`dumpkey failed: errNum=${errNum}, errMsg=${errMsg}, partial=${partial || '(empty)'}`)
+    }
+
+    const raw = joined.startsWith('WF_OK::') ? joined.slice('WF_OK::'.length).trim() : joined.trim()
+    // dumpkey 输出 64 字符十六进制密钥
+    const hexMatch = raw.match(/[0-9a-f]{64}/i)
+    if (hexMatch) return hexMatch[0].toLowerCase()
+    throw new Error('dumpkey returned unexpected output: ' + raw.slice(0, 100))
   }
 
   private getImageScanHelperPath(): string {
@@ -116,6 +190,29 @@ export class KeyServiceMac {
     }
   }
 
+  /**
+   * 从 3.8.x 根路径或账号路径中找到第一个 msg_0.db 文件
+   */
+  private find38xMsgDb(rootOrAccountPath: string): string | null {
+    try {
+      // 如果直接就是 msg_0.db
+      if (rootOrAccountPath.toLowerCase().endsWith('msg_0.db') && existsSync(rootOrAccountPath)) {
+        return rootOrAccountPath
+      }
+      // 如果是账号目录（32位 hex）：{accountDir}/Message/msg_0.db
+      const directMsg = join(rootOrAccountPath, 'Message', 'msg_0.db')
+      if (existsSync(directMsg)) return directMsg
+      // 如果是根目录（2.0b4.0.x）：{root}/{md5}/Message/msg_0.db
+      const entries = readdirSync(rootOrAccountPath)
+      for (const entry of entries) {
+        if (!/^[0-9a-f]{32}$/i.test(entry)) continue
+        const candidate = join(rootOrAccountPath, entry, 'Message', 'msg_0.db')
+        if (existsSync(candidate)) return candidate
+      }
+    } catch { }
+    return null
+  }
+
   private async checkSipStatus(): Promise<{ enabled: boolean; error?: string }> {
     try {
       const { stdout } = await execFileAsync('/usr/bin/csrutil', ['status'])
@@ -128,15 +225,36 @@ export class KeyServiceMac {
 
   async autoGetDbKey(
     timeoutMs = 60_000,
-    onStatus?: (message: string, level: number) => void
+    onStatus?: (message: string, level: number) => void,
+    dbPath?: string
   ): Promise<DbKeyResult> {
     try {
-      // 检测 SIP 状态
+      // 3.8.x: 使用 dumpkey 获取密钥（不需要关闭 SIP）
+      if (dbPath && is38xAccountPath(dbPath)) {
+        onStatus?.('检测到 WeChat 3.8.x，使用 dumpkey 获取密钥...', 0)
+        try {
+          const msgDbPath = this.find38xMsgDb(dbPath)
+          if (!msgDbPath) throw new Error(`未找到 msg_0.db，请确认微信数据路径: ${dbPath}`)
+          const pid = await this.getWeChatPid()
+          const key = await this.getDbKeyByDumpkey(pid, msgDbPath, onStatus)
+          onStatus?.('密钥获取成功', 1)
+          return { success: true, key }
+        } catch (e: any) {
+          const msg = `${e?.message || e}`
+          if (msg.includes('(-128)') || msg.includes('User canceled')) {
+            return { success: false, error: '已取消管理员授权' }
+          }
+          onStatus?.('获取失败: ' + msg, 2)
+          return { success: false, error: msg }
+        }
+      }
+
+      // 检测 SIP 状态（4.0+ 路径需要）
       const sipStatus = await this.checkSipStatus()
       if (sipStatus.enabled) {
         return {
           success: false,
-          error: 'SIP (系统完整性保护) 已开启，无法获取密钥。请关闭 SIP 后重试。\n\n关闭方法：\n1. Intel 芯片：重启 Mac 并按住 Command + R 进入恢复模式\n2. Apple 芯片（M 系列）：关机后长按开机（指纹）键，选择“设置（选项）”进入恢复模式\n3. 打开终端，输入: csrutil disable\n4. 重启电脑'
+          error: 'SIP (系统完整性保护) 已开启，无法获取密钥。请关闭 SIP 后重试。\n\n关闭方法：\n1. Intel 芯片：重启 Mac 并按住 Command + R 进入恢复模式\n2. Apple 芯片（M 系列）：关机后长按开机（指纹）键，选择”设置（选项）”进入恢复模式\n3. 打开终端，输入: csrutil disable\n4. 重启电脑'
         }
       }
 

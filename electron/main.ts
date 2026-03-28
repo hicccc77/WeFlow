@@ -1460,6 +1460,10 @@ function registerIpcHandlers() {
     return true
   })
 
+  ipcMain.handle('wcdb:getSelfWxid', async () => {
+    return wcdbService.getSelfWxid()
+  })
+
 
 
   // 聊天相关
@@ -2568,10 +2572,10 @@ function registerIpcHandlers() {
   })
 
   // 密钥获取
-  ipcMain.handle('key:autoGetDbKey', async (event) => {
+  ipcMain.handle('key:autoGetDbKey', async (event, dbPath?: string) => {
     return keyService.autoGetDbKey(180_000, (message, level) => {
       event.sender.send('key:dbKeyStatus', { message, level })
-    })
+    }, dbPath)
   })
 
   ipcMain.handle('key:autoGetImageKey', async (event, manualDir?: string, wxid?: string) => {
@@ -2704,9 +2708,33 @@ app.whenReady().then(async () => {
   messagePushService.start()
   await delay(200)
 
+  // ── Headless 模式：跳过所有 GUI，只跑 API 服务 ──────────────
+  const isHeadless = process.argv.includes('--headless') || process.env.WEFLOW_HEADLESS === '1'
+  if (isHeadless) {
+    if (process.platform === 'darwin') app.dock.hide()
+    closeSplash()
+    const port = (configService.get('httpApiPort') as number) || 5031
+    const result = await httpService.start(port)
+    if (result.success) {
+      console.log(`[Headless] WeFlow API running on http://127.0.0.1:${result.port}`)
+    } else {
+      console.error(`[Headless] Failed to start API: ${result.error}`)
+    }
+    // 阻止 window-all-closed 退出（macOS 默认行为已 override，其他平台需要保持进程活跃）
+    app.on('window-all-closed', () => { /* 不退出 */ })
+    return
+  }
+  // ────────────────────────────────────────────────────────────
+
   // 检查配置状态
   const onboardingDone = configService.get('onboardingDone')
   shouldShowMain = onboardingDone === true
+
+  // API 自动启动（上次手动开启过的）
+  if (configService.get('httpApiAutoStart') === true) {
+    const port = (configService.get('httpApiPort') as number) || 5031
+    httpService.start(port).catch(() => {})
+  }
 
   // 创建主窗口（不显示，由启动流程统一控制）
   updateSplashProgress(30, '正在加载界面...')

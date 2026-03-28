@@ -9601,8 +9601,8 @@ function MessageBubble({
     // 表情包消息
     if (isEmoji) {
       // ... (keep existing emoji logic)
-      // 没有 cdnUrl 或加载失败，显示占位符
-      if ((!message.emojiCdnUrl && !message.emojiLocalPath) || emojiError) {
+      // 没有 cdnUrl 或加载失败，显示占位符（如有本地路径则优先使用）
+      if ((!message.emojiCdnUrl && !message.emojiLocalPath) || (emojiError && !emojiLocalPath)) {
         return (
           <div className="emoji-message-wrapper" ref={emojiContainerRef}>
             <div className="emoji-unavailable">

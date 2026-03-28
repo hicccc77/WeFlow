@@ -557,9 +557,22 @@ class HttpService {
       messages = filtered.slice(offset, endIndex)
     }
 
+    // 始终为 type 47 导出 emoji 路径，不受 media 开关控制
+    const emojiMessages = messages.filter((m) => m.localType === 47 && m.emojiMd5)
+    const emojiOnlyMap = emojiMessages.length > 0
+      ? await this.exportMediaForMessages(emojiMessages, talker, {
+          enabled: true, exportImages: false, exportVoices: false, exportVideos: false, exportEmojis: true
+        })
+      : new Map<number, ApiExportedMedia>()
+
     const mediaMap = mediaOptions.enabled
       ? await this.exportMediaForMessages(messages, talker, mediaOptions)
       : new Map<number, ApiExportedMedia>()
+
+    // 将 emoji 路径合并到 mediaMap（media 选项优先）
+    for (const [localId, emoji] of emojiOnlyMap) {
+      if (!mediaMap.has(localId)) mediaMap.set(localId, emoji)
+    }
 
     const displayNames = await this.getDisplayNames([talker])
     const talkerName = displayNames[talker] || talker
@@ -859,16 +872,16 @@ class HttpService {
         }
       }
 
-      if (msg.localType === 47 && options.exportEmojis && msg.emojiCdnUrl) {
-        const result = await chatService.downloadEmoji(msg.emojiCdnUrl, msg.emojiMd5)
-        if (result.success && result.localPath && fs.existsSync(result.localPath)) {
-          const sourceExt = path.extname(result.localPath) || '.gif'
-          const fileName = `${this.sanitizeFileName(msg.emojiMd5 || `emoji_${msg.localId}`, `emoji_${msg.localId}`)}${sourceExt}`
+      if (msg.localType === 47 && options.exportEmojis && msg.emojiMd5) {
+        const localFilePath = await chatService.resolveEmojiFilePath(msg.emojiMd5, msg.emojiCdnUrl)
+        if (localFilePath && fs.existsSync(localFilePath)) {
+          const sourceExt = path.extname(localFilePath) || '.gif'
+          const fileName = `${this.sanitizeFileName(msg.emojiMd5, `emoji_${msg.localId}`)}${sourceExt}`
           const targetDir = path.join(sessionDir, 'emojis')
           const fullPath = path.join(targetDir, fileName)
           this.ensureDir(targetDir)
           if (!fs.existsSync(fullPath)) {
-            fs.copyFileSync(result.localPath, fullPath)
+            fs.copyFileSync(localFilePath, fullPath)
           }
           const relativePath = `${this.sanitizeFileName(talker, 'session')}/emojis/${fileName}`
           return { kind: 'emoji', fileName, fullPath, relativePath }
@@ -890,7 +903,7 @@ class HttpService {
       sortSeq: msg.sortSeq,
       isSend: msg.isSend,
       senderUsername: msg.senderUsername,
-      content: this.getMessageContent(msg),
+      content: (msg.localType === 47 && media?.relativePath) ? media.relativePath : this.getMessageContent(msg),
       rawContent: msg.rawContent,
       parsedContent: msg.parsedContent,
       mediaType: media?.kind,
@@ -1159,7 +1172,7 @@ class HttpService {
         groupNickname: senderInfo.groupNickname,
         timestamp: msg.createTime,
         type: this.mapMessageType(msg.localType, msg),
-        content: this.getMessageContent(msg),
+        content: (msg.localType === 47 && mediaMap.get(msg.localId)?.relativePath) ? mediaMap.get(msg.localId)!.relativePath : this.getMessageContent(msg),
         platformMessageId: msg.serverId ? String(msg.serverId) : undefined,
         mediaPath: mediaMap.get(msg.localId) ? `http://127.0.0.1:${this.port}/api/v1/media/${mediaMap.get(msg.localId)!.relativePath}` : undefined
       }

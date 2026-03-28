@@ -70,3 +70,7 @@ resources/wx_send
 概述.md
 pnpm-lock.yaml
 /pnpm-workspace.yaml
+
+# Temp files and private debug scripts
+tmp/
+resources/macos/WCDB.framework/

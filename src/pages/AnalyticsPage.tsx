@@ -101,7 +101,7 @@ function AnalyticsPage() {
         detail: '正在分析联系人排名',
         progressText: '联系人排名'
       })
-      const rankingsResult = await window.electronAPI.analytics.getContactRankings(20)
+      const rankingsResult = await window.electronAPI.analytics.getContactRankings(200)
       if (isBackgroundTaskCancelRequested(taskId)) {
         finishBackgroundTask(taskId, 'canceled', {
           detail: '已停止后续加载，联系人排名后续步骤未继续'

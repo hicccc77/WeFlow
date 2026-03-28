@@ -3,6 +3,18 @@ import { existsSync, readdirSync, statSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { createDecipheriv } from 'crypto'
 
+/**
+ * 判断路径是否属于微信 3.8.x 的账号目录（2.0b4.0.x 路径 或 32位MD5哈希目录名）
+ */
+export function is38xAccountPath(accountPath: string): boolean {
+  const name = basename(accountPath)
+  return (
+    accountPath.includes('/2.0b4.0.') ||
+    accountPath.includes('\\2.0b4.0.') ||
+    (name.length === 32 && /^[0-9a-f]{32}$/.test(name))
+  )
+}
+
 export interface WxidInfo {
   wxid: string
   modifiedTime: number
@@ -93,6 +105,23 @@ export class DbPathService {
       const possiblePaths: string[] = []
       const home = homedir()
 
+      // 3.8.x: 优先检测旧版路径 (2.0b4.0.x)
+      if (process.platform === 'darwin') {
+        const appSupport = join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Library', 'Application Support', 'com.tencent.xinWeChat')
+        if (existsSync(appSupport)) {
+          try {
+            const versionDirs = readdirSync(appSupport).filter(d => d.startsWith('2.0b4.0.'))
+            for (const vd of versionDirs) {
+              const root38x = join(appSupport, vd)
+              const accounts = this.findAccountDirs(root38x)
+              if (accounts.length > 0) {
+                return { success: true, path: root38x }
+              }
+            }
+          } catch { }
+        }
+      }
+
       // macOS 微信路径（固定）
       if (process.platform === 'darwin') {
         possiblePaths.push(join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Documents', 'xwechat_files'))
@@ -159,7 +188,8 @@ export class DbPathService {
     return (
       existsSync(join(entryPath, 'db_storage')) ||
       existsSync(join(entryPath, 'FileStorage', 'Image')) ||
-      existsSync(join(entryPath, 'FileStorage', 'Image2'))
+      existsSync(join(entryPath, 'FileStorage', 'Image2')) ||
+      existsSync(join(entryPath, 'Message'))  // 3.8.x
     )
   }
 
@@ -168,6 +198,8 @@ export class DbPathService {
     if (lower.startsWith('all') || lower.startsWith('applet') || lower.startsWith('backup') || lower.startsWith('wmpf')) {
       return false
     }
+    // 3.8.x: 32位 MD5 哈希账号目录
+    if (/^[0-9a-f]{32}$/.test(lower)) return true
     return true
   }
 
@@ -194,6 +226,13 @@ export class DbPathService {
         latest = Math.max(latest, image2Stat.mtimeMs)
       }
 
+      // 3.8.x: Message 目录时间
+      const messagePath = join(entryPath, 'Message')
+      if (existsSync(messagePath)) {
+        const messageStat = statSync(messagePath)
+        latest = Math.max(latest, messageStat.mtimeMs)
+      }
+
       return latest
     } catch {
       return 0
@@ -216,7 +255,7 @@ export class DbPathService {
           if (!stat.isDirectory()) continue
           const lower = entry.toLowerCase()
           if (lower === 'all_users') continue
-          if (!entry.includes('_')) continue
+          if (!entry.includes('_') && !/^[0-9a-f]{32}$/.test(entry.toLowerCase())) continue
           wxids.push({ wxid: entry, modifiedTime: stat.mtimeMs })
         }
       }

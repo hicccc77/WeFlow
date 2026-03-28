@@ -134,10 +134,11 @@ export interface ElectronAPI {
     testConnection: (dbPath: string, hexKey: string, wxid: string) => Promise<{ success: boolean; error?: string; sessionCount?: number }>
     open: (dbPath: string, hexKey: string, wxid: string) => Promise<boolean>
     close: () => Promise<boolean>
+    getSelfWxid: () => Promise<string | null>
 
   }
   key: {
-    autoGetDbKey: () => Promise<{ success: boolean; key?: string; error?: string; logs?: string[] }>
+    autoGetDbKey: (dbPath?: string) => Promise<{ success: boolean; key?: string; error?: string; logs?: string[] }>
     autoGetImageKey: (manualDir?: string, wxid?: string) => Promise<{ success: boolean; xorKey?: number; aesKey?: string; error?: string }>
     scanImageKeyFromMemory: (userDir: string) => Promise<{ success: boolean; xorKey?: number; aesKey?: string; error?: string }>
     onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => () => void
