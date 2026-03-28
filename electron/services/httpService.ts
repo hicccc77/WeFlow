@@ -12,6 +12,7 @@ import { ConfigService } from './config'
 import { videoService } from './videoService'
 import { imageDecryptService } from './imageDecryptService'
 import { groupAnalyticsService } from './groupAnalyticsService'
+import { snsService } from './snsService'
 
 // ChatLab 格式定义
 interface ChatLabHeader {
@@ -278,6 +279,8 @@ class HttpService {
         await this.handleContacts(url, res)
       } else if (pathname === '/api/v1/group-members') {
         await this.handleGroupMembers(url, res)
+      } else if (pathname === '/api/v1/sns/timeline') {
+        await this.handleSnsTimeline(url, res)
       } else if (pathname.startsWith('/api/v1/media/')) {
         this.handleMediaRequest(pathname, res)
       } else {
@@ -1366,6 +1369,44 @@ class HttpService {
         return this.getType49Content(msg)
       default:
         return msg.rawContent || null
+    }
+  }
+
+  /**
+   * GET /api/v1/sns/timeline?limit=N&offset=N&usernames=wxid1,wxid2&keyword=xxx&start=ts&end=ts
+   * 获取朋友圈时间线
+   */
+  private async handleSnsTimeline(url: URL, res: http.ServerResponse): Promise<void> {
+    try {
+      const limit = this.parseIntParam(url.searchParams.get('limit'), 100, 1, 10000)
+      const offset = this.parseIntParam(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER)
+      const keyword = (url.searchParams.get('keyword') || '').trim() || undefined
+      const startParam = url.searchParams.get('start')
+      const endParam = url.searchParams.get('end')
+
+      // Parse usernames filter
+      const usernamesStr = (url.searchParams.get('usernames') || '').trim()
+      const usernames = usernamesStr ? usernamesStr.split(',').map(s => s.trim()).filter(Boolean) : undefined
+
+      // Parse time range
+      const startTime = startParam ? this.parseTimeParam(startParam) : undefined
+      const endTime = endParam ? this.parseTimeParam(endParam, true) : undefined
+
+      const result = await snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+
+      if (!result.success) {
+        this.sendError(res, 500, result.error || 'Failed to get timeline')
+        return
+      }
+
+      this.sendJson(res, {
+        success: true,
+        count: result.timeline?.length || 0,
+        timeline: result.timeline || []
+      })
+    } catch (error) {
+      console.error('[HttpService] SNS timeline error:', error)
+      this.sendError(res, 500, String(error))
     }
   }
 
