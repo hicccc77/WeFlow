@@ -6128,8 +6128,8 @@ class ChatService {
       // 缓存 WAV 数据到内存
       this.cacheVoiceWav(cacheKey, wavData)
 
-      // 缓存 WAV 数据到文件（异步，不阻塞返回）
-      this.cacheVoiceWavToFile(cacheKey, wavData)
+      // 缓存 WAV 数据到文件
+      await this.cacheVoiceWavToFile(cacheKey, wavData)
 
       lookupPath.push(`总耗时=${t8 - startTime}ms`)
       logLookupPath('success')
