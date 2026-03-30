@@ -537,6 +537,32 @@ class SnsService {
         return raw.trim()
     }
 
+    private async collectSnsUsernamesFromTimeline(maxRounds: number = 2000): Promise<string[]> {
+        const pageSize = 500
+        const uniqueUsers = new Set<string>()
+        let offset = 0
+
+        for (let round = 0; round < maxRounds; round++) {
+            const result = await wcdbService.getSnsTimeline(pageSize, offset, undefined, undefined, 0, 0)
+            if (!result.success || !Array.isArray(result.timeline)) {
+                throw new Error(result.error || '获取朋友圈发布者失败')
+            }
+
+            const rows = result.timeline
+            if (rows.length === 0) break
+
+            for (const row of rows) {
+                const username = this.pickTimelineUsername(row)
+                if (username) uniqueUsers.add(username)
+            }
+
+            if (rows.length < pageSize) break
+            offset += rows.length
+        }
+
+        return Array.from(uniqueUsers)
+    }
+
     private async getExportStatsFromTimeline(myWxid?: string): Promise<{ totalPosts: number; totalFriends: number; myPosts: number | null }> {
         const pageSize = 500
         const uniqueUsers = new Set<string>()
@@ -794,7 +820,22 @@ class SnsService {
         if (!result.success) {
             return { success: false, error: result.error || '获取朋友圈联系人失败' }
         }
-        return { success: true, usernames: result.usernames || [] }
+        const directUsernames = Array.isArray(result.usernames) ? result.usernames : []
+        if (directUsernames.length > 0) {
+            return { success: true, usernames: directUsernames }
+        }
+
+        // 回退：通过 timeline 分页拉取收集用户名，兼容底层接口暂时返回空数组的场景。
+        try {
+            const timelineUsers = await this.collectSnsUsernamesFromTimeline()
+            if (timelineUsers.length > 0) {
+                return { success: true, usernames: timelineUsers }
+            }
+        } catch {
+            // 忽略回退错误，保持与原行为一致返回空数组
+        }
+
+        return { success: true, usernames: directUsernames }
     }
 
     private async getExportStatsFromTableCount(myWxid?: string): Promise<{ totalPosts: number; totalFriends: number; myPosts: number | null }> {
