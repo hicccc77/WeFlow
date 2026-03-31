@@ -625,7 +625,7 @@
 
           .bubble-content {
             background: var(--primary-gradient);
-            color: #fff;
+            color: var(--on-primary);
             border-radius: 18px 18px 4px 18px;
             padding: 10px 14px;
             font-size: 14px;
@@ -1962,7 +1962,7 @@
 
     .bubble-content {
       background: var(--primary);
-      color: white;
+      color: var(--on-primary);
       border-radius: 18px 18px 4px 18px;
     }
   }
@@ -2453,15 +2453,15 @@
 
 // 自己发送的消息中的引用样式
 .message-bubble.sent .quoted-message {
-  background: rgba(255, 255, 255, 0.15);
-  border-left-color: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--on-primary) 12%, var(--primary));
+  border-left-color: color-mix(in srgb, var(--on-primary) 36%, var(--primary));
 
   .quoted-sender {
-    color: rgba(255, 255, 255, 0.9);
+    color: color-mix(in srgb, var(--on-primary) 92%, var(--primary));
   }
 
   .quoted-text {
-    color: rgba(255, 255, 255, 0.8);
+    color: color-mix(in srgb, var(--on-primary) 80%, var(--primary));
   }
 }
 

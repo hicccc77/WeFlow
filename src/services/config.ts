@@ -64,6 +64,10 @@ export const CONFIG_KEYS = {
   NOTIFICATION_POSITION: 'notificationPosition',
   NOTIFICATION_FILTER_MODE: 'notificationFilterMode',
   NOTIFICATION_FILTER_LIST: 'notificationFilterList',
+  HTTP_API_TOKEN: 'httpApiToken',
+  HTTP_API_ENABLED: 'httpApiEnabled',
+  HTTP_API_PORT: 'httpApiPort',
+  HTTP_API_HOST: 'httpApiHost',
   MESSAGE_PUSH_ENABLED: 'messagePushEnabled',
   WINDOW_CLOSE_BEHAVIOR: 'windowCloseBehavior',
   QUOTE_LAYOUT: 'quoteLayout',
@@ -115,6 +119,17 @@ export async function setDecryptKey(key: string): Promise<void> {
 export async function getDbPath(): Promise<string | null> {
   const value = await config.get(CONFIG_KEYS.DB_PATH)
   return value as string | null
+}
+
+// 获取api access_token
+export async function getHttpApiToken(): Promise<string> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_TOKEN)
+  return (value as string) || ''
+}
+
+// 设置access_token
+export async function setHttpApiToken(token: string): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_TOKEN, token)
 }
 
 // 设置数据库路径
@@ -663,6 +678,9 @@ export interface ContactsListCacheContact {
   remark?: string
   nickname?: string
   alias?: string
+  labels?: string[]
+  detailDescription?: string
+  region?: string
   type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
 }
 
@@ -1137,16 +1155,18 @@ export async function setSnsPageCache(
 export async function getContactsLoadTimeoutMs(): Promise<number> {
   const value = await config.get(CONFIG_KEYS.CONTACTS_LOAD_TIMEOUT_MS)
   if (typeof value === 'number' && Number.isFinite(value) && value >= 1000 && value <= 60000) {
-    return Math.floor(value)
+    const normalized = Math.floor(value)
+    // 兼容历史默认值 3000ms：自动提升到新的更稳妥阈值。
+    return normalized === 3000 ? 10000 : normalized
   }
-  return 3000
+  return 10000
 }
 
 // 设置通讯录加载超时阈值（毫秒）
 export async function setContactsLoadTimeoutMs(timeoutMs: number): Promise<void> {
   const normalized = Number.isFinite(timeoutMs)
     ? Math.min(60000, Math.max(1000, Math.floor(timeoutMs)))
-    : 3000
+    : 10000
   await config.set(CONFIG_KEYS.CONTACTS_LOAD_TIMEOUT_MS, normalized)
 }
 
@@ -1176,6 +1196,11 @@ export async function getContactsListCache(scopeKey: string): Promise<ContactsLi
       remark: typeof item.remark === 'string' ? item.remark : undefined,
       nickname: typeof item.nickname === 'string' ? item.nickname : undefined,
       alias: typeof item.alias === 'string' ? item.alias : undefined,
+      labels: Array.isArray(item.labels)
+        ? Array.from(new Set(item.labels.map((label) => String(label || '').trim()).filter(Boolean)))
+        : undefined,
+      detailDescription: typeof item.detailDescription === 'string' ? (item.detailDescription.trim() || undefined) : undefined,
+      region: typeof item.region === 'string' ? (item.region.trim() || undefined) : undefined,
       type: (type === 'friend' || type === 'group' || type === 'official' || type === 'former_friend' || type === 'other')
         ? type
         : 'other'
@@ -1210,6 +1235,11 @@ export async function setContactsListCache(scopeKey: string, contacts: ContactsL
       remark: contact?.remark ? String(contact.remark) : undefined,
       nickname: contact?.nickname ? String(contact.nickname) : undefined,
       alias: contact?.alias ? String(contact.alias) : undefined,
+      labels: Array.isArray(contact?.labels)
+        ? Array.from(new Set(contact.labels.map((label) => String(label || '').trim()).filter(Boolean)))
+        : undefined,
+      detailDescription: contact?.detailDescription ? (String(contact.detailDescription).trim() || undefined) : undefined,
+      region: contact?.region ? (String(contact.region).trim() || undefined) : undefined,
       type
     })
   }
@@ -1456,4 +1486,36 @@ export async function getAnalyticsDenyCount(): Promise<number> {
 // 设置数据收集拒绝次数
 export async function setAnalyticsDenyCount(count: number): Promise<void> {
   await config.set(CONFIG_KEYS.ANALYTICS_DENY_COUNT, count)
+}
+
+
+// 获取 HTTP API 自动启动状态
+export async function getHttpApiEnabled(): Promise<boolean> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_ENABLED)
+  return value === true
+}
+
+// 设置 HTTP API 自动启动状态
+export async function setHttpApiEnabled(enabled: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_ENABLED, enabled)
+}
+
+// 获取 HTTP API 端口
+export async function getHttpApiPort(): Promise<number> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_PORT)
+  return typeof value === 'number' ? value : 5031
+}
+
+// 设置 HTTP API 端口
+export async function setHttpApiPort(port: number): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_PORT, port)
+}
+
+export async function getHttpApiHost(): Promise<string> {
+  const value = await config.get(CONFIG_KEYS.HTTP_API_HOST)
+  return typeof value === 'string' && value.trim() ? value.trim() : '127.0.0.1'
+}
+
+export async function setHttpApiHost(host: string): Promise<void> {
+  await config.set(CONFIG_KEYS.HTTP_API_HOST, host)
 }

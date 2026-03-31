@@ -219,7 +219,7 @@ export interface ElectronAPI {
     updateMessage: (sessionId: string, localId: number, createTime: number, newContent: string) => Promise<{ success: boolean; error?: string }>
     deleteMessage: (sessionId: string, localId: number, createTime: number, dbPathHint?: string) => Promise<{ success: boolean; error?: string }>
     resolveTransferDisplayNames: (chatroomId: string, payerUsername: string, receiverUsername: string) => Promise<{ payerName: string; receiverName: string }>
-    getContacts: () => Promise<{
+    getContacts: (options?: { lite?: boolean }) => Promise<{
       success: boolean
       contacts?: ContactInfo[]
       error?: string
@@ -493,6 +493,28 @@ export interface ElectronAPI {
           count: number
         }>
         total: number
+      }
+      error?: string
+    }>
+    getGroupMemberAnalytics: (chatroomId: string, memberUsername: string, startTime?: number, endTime?: number) => Promise<{
+      success: boolean
+      data?: {
+        statistics: {
+          totalMessages: number
+          textMessages: number
+          imageMessages: number
+          voiceMessages: number
+          videoMessages: number
+          emojiMessages: number
+          otherMessages: number
+          sentMessages: number
+          receivedMessages: number
+          firstMessageTime: number | null
+          lastMessageTime: number | null
+          activeDays: number
+          messageTypeCounts: Record<number, number>
+        }
+        timeDistribution: Record<number, number>
       }
       error?: string
     }>
@@ -838,7 +860,7 @@ export interface ElectronAPI {
     getLogs: () => Promise<string[]>
   }
   http: {
-    start: (port?: number) => Promise<{ success: boolean; port?: number; error?: string }>
+    start: (port?: number, host?: string) => Promise<{ success: boolean; port?: number; error?: string }>
     stop: () => Promise<{ success: boolean }>
     status: () => Promise<{ running: boolean; port: number; mediaExportPath: string }>
   }

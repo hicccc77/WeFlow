@@ -93,6 +93,9 @@ class ContactExportService {
                 displayName: c.displayName,
                 remark: c.remark,
                 nickname: c.nickname,
+                alias: c.alias,
+                labels: Array.isArray(c.labels) ? c.labels : [],
+                detailDescription: c.detailDescription,
                 type: c.type
             }))
         }
@@ -103,12 +106,15 @@ class ContactExportService {
      * 导出为CSV格式
      */
     private async exportToCSV(contacts: any[], outputPath: string): Promise<void> {
-        const headers = ['用户名', '显示名称', '备注', '昵称', '类型']
+        const headers = ['用户名', '显示名称', '备注', '昵称', '微信号', '标签', '详细描述', '类型']
         const rows = contacts.map(c => [
             c.username || '',
             c.displayName || '',
             c.remark || '',
             c.nickname || '',
+            c.alias || '',
+            Array.isArray(c.labels) ? c.labels.join(' | ') : '',
+            c.detailDescription || '',
             this.getTypeLabel(c.type)
         ])
 
@@ -137,9 +143,13 @@ class ContactExportService {
                     lines.push(`NICKNAME:${c.nickname}`)
                 }
 
-                // 备注
-                if (c.remark) {
-                    lines.push(`NOTE:${c.remark}`)
+                const noteParts = [
+                    c.remark ? String(c.remark) : '',
+                    Array.isArray(c.labels) && c.labels.length > 0 ? `标签: ${c.labels.join(', ')}` : '',
+                    c.detailDescription ? `详细描述: ${c.detailDescription}` : ''
+                ].filter(Boolean)
+                if (noteParts.length > 0) {
+                    lines.push(`NOTE:${noteParts.join('\\n')}`)
                 }
 
                 // 微信ID

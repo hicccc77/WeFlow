@@ -37,6 +37,9 @@ export interface ContactInfo {
   remark?: string
   nickname?: string
   alias?: string
+  labels?: string[]
+  detailDescription?: string
+  region?: string
   avatarUrl?: string
   type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
 }

@@ -36,6 +36,10 @@ import { messagePushService } from './services/messagePushService'
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 autoUpdater.disableDifferentialDownload = true  // 禁用差分更新，强制全量下载
+// Windows x64 与 arm64 使用不同更新通道，避免 latest.yml 互相覆盖导致下错架构安装包。
+if (process.platform === 'win32' && process.arch === 'arm64') {
+  autoUpdater.channel = 'latest-arm64'
+}
 const AUTO_UPDATE_ENABLED =
   process.env.AUTO_UPDATE_ENABLED === 'true' ||
   process.env.AUTO_UPDATE_ENABLED === '1' ||
@@ -142,33 +146,87 @@ const normalizeReleaseNotes = (rawReleaseNotes: unknown): string => {
 
   if (!merged.trim()) return ''
 
-  // 兼容 electron-updater 直接返回 HTML 的场景
+  const normalizeHeadingText = (raw: string): string => {
+    return raw
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, '\'')
+      .replace(/&#x27;/gi, '\'')
+      .toLowerCase()
+      .replace(/[：:]/g, '')
+      .replace(/\s+/g, '')
+      .trim()
+  }
+
+  const shouldStripReleaseSection = (headingRaw: string): boolean => {
+    const heading = normalizeHeadingText(headingRaw)
+    if (!heading) return false
+    if (heading.startsWith('下载') || heading.startsWith('download')) return true
+
+    if ((heading.includes('macos') || heading.startsWith('mac')) && heading.includes('安装提示')) return true
+    return false
+  }
+
+  // 兼容 electron-updater 直接返回 HTML 的场景（含 dir/anchor 等标签嵌套）
   const removeDownloadSectionFromHtml = (input: string): string => {
-    return input.replace(
-      /<h[1-6][^>]*>\s*(?:下载|download)\s*<\/h[1-6]>\s*[\s\S]*?(?=<h[1-6]\b|$)/gi,
-      ''
-    )
+    const headingPattern = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi
+    const headings: Array<{ start: number; end: number; headingText: string }> = []
+    let match: RegExpExecArray | null
+
+    while ((match = headingPattern.exec(input)) !== null) {
+      const full = match[0]
+      headings.push({
+        start: match.index,
+        end: match.index + full.length,
+        headingText: match[2] || ''
+      })
+    }
+
+    if (headings.length === 0) return input
+
+    const rangesToRemove: Array<{ start: number; end: number }> = []
+    for (let i = 0; i < headings.length; i += 1) {
+      const current = headings[i]
+      if (!shouldStripReleaseSection(current.headingText)) continue
+
+      const nextStart = i + 1 < headings.length ? headings[i + 1].start : input.length
+      rangesToRemove.push({ start: current.start, end: nextStart })
+    }
+
+    if (rangesToRemove.length === 0) return input
+
+    let output = ''
+    let cursor = 0
+    for (const range of rangesToRemove) {
+      output += input.slice(cursor, range.start)
+      cursor = range.end
+    }
+    output += input.slice(cursor)
+    return output
   }
 
   // 兼容 Markdown 场景（Action 最终 release note 模板）
   const removeDownloadSectionFromMarkdown = (input: string): string => {
     const lines = input.split(/\r?\n/)
     const output: string[] = []
-    let skipDownloadSection = false
+    let skipSection = false
 
     for (const line of lines) {
       const headingMatch = line.match(/^\s*#{1,6}\s*(.+?)\s*$/)
       if (headingMatch) {
-        const heading = headingMatch[1].trim().toLowerCase()
-        if (heading === '下载' || heading === 'download') {
-          skipDownloadSection = true
+        if (shouldStripReleaseSection(headingMatch[1])) {
+          skipSection = true
           continue
         }
-        if (skipDownloadSection) {
-          skipDownloadSection = false
+        if (skipSection) {
+          skipSection = false
         }
       }
-      if (!skipDownloadSection) {
+      if (!skipSection) {
         output.push(line)
       }
     }
@@ -177,6 +235,8 @@ const normalizeReleaseNotes = (rawReleaseNotes: unknown): string => {
   }
 
   const cleaned = removeDownloadSectionFromMarkdown(removeDownloadSectionFromHtml(merged))
+    // 兜底：即使没有匹配到标题，也不在弹窗展示 macOS 隔离标记清理命令
+    .replace(/^[ \t>*-]*`?\s*xattr\s+-[a-z]*d[a-z]*\s+com\.apple\.quarantine[^\n]*`?\s*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
@@ -1182,7 +1242,8 @@ function registerIpcHandlers() {
           return {
             hasUpdate: true,
             version: latestVersion,
-            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes)
+            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes),
+            minimumVersion: (result.updateInfo as any).minimumVersion
           }
         }
       }
@@ -1240,7 +1301,7 @@ function registerIpcHandlers() {
     try {
       console.log('[Update] 开始下载更新...')
       await autoUpdater.downloadUpdate()
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Update] 下载更新失败:', error)
       // 失败时清理状态和监听器
       isDownloadInProgress = false
@@ -1252,7 +1313,10 @@ function registerIpcHandlers() {
         autoUpdater.removeListener('update-downloaded', downloadedHandler)
         downloadedHandler = null
       }
-      throw error
+      
+      // 统一错误提示格式，避免出现 [object Object] 的 JSON 字符串
+      const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error))
+      throw new Error(errorMessage)
     }
   })
 
@@ -1527,8 +1591,8 @@ function registerIpcHandlers() {
     return await chatService.resolveTransferDisplayNames(chatroomId, payerUsername, receiverUsername)
   })
 
-  ipcMain.handle('chat:getContacts', async () => {
-    return await chatService.getContacts()
+  ipcMain.handle('chat:getContacts', async (_, options?: { lite?: boolean }) => {
+    return await chatService.getContacts(options)
   })
 
   ipcMain.handle('chat:getCachedMessages', async (_, sessionId: string) => {
@@ -2140,6 +2204,13 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle(
+    'groupAnalytics:getGroupMemberAnalytics',
+    async (_, chatroomId: string, memberUsername: string, startTime?: number, endTime?: number) => {
+      return groupAnalyticsService.getGroupMemberAnalytics(chatroomId, memberUsername, startTime, endTime)
+    }
+  )
+
+  ipcMain.handle(
     'groupAnalytics:getGroupMemberMessages',
     async (
       _,
@@ -2569,26 +2640,27 @@ function registerIpcHandlers() {
 
   // 密钥获取
   ipcMain.handle('key:autoGetDbKey', async (event) => {
-    return keyService.autoGetDbKey(180_000, (message, level) => {
+    return keyService.autoGetDbKey(180_000, (message: string, level: number) => {
       event.sender.send('key:dbKeyStatus', { message, level })
     })
   })
 
   ipcMain.handle('key:autoGetImageKey', async (event, manualDir?: string, wxid?: string) => {
-    return keyService.autoGetImageKey(manualDir, (message) => {
+    return keyService.autoGetImageKey(manualDir, (message: string) => {
       event.sender.send('key:imageKeyStatus', { message })
     }, wxid)
   })
 
   ipcMain.handle('key:scanImageKeyFromMemory', async (event, userDir: string) => {
-    return keyService.autoGetImageKeyByMemoryScan(userDir, (message) => {
+    return keyService.autoGetImageKeyByMemoryScan(userDir, (message: string) => {
       event.sender.send('key:imageKeyStatus', { message })
     })
   })
 
   // HTTP API 服务
-  ipcMain.handle('http:start', async (_, port?: number) => {
-    return httpService.start(port || 5031)
+  ipcMain.handle('http:start', async (_, port?: number, host?: string) => {
+    const bindHost = typeof host === 'string' && host.trim() ? host.trim() : '127.0.0.1'
+    return httpService.start(port || 5031, bindHost)
   })
 
   ipcMain.handle('http:stop', async () => {
@@ -2635,7 +2707,8 @@ function checkForUpdatesOnStartup() {
           // 通知渲染进程有新版本
           mainWindow.webContents.send('app:updateAvailable', {
             version: latestVersion,
-            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes)
+            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes),
+            minimumVersion: (result.updateInfo as any).minimumVersion
           })
         }
       }
@@ -2806,6 +2879,8 @@ app.whenReady().then(async () => {
 
   // 启动时检测更新（不阻塞启动）
   checkForUpdatesOnStartup()
+
+  await httpService.autoStart()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

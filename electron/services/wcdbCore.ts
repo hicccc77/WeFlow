@@ -304,7 +304,17 @@ export class WcdbCore {
   }
 
   private formatInitProtectionError(code: number): string {
-    return `错误码: ${code}`
+    const messages: Record<number, string> = {
+      '-3001': '未找到数据库目录 (db_storage)，请确认已选择正确的微信数据目录（应包含以 wxid_ 开头的子文件夹）',
+      '-3002': '未找到 session.db 文件，请确认微信已登录并且数据目录完整',
+      '-3003': '数据库句柄无效，请重试',
+      '-3004': '恢复数据库连接失败，请重试',
+      '-2301': '动态库加载失败，请检查安装是否完整',
+      '-2302': 'WCDB 初始化异常，请重试',
+      '-2303': 'WCDB 未能成功初始化',
+    }
+    const msg = messages[String(code) as keyof typeof messages]
+    return msg ? `${msg} (错误码: ${code})` : `操作失败，错误码: ${code}`
   }
 
   private isLogEnabled(): boolean {
@@ -480,6 +490,49 @@ export class WcdbCore {
         }
       } catch { }
     }
+    // 兜底：向上查找 db_storage（最多 2 级），处理用户选择了子目录的情况
+    try {
+      let parent = normalized
+      for (let i = 0; i < 2; i++) {
+        const up = join(parent, '..')
+        if (up === parent) break
+        parent = up
+        const candidateUp = join(parent, 'db_storage')
+        if (existsSync(candidateUp)) return candidateUp
+        if (wxid) {
+          const viaWxidUp = join(parent, wxid, 'db_storage')
+          if (existsSync(viaWxidUp)) return viaWxidUp
+        }
+      }
+    } catch { }
+    // 兜底：递归搜索 basePath 下的 db_storage 目录（最多 3 层深）
+    try {
+      const found = this.findDbStorageRecursive(normalized, 3)
+      if (found) return found
+    } catch { }
+    return null
+  }
+
+  private findDbStorageRecursive(dir: string, maxDepth: number): string | null {
+    if (maxDepth <= 0) return null
+    try {
+      const entries = readdirSync(dir)
+      for (const entry of entries) {
+        if (entry.toLowerCase() === 'db_storage') {
+          const candidate = join(dir, entry)
+          try { if (statSync(candidate).isDirectory()) return candidate } catch { }
+        }
+      }
+      for (const entry of entries) {
+        const entryPath = join(dir, entry)
+        try {
+          if (statSync(entryPath).isDirectory()) {
+            const found = this.findDbStorageRecursive(entryPath, maxDepth - 1)
+            if (found) return found
+          }
+        } catch { }
+      }
+    } catch { }
     return null
   }
 
@@ -2543,13 +2596,34 @@ export class WcdbCore {
     }
   }
 
+  /**
+   * 强制重新打开账号连接（绕过路径缓存），用于微信重装后消息数据库刷新失败时的自动恢复。
+   * 返回重新打开是否成功。
+   */
+  private async forceReopen(): Promise<boolean> {
+    if (!this.currentPath || !this.currentKey || !this.currentWxid) return false
+    const path = this.currentPath
+    const key = this.currentKey
+    const wxid = this.currentWxid
+    this.writeLog('forceReopen: clearing cached handle and reopening...', true)
+    // 清空缓存状态，让 open() 真正重新打开
+    try { this.wcdbShutdown() } catch { }
+    this.handle = null
+    this.currentPath = null
+    this.currentKey = null
+    this.currentWxid = null
+    this.currentDbStoragePath = null
+    this.initialized = false
+    return this.open(path, key, wxid)
+  }
+
   async openMessageCursor(sessionId: string, batchSize: number, ascending: boolean, beginTimestamp: number, endTimestamp: number): Promise<{ success: boolean; cursor?: number; error?: string }> {
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
     }
     try {
       const outCursor = [0]
-      const result = this.wcdbOpenMessageCursor(
+      let result = this.wcdbOpenMessageCursor(
         this.handle,
         sessionId,
         batchSize,
@@ -2558,13 +2632,37 @@ export class WcdbCore {
         endTimestamp,
         outCursor
       )
+      // result=-3 表示 WCDB_STATUS_NO_MESSAGE_DB：消息数据库缓存为空（常见于微信重装后）
+      // 自动强制重连并重试一次
+      if (result === -3 && outCursor[0] <= 0) {
+        this.writeLog('openMessageCursor: result=-3 (no message db), attempting forceReopen...', true)
+        const reopened = await this.forceReopen()
+        if (reopened && this.handle !== null) {
+          outCursor[0] = 0
+          result = this.wcdbOpenMessageCursor(
+            this.handle,
+            sessionId,
+            batchSize,
+            ascending ? 1 : 0,
+            beginTimestamp,
+            endTimestamp,
+            outCursor
+          )
+          this.writeLog(`openMessageCursor retry after forceReopen: result=${result} cursor=${outCursor[0]}`, true)
+        } else {
+          this.writeLog('openMessageCursor forceReopen failed, giving up', true)
+        }
+      }
       if (result !== 0 || outCursor[0] <= 0) {
         await this.printLogs(true)
         this.writeLog(
           `openMessageCursor failed: sessionId=${sessionId} batchSize=${batchSize} ascending=${ascending ? 1 : 0} begin=${beginTimestamp} end=${endTimestamp} result=${result} cursor=${outCursor[0]}`,
           true
         )
-        return { success: false, error: `创建游标失败: ${result}，请查看日志` }
+        const hint = result === -3
+          ? `创建游标失败: ${result}（消息数据库未找到）。如果你最近重装过微信，请尝试重新指定数据目录后重试`
+          : `创建游标失败: ${result}，请查看日志`
+        return { success: false, error: hint }
       }
       return { success: true, cursor: outCursor[0] }
     } catch (e) {

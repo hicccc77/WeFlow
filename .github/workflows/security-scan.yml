@@ -1,0 +1,95 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 每天 UTC 02:00（北京时间 10:00）
+  workflow_dispatch:     # 支持手动触发
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  security-scan:
+    name: Security Scan (${{ matrix.branch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch:
+          - main
+
+    steps:
+      - name: Checkout ${{ matrix.branch }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # 1. npm audit - 检查依赖漏洞
+      - name: Dependency vulnerability audit
+        run: pnpm audit --audit-level=moderate
+        continue-on-error: true
+
+      # 2. CodeQL 静态分析
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, typescript
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript/branch:${{ matrix.branch }}'
+
+      # 3. 密钥/敏感信息扫描
+      - name: Secret scanning with Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  # 动态获取所有分支并扫描（排除已在 matrix 中的）
+  scan-all-branches:
+    name: Scan additional branches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: List all branches
+        id: branches
+        run: |
+          git branch -r | grep -v HEAD | sed 's|origin/||' | tr -d ' ' | while read branch; do
+            echo "Branch: $branch"
+          done
+
+      - name: Run pnpm audit on all branches
+        run: |
+          git branch -r | grep -v HEAD | sed 's|origin/||' | tr -d ' ' | while read branch; do
+            echo "===== Auditing branch: $branch ====="
+            git checkout "$branch" 2>/dev/null || continue
+            pnpm install --frozen-lockfile --silent 2>/dev/null || npm install --silent 2>/dev/null || true
+            pnpm audit --audit-level=moderate 2>/dev/null || true
+          done
+        continue-on-error: true

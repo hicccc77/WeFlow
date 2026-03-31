@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, Medal, Search, X, ChevronLeft, Copy, Check, Download, ChevronDown, MessageSquare } from 'lucide-react'
+import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, Medal, Search, X, ChevronLeft, Copy, Check, Download, ChevronDown, MessageSquare, Calendar, PieChart, Hash, Smile } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import ReactECharts from 'echarts-for-react'
 import DateRangePicker from '../components/DateRangePicker'
@@ -37,7 +37,7 @@ interface GroupMessageRank {
   messageCount: number
 }
 
-type AnalysisFunction = 'members' | 'memberMessages' | 'ranking' | 'activeHours' | 'mediaStats'
+type AnalysisFunction = 'members' | 'memberMessages' | 'memberAnalytics' | 'ranking' | 'activeHours' | 'mediaStats'
 type MemberExportFormat = 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone'
 
 interface MemberMessageExportOptions {
@@ -167,6 +167,8 @@ function GroupAnalyticsPage() {
   const [isExportingMembers, setIsExportingMembers] = useState(false)
   const [isExportingMemberMessages, setIsExportingMemberMessages] = useState(false)
   const [memberMessages, setMemberMessages] = useState<Message[]>([])
+  const [memberAnalyticsData, setMemberAnalyticsData] = useState<any | null>(null)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
   const [memberMessagesHasMore, setMemberMessagesHasMore] = useState(false)
   const [memberMessagesCursor, setMemberMessagesCursor] = useState(0)
   const [memberMessagesLoadingMore, setMemberMessagesLoadingMore] = useState(false)
@@ -524,6 +526,7 @@ function GroupAnalyticsPage() {
           break
         }
         case 'memberMessages': {
+          resetMemberMessageState(false)
           updateBackgroundTask(taskId, {
             detail: '正在读取成员列表与消息',
             progressText: '成员消息'
@@ -566,7 +569,57 @@ function GroupAnalyticsPage() {
           })
           break
         }
+        case 'memberAnalytics': {
+          setMemberAnalyticsData(null)
+          setAnalyticsError(null)
+          updateBackgroundTask(taskId, {
+            detail: '正在读取成员列表与消息分析',
+            progressText: '成员分析'
+          })
+          const result = await window.electronAPI.groupAnalytics.getGroupMembers(targetGroup.username)
+          if (isBackgroundTaskCancelRequested(taskId)) {
+            finishBackgroundTask(taskId, 'canceled', { detail: '已停止后续加载，成员分析未继续写入' })
+            return
+          }
+          if (!result.success || !result.data) {
+            finishBackgroundTask(taskId, 'failed', { detail: result.error || '获取成员列表失败' })
+            return
+          }
+          setMembers(result.data)
+          let targetMember = preferredMemberUsername
+            ? result.data.find(m => m.username === preferredMemberUsername)
+            : result.data.find(m => m.username === selectedMessageMemberUsername)
+          if (!targetMember && result.data.length > 0) {
+            targetMember = result.data[0]
+            setSelectedMessageMemberUsername(targetMember.username)
+          }
+          if (!targetMember) {
+            finishBackgroundTask(taskId, 'failed', { detail: '找不到目标成员' })
+            return
+          }
+          updateBackgroundTask(taskId, {
+            detail: `正在分析 ${targetMember.displayName || targetMember.username} 的发言记录`,
+            progressText: '统计分析'
+          })
+          const analyticsResult = await window.electronAPI.groupAnalytics.getGroupMemberAnalytics(targetGroup.username, targetMember.username, startTime, endTime)
+          if (isBackgroundTaskCancelRequested(taskId)) {
+            finishBackgroundTask(taskId, 'canceled', { detail: '已停止后续加载，成员分析未继续写入' })
+            return
+          }
+          if (analyticsResult.success && analyticsResult.data) {
+            setMemberAnalyticsData(analyticsResult.data)
+            finishBackgroundTask(taskId, 'completed', {
+              detail: `分析完成，共计 ${analyticsResult.data.statistics?.totalMessages || 0} 条消息`,
+              progressText: '已完成'
+            })
+          } else {
+            setAnalyticsError(analyticsResult.error || '分析失败')
+            finishBackgroundTask(taskId, 'failed', { detail: analyticsResult.error || '分析失败' })
+          }
+          break
+        }
         case 'ranking': {
+          setRankings([])
           updateBackgroundTask(taskId, {
             detail: '正在计算群消息排行',
             progressText: '消息排行'
@@ -584,6 +637,7 @@ function GroupAnalyticsPage() {
           break
         }
         case 'activeHours': {
+          setActiveHours({})
           updateBackgroundTask(taskId, {
             detail: '正在计算群活跃时段',
             progressText: '活跃时段'
@@ -601,6 +655,7 @@ function GroupAnalyticsPage() {
           break
         }
         case 'mediaStats': {
+          setMediaStats(null)
           updateBackgroundTask(taskId, {
             detail: '正在统计群消息类型',
             progressText: '消息类型'
@@ -631,6 +686,12 @@ function GroupAnalyticsPage() {
   const formatNumber = (num: number) => {
     if (num >= 10000) return (num / 10000).toFixed(1) + '万'
     return num.toLocaleString()
+  }
+
+  const formatDate = (timestamp: number | null) => {
+    if (!timestamp) return '-'
+    const date = new Date(timestamp * 1000)
+    return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
   }
 
   const sanitizeFileName = (name: string) => {
@@ -762,6 +823,16 @@ function GroupAnalyticsPage() {
     setMessageMemberSearchKeyword('')
     setShowMessageMemberSelect(false)
     await loadFunctionData('memberMessages', selectedGroup, member.username)
+  }
+
+  const handleViewMemberAnalyticsFromModal = async (member: GroupMember) => {
+    if (!selectedGroup) return
+    setSelectedMember(null)
+    setSelectedFunction('memberAnalytics')
+    setSelectedMessageMemberUsername(member.username)
+    setMessageMemberSearchKeyword('')
+    setShowMessageMemberSelect(false)
+    await loadFunctionData('memberAnalytics', selectedGroup, member.username)
   }
 
   const handleOpenMemberExportModal = () => {
@@ -982,6 +1053,14 @@ function GroupAnalyticsPage() {
               <button
                 type="button"
                 className="member-modal-primary-btn"
+                onClick={() => void handleViewMemberAnalyticsFromModal(selectedMember)}
+              >
+                <BarChart3 size={16} />
+                <span>分析该成员聊天</span>
+              </button>
+              <button
+                type="button"
+                className="member-modal-secondary-btn"
                 onClick={() => void handleViewMemberMessagesFromModal(selectedMember)}
               >
                 <MessageSquare size={16} />
@@ -1080,6 +1159,11 @@ function GroupAnalyticsPage() {
           <span>成员消息筛选与导出</span>
           <small>按成员查看群聊消息，并支持导出当前成员记录</small>
         </div>
+        <div className="function-card" onClick={() => handleFunctionSelect('memberAnalytics')}>
+          <PieChart size={32} />
+          <span>群成员详细分析</span>
+          <small>针对群聊内某一用户的群聊记录进行详细分析，如发信数量、活跃周期等</small>
+        </div>
         <div className="function-card" onClick={() => handleFunctionSelect('ranking')}>
           <BarChart3 size={32} />
           <span>群聊发言排行</span>
@@ -1104,6 +1188,7 @@ function GroupAnalyticsPage() {
       switch (selectedFunction) {
         case 'members': return '群成员查看'
         case 'memberMessages': return '成员消息筛选与导出'
+        case 'memberAnalytics': return '群成员详细分析'
         case 'ranking': return '群聊发言排行'
         case 'activeHours': return '群聊活跃时段'
         case 'mediaStats': return '媒体内容统计'
@@ -1277,6 +1362,187 @@ function GroupAnalyticsPage() {
                             <span className="member-message-end">已显示当前可读取的全部消息</span>
                           )}
                         </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              {selectedFunction === 'memberAnalytics' && (
+                <div className="member-analytics-panel">
+                  {members.length === 0 ? (
+                    <div className="member-message-empty">暂无群成员数据，请先刷新。</div>
+                  ) : (
+                    <>
+                      <div className="member-message-toolbar" style={{ marginBottom: 20 }}>
+                        <div className="member-export-field" ref={messageMemberSelectDropdownRef}>
+                          <span>分析成员</span>
+                          <button
+                            type="button"
+                            className={`select-trigger member-message-select-trigger ${showMessageMemberSelect ? 'open' : ''}`}
+                            onClick={() => setShowMessageMemberSelect(prev => !prev)}
+                          >
+                            <div className="member-select-trigger-value">
+                              <Avatar
+                                src={selectedMessageMember?.avatarUrl}
+                                name={selectedMessageMember?.displayName || selectedMessageMember?.username || '?'}
+                                size={24}
+                              />
+                              <span className="select-value">{selectedMessageMember?.displayName || selectedMessageMember?.username || '请选择成员'}</span>
+                            </div>
+                            <ChevronDown size={16} />
+                          </button>
+                          {showMessageMemberSelect && (
+                            <div className="select-dropdown member-select-dropdown">
+                              <div className="member-select-search">
+                                <Search size={14} />
+                                <input
+                                  type="text"
+                                  value={messageMemberSearchKeyword}
+                                  onChange={e => setMessageMemberSearchKeyword(e.target.value)}
+                                  placeholder="搜索 wxid / 昵称 / 备注 / 微信号"
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              </div>
+                              <div className="member-select-options">
+                                {filteredMessageMemberOptions.length === 0 ? (
+                                  <div className="member-select-empty">无匹配成员</div>
+                                ) : (
+                                  filteredMessageMemberOptions.map(member => (
+                                    <button
+                                      key={member.username}
+                                      type="button"
+                                      className={`select-option member-select-option ${selectedMessageMemberUsername === member.username ? 'active' : ''}`}
+                                      onClick={() => {
+                                        setSelectedMessageMemberUsername(member.username)
+                                        setShowMessageMemberSelect(false)
+                                        if (selectedGroup) {
+                                          void loadFunctionData('memberAnalytics', selectedGroup, member.username)
+                                        }
+                                      }}
+                                    >
+                                      <Avatar src={member.avatarUrl} name={member.displayName} size={28} />
+                                      <span className="member-option-main">{member.displayName || member.username}</span>
+                                      <span className="member-option-meta">
+                                        wxid: {member.username}
+                                        {member.alias ? ` · 微信号: ${member.alias}` : ''}
+                                        {member.remark ? ` · 备注: ${member.remark}` : ''}
+                                        {member.nickname ? ` · 昵称: ${member.nickname}` : ''}
+                                        {member.groupNickname ? ` · 群昵称: ${member.groupNickname}` : ''}
+                                      </span>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {analyticsError ? (
+                        <div className="member-message-empty">{analyticsError}</div>
+                      ) : memberAnalyticsData ? (
+                        <div className="analytics-content-scrollable" style={{ padding: '0', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                          <div className="stats-overview">
+                            <div className="stat-card">
+                              <div className="stat-icon"><MessageSquare size={24} /></div>
+                              <div className="stat-info">
+                                <span className="stat-value">{formatNumber(memberAnalyticsData.statistics.sentMessages)}</span>
+                                <span className="stat-label">发信数量</span>
+                              </div>
+                            </div>
+                            <div className="stat-card">
+                              <div className="stat-icon"><Clock size={24} /></div>
+                              <div className="stat-info">
+                                <span className="stat-value">{memberAnalyticsData.statistics.activeDays}</span>
+                                <span className="stat-label">活跃天数</span>
+                              </div>
+                            </div>
+                            <div className="stat-card" style={{ gridColumn: 'span 2' }}>
+                              <div className="stat-icon"><Calendar size={24} /></div>
+                              <div className="stat-info">
+                                <span className="stat-value">
+                                  {formatDate(memberAnalyticsData.statistics.firstMessageTime)} - {formatDate(memberAnalyticsData.statistics.lastMessageTime)}
+                                </span>
+                                <span className="stat-label">活跃周期</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="charts-grid">
+                            <div className="chart-card wide">
+                              <h3>活跃时段</h3>
+                              <div className="chart-wrapper">
+                                <ReactECharts 
+                                  option={{
+                                    tooltip: { trigger: 'axis' },
+                                    xAxis: { type: 'category', data: Array.from({ length: 24 }, (_, i) => `${i}时`) },
+                                    yAxis: { type: 'value' },
+                                    series: [{ type: 'bar', data: Array.from({ length: 24 }, (_, i) => memberAnalyticsData.timeDistribution[i] || 0), itemStyle: { color: '#07c160', borderRadius: [4, 4, 0, 0] } }]
+                                  }} 
+                                  style={{ height: '300px', width: '100%' }} 
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="chart-card wide">
+                              <h3>消息类型分布</h3>
+                              <div className="chart-wrapper">
+                                <ReactECharts 
+                                  option={{
+                                    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                                    series: [{
+                                      type: 'pie',
+                                      radius: ['40%', '70%'],
+                                      data: [
+                                        { name: '文本', value: memberAnalyticsData.statistics.textMessages, itemStyle: { color: '#3b82f6' } },
+                                        { name: '图片', value: memberAnalyticsData.statistics.imageMessages, itemStyle: { color: '#22c55e' } },
+                                        { name: '语音', value: memberAnalyticsData.statistics.voiceMessages, itemStyle: { color: '#f97316' } },
+                                        { name: '视频', value: memberAnalyticsData.statistics.videoMessages, itemStyle: { color: '#a855f7' } },
+                                        { name: '表情', value: memberAnalyticsData.statistics.emojiMessages, itemStyle: { color: '#ec4899' } },
+                                        { name: '其他', value: memberAnalyticsData.statistics.otherMessages, itemStyle: { color: '#6b7280' } }
+                                      ].filter(item => item.value > 0),
+                                      label: { show: true, formatter: '{b} {d}%' }
+                                    }]
+                                  }} 
+                                  style={{ height: '300px', width: '100%' }} 
+                                />
+                              </div>
+                            </div>
+                            <div className="chart-card wide" style={{ display: 'flex', gap: '32px' }}>
+                              <div style={{ flex: 1 }}>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Hash size={18} /> 常用语</h3>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                  {memberAnalyticsData.commonPhrases && memberAnalyticsData.commonPhrases.length > 0 ? (
+                                    memberAnalyticsData.commonPhrases.map((item: any, idx: number) => (
+                                      <div key={idx} style={{ background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--border-color)' }}>
+                                        <span style={{ color: 'var(--text-primary)' }}>{item.phrase}</span>
+                                        <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>{item.count}次</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>暂无常用语数据</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Smile size={18} /> 常用表情</h3>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                  {memberAnalyticsData.commonEmojis && memberAnalyticsData.commonEmojis.length > 0 ? (
+                                    memberAnalyticsData.commonEmojis.map((item: any, idx: number) => (
+                                      <div key={idx} style={{ background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--border-color)' }}>
+                                        <span style={{ color: 'var(--text-primary)' }}>{item.emoji}</span>
+                                        <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>{item.count}次</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>暂无表情包数据</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="content-loading"><Loader2 size={32} className="spin" /></div>
                       )}
                     </>
                   )}

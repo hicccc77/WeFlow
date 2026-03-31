@@ -102,6 +102,7 @@ class HttpService {
   private server: http.Server | null = null
   private configService: ConfigService
   private port: number = 5031
+  private host: string = '127.0.0.1'
   private running: boolean = false
   private connections: Set<import('net').Socket> = new Set()
   private messagePushClients: Set<http.ServerResponse> = new Set()
@@ -115,12 +116,13 @@ class HttpService {
   /**
    * 启动 HTTP 服务
    */
-  async start(port: number = 5031): Promise<{ success: boolean; port?: number; error?: string }> {
+  async start(port: number = 5031, host: string = '127.0.0.1'): Promise<{ success: boolean; port?: number; error?: string }> {
     if (this.running && this.server) {
       return { success: true, port: this.port }
     }
 
     this.port = port
+    this.host = host
 
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => this.handleRequest(req, res))
@@ -154,10 +156,10 @@ class HttpService {
         }
       })
 
-      this.server.listen(this.port, '127.0.0.1', () => {
+      this.server.listen(this.port, this.host, () => {
         this.running = true
         this.startMessagePushHeartbeat()
-        console.log(`[HttpService] HTTP API server started on http://127.0.0.1:${this.port}`)
+        console.log(`[HttpService] HTTP API server started on http://${this.host}:${this.port}`)
         resolve({ success: true, port: this.port })
       })
     })
@@ -226,7 +228,7 @@ class HttpService {
   }
 
   getMessagePushStreamUrl(): string {
-    return `http://127.0.0.1:${this.port}/api/v1/push/messages`
+    return `http://${this.host}:${this.port}/api/v1/push/messages`
   }
 
   broadcastMessagePush(payload: Record<string, unknown>): void {
@@ -247,51 +249,118 @@ class HttpService {
     }
   }
 
-  /**
-   * 处理 HTTP 请求
-   */
-  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    // 设置 CORS 头
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204)
-      res.end()
-      return
-    }
-
-    const url = new URL(req.url || '/', `http://127.0.0.1:${this.port}`)
-    const pathname = url.pathname
-
-    try {
-      // 路由处理
-      if (pathname === '/health' || pathname === '/api/v1/health') {
-        this.sendJson(res, { status: 'ok' })
-      } else if (pathname === '/api/v1/push/messages') {
-        this.handleMessagePushStream(req, res)
-      } else if (pathname === '/api/v1/messages') {
-        await this.handleMessages(url, res)
-      } else if (pathname === '/api/v1/sessions') {
-        await this.handleSessions(url, res)
-      } else if (pathname === '/api/v1/contacts') {
-        await this.handleContacts(url, res)
-      } else if (pathname === '/api/v1/group-members') {
-        await this.handleGroupMembers(url, res)
-      } else if (pathname === '/api/v1/sns/timeline') {
-        await this.handleSnsTimeline(url, res)
-      } else if (pathname.startsWith('/api/v1/media/')) {
-        this.handleMediaRequest(pathname, res)
-      } else {
-        this.sendError(res, 404, 'Not Found')
+  async autoStart(): Promise<void> {
+    const enabled = this.configService.get('httpApiEnabled')
+    if (enabled) {
+      const port = Number(this.configService.get('httpApiPort')) || 5031
+      const host = String(this.configService.get('httpApiHost') || '127.0.0.1').trim() || '127.0.0.1'
+      try {
+        await this.start(port, host)
+        console.log(`[HttpService] Auto-started on port ${port}`)
+      } catch (err) {
+        console.error('[HttpService] Auto-start failed:', err)
       }
-    } catch (error) {
-      console.error('[HttpService] Request error:', error)
-      this.sendError(res, 500, String(error))
     }
   }
 
+    /**
+     * 解析 POST 请求的 JSON Body
+     */
+    private async parseBody(req: http.IncomingMessage): Promise<Record<string, any>> {
+        if (req.method !== 'POST') return {}
+        return new Promise((resolve) => {
+            let body = ''
+            req.on('data', chunk => { body += chunk.toString() })
+            req.on('end', () => {
+                try {
+                    resolve(JSON.parse(body))
+                } catch {
+                    resolve({})
+                }
+            })
+            req.on('error', () => resolve({}))
+        })
+    }
+
+    /**
+     * 鉴权拦截器
+     */
+    private verifyToken(req: http.IncomingMessage, url: URL, body: Record<string, any>): boolean {
+        const expectedToken = String(this.configService.get('httpApiToken') || '').trim()
+        if (!expectedToken) return true
+
+        const authHeader = req.headers.authorization
+        if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+            const token = authHeader.substring(7).trim()
+            if (token === expectedToken) return true
+        }
+
+        const queryToken = url.searchParams.get('access_token')
+        if (queryToken && queryToken.trim() === expectedToken) return true
+
+        const bodyToken = body['access_token']
+        return !!(bodyToken && String(bodyToken).trim() === expectedToken);
+
+
+    }
+
+    /**
+     * 处理 HTTP 请求 (重构后)
+     */
+    private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204)
+            res.end()
+            return
+        }
+
+        const url = new URL(req.url || '/', `http://${this.host}:${this.port}`)
+        const pathname = url.pathname
+
+        try {
+            const bodyParams = await this.parseBody(req)
+
+            for (const [key, value] of Object.entries(bodyParams)) {
+                if (!url.searchParams.has(key)) {
+                    url.searchParams.set(key, String(value))
+                }
+            }
+
+            if (pathname !== '/health' && pathname !== '/api/v1/health') {
+                if (!this.verifyToken(req, url, bodyParams)) {
+                    this.sendError(res, 401, 'Unauthorized: Invalid or missing access_token')
+                    return
+                }
+            }
+
+            if (pathname === '/health' || pathname === '/api/v1/health') {
+                this.sendJson(res, { status: 'ok' })
+            } else if (pathname === '/api/v1/push/messages') {
+                this.handleMessagePushStream(req, res)
+            } else if (pathname === '/api/v1/messages') {
+                await this.handleMessages(url, res)
+            } else if (pathname === '/api/v1/sessions') {
+                await this.handleSessions(url, res)
+            } else if (pathname === '/api/v1/contacts') {
+                await this.handleContacts(url, res)
+            } else if (pathname === '/api/v1/group-members') {
+                await this.handleGroupMembers(url, res)
+            } else if (pathname === '/api/v1/sns/timeline') {
+                await this.handleSnsTimeline(url, res)
+            } else if (pathname.startsWith('/api/v1/media/')) {
+                this.handleMediaRequest(pathname, res)
+            } else {
+                this.sendError(res, 404, 'Not Found')
+            }
+        } catch (error) {
+            console.error('[HttpService] Request error:', error)
+            this.sendError(res, 500, String(error))
+        }
+    }
   private startMessagePushHeartbeat(): void {
     if (this.messagePushHeartbeatTimer) return
     this.messagePushHeartbeatTimer = setInterval(() => {
@@ -898,7 +967,7 @@ class HttpService {
       parsedContent: msg.parsedContent,
       mediaType: media?.kind,
       mediaFileName: media?.fileName,
-      mediaUrl: media ? `http://127.0.0.1:${this.port}/api/v1/media/${media.relativePath}` : undefined,
+      mediaUrl: media ? `http://${this.host}:${this.port}/api/v1/media/${media.relativePath}` : undefined,
       mediaLocalPath: media?.fullPath
     }
   }
@@ -1020,13 +1089,31 @@ class HttpService {
   }
 
   private lookupGroupNickname(groupNicknamesMap: Map<string, string>, sender: string): string {
-    if (!sender) return ''
-    const cleaned = this.normalizeAccountId(sender)
-    return groupNicknamesMap.get(sender)
-      || groupNicknamesMap.get(sender.toLowerCase())
-      || groupNicknamesMap.get(cleaned)
-      || groupNicknamesMap.get(cleaned.toLowerCase())
-      || ''
+    const key = String(sender || '').trim().toLowerCase()
+    if (!key) return ''
+    return groupNicknamesMap.get(key) || ''
+  }
+
+  private buildTrustedGroupNicknameMap(nicknames: Record<string, string>): Map<string, string> {
+    const buckets = new Map<string, Set<string>>()
+    for (const [memberIdRaw, nicknameRaw] of Object.entries(nicknames || {})) {
+      const memberId = String(memberIdRaw || '').trim().toLowerCase()
+      const nickname = String(nicknameRaw || '').trim()
+      if (!memberId || !nickname) continue
+      const slot = buckets.get(memberId)
+      if (slot) {
+        slot.add(nickname)
+      } else {
+        buckets.set(memberId, new Set([nickname]))
+      }
+    }
+
+    const trusted = new Map<string, string>()
+    for (const [memberId, nicknameSet] of buckets.entries()) {
+      if (nicknameSet.size !== 1) continue
+      trusted.set(memberId, Array.from(nicknameSet)[0])
+    }
+    return trusted
   }
 
   private resolveChatLabSenderInfo(
@@ -1097,21 +1184,7 @@ class HttpService {
       try {
         const result = await wcdbService.getGroupNicknames(talkerId)
         if (result.success && result.nicknames) {
-          groupNicknamesMap = new Map()
-          for (const [memberIdRaw, nicknameRaw] of Object.entries(result.nicknames)) {
-            const memberId = String(memberIdRaw || '').trim()
-            const nickname = String(nicknameRaw || '').trim()
-            if (!memberId || !nickname) continue
-
-            groupNicknamesMap.set(memberId, nickname)
-            groupNicknamesMap.set(memberId.toLowerCase(), nickname)
-
-            const cleaned = this.normalizeAccountId(memberId)
-            if (cleaned) {
-              groupNicknamesMap.set(cleaned, nickname)
-              groupNicknamesMap.set(cleaned.toLowerCase(), nickname)
-            }
-          }
+          groupNicknamesMap = this.buildTrustedGroupNicknameMap(result.nicknames)
         }
       } catch (e) {
         console.error('[HttpService] Failed to get group nicknames:', e)
@@ -1164,7 +1237,7 @@ class HttpService {
         type: this.mapMessageType(msg.localType, msg),
         content: this.getMessageContent(msg),
         platformMessageId: msg.serverId ? String(msg.serverId) : undefined,
-        mediaPath: mediaMap.get(msg.localId) ? `http://127.0.0.1:${this.port}/api/v1/media/${mediaMap.get(msg.localId)!.relativePath}` : undefined
+        mediaPath: mediaMap.get(msg.localId) ? `http://${this.host}:${this.port}/api/v1/media/${mediaMap.get(msg.localId)!.relativePath}` : undefined
       }
     })
 
@@ -1430,4 +1503,3 @@ class HttpService {
 }
 
 export const httpService = new HttpService()
-

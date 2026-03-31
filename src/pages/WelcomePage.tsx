@@ -13,6 +13,7 @@ import './WelcomePage.scss'
 
 const isMac = navigator.userAgent.toLowerCase().includes('mac')
 const isLinux = navigator.userAgent.toLowerCase().includes('linux')
+const isWindows = !isMac && !isLinux
 
 const dbDirName = isMac ? '2.0b4.0.9 目录' : 'xwechat_files 目录'
 const dbPathPlaceholder = isMac
@@ -45,6 +46,19 @@ const formatDbKeyFailureMessage = (error?: string, logs?: string[]): string => {
   if (tailLogs.length === 0) return base
   return `${base}；最近状态：${tailLogs.join(' | ')}`
 }
+
+const normalizeDbKeyStatusMessage = (message: string): string => {
+  if (isWindows && message.includes('Hook安装成功')) {
+    return '已准备就绪，现在登录微信或退出登录后重新登录微信'
+  }
+  return message
+}
+
+const isDbKeyReadyMessage = (message: string): boolean => (
+  message.includes('现在可以登录')
+  || message.includes('Hook安装成功')
+  || message.includes('已准备就绪，现在登录微信或退出登录后重新登录微信')
+)
 
 function WelcomePage({ standalone = false }: WelcomePageProps) {
   const navigate = useNavigate()
@@ -89,9 +103,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
   // 检查 Hello 可用性
   useEffect(() => {
-    if (window.PublicKeyCredential) {
-      void PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(setHelloAvailable)
-    }
+    setHelloAvailable(isWindows)
   }, [])
 
   async function sha256(message: string) {
@@ -103,35 +115,27 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   }
 
   const handleSetupHello = async () => {
+    if (!isWindows) {
+      setError('当前系统不支持 Windows Hello')
+      return
+    }
+    if (!authPassword || authPassword !== authConfirmPassword) {
+      setError('请先设置并确认应用密码，再开启 Windows Hello')
+      return
+    }
+
     setIsSettingHello(true)
     try {
-      // 注册凭证 (WebAuthn)
-      const challenge = new Uint8Array(32)
-      window.crypto.getRandomValues(challenge)
-
-      const credential = await navigator.credentials.create({
-        publicKey: {
-          challenge,
-          rp: { name: 'WeFlow', id: 'localhost' },
-          user: {
-            id: new Uint8Array([1]),
-            name: 'user',
-            displayName: 'User'
-          },
-          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-          authenticatorSelection: { userVerification: 'required' },
-          timeout: 60000
-        }
-      })
-
-      if (credential) {
-        setEnableHello(true)
-        // 成功提示?
+      const result = await window.electronAPI.auth.hello('请验证您的身份以开启 Windows Hello')
+      if (!result.success) {
+        setError(`Windows Hello 设置失败: ${result.error || '验证失败'}`)
+        return
       }
+
+      setEnableHello(true)
+      setError('')
     } catch (e: any) {
-      if (e.name !== 'NotAllowedError') {
-        setError('Windows Hello 设置失败: ' + e.message)
-      }
+      setError(`Windows Hello 设置失败: ${e?.message || String(e)}`)
     } finally {
       setIsSettingHello(false)
     }
@@ -139,8 +143,9 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
   useEffect(() => {
     const removeDb = window.electronAPI.key.onDbKeyStatus((payload: { message: string; level: number }) => {
-      setDbKeyStatus(payload.message)
-      if (payload.message.includes('现在可以登录') || payload.message.includes('Hook安装成功')) {
+      const normalizedMessage = normalizeDbKeyStatusMessage(payload.message)
+      setDbKeyStatus(normalizedMessage)
+      if (isDbKeyReadyMessage(normalizedMessage)) {
         window.electronAPI.notification?.show({
           title: 'WeFlow 准备就绪',
           content: '现在可以登录微信了',
@@ -487,7 +492,17 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
         const hash = await sha256(authPassword)
         await configService.setAuthEnabled(true)
         await configService.setAuthPassword(hash)
-        await configService.setAuthUseHello(enableHello)
+        if (enableHello) {
+          const helloResult = await window.electronAPI.auth.setHelloSecret(authPassword)
+          if (!helloResult.success) {
+            setError('Windows Hello 配置保存失败')
+            setLoading(false)
+            return
+          }
+        } else {
+          await window.electronAPI.auth.clearHelloSecret()
+          await configService.setAuthUseHello(false)
+        }
       }
 
       await configService.setOnboardingDone(true)
@@ -761,8 +776,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                   )}
                 </div>
 
-                {dbKeyStatus && <div className={`status-message ${dbKeyStatus.includes('现在可以登录') || dbKeyStatus.includes('Hook安装成功') ? 'is-success' : ''}`}>{dbKeyStatus}</div>}
-                <div className="field-hint">点击自动获取后微信将重启，请留意弹窗提示</div>
+                {dbKeyStatus && <div className={`status-message ${isDbKeyReadyMessage(dbKeyStatus) ? 'is-success' : ''}`}>{dbKeyStatus}</div>}
               </div>
             )}
 

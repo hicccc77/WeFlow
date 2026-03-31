@@ -75,6 +75,14 @@ export class VoiceTranscribeService {
       if (candidates.length === 0) {
         console.warn(`[VoiceTranscribe] 未找到 ${platformPkg} 目录，可能导致语音引擎加载失败`)
       }
+    } else if (process.platform === 'win32') {
+      // Windows: 把 sherpa-onnx DLL 所在目录加到 PATH，否则 native module 找不到依赖
+      const existing = env['PATH'] || ''
+      const merged = [...candidates, ...existing.split(';').filter(Boolean)]
+      env['PATH'] = Array.from(new Set(merged)).join(';')
+      if (candidates.length === 0) {
+        console.warn(`[VoiceTranscribe] 未找到 ${platformPkg} 目录，可能导致语音引擎加载失败`)
+      }
     }
 
     return env

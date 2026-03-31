@@ -1,0 +1,134 @@
+name: Anti-Spam
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  check-spam:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for spam
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = (issue.title || '').toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+            const text = title + ' ' + body;
+
+            // 博彩/赌球类
+            const gamblingPatterns = [
+              /世界杯.*买球/, /买球.*世界杯/,
+              /世界杯.*下注/, /世界杯.*竞猜/,
+              /世界杯.*投注/, /世界杯.*押注/,
+              /世界杯.*彩票/, /世界杯.*平台/,
+              /世界杯.*app/, /世界杯.*软件/,
+              /世界杯.*网站/, /世界杯.*网址/,
+              /足球.*买球/, /买球.*足球/,
+              /足球.*投注/, /足球.*押注/,
+              /足球.*竞猜/, /足球.*平台/,
+              /篮球.*买球/, /篮球.*投注/,
+              /体育.*投注/, /体育.*竞猜/,
+              /体育.*买球/, /体育.*押注/,
+              /赌球/, /赌博.*网站/, /赌博.*平台/,
+              /博彩/, /博彩.*网站/, /博彩.*平台/,
+              /正规.*买球/, /官方.*买球/,
+              /买球.*网站/, /买球.*app/,
+              /买球.*软件/, /买球.*网址/,
+              /买球.*平台/, /买球.*技巧/,
+              /投注.*网站/, /投注.*平台/,
+              /押注.*网站/, /押注.*平台/,
+              /竞猜.*网站/, /竞猜.*平台/,
+              /彩票.*网站/, /彩票.*平台/,
+              /欧洲杯.*买球/, /欧冠.*买球/,
+              /nba.*买球/, /nba.*投注/,
+            ];
+
+            // 色情/交友类
+            const adultPatterns = [
+              /约炮/, /一夜情/, /外围/,
+              /包养/, /援交/, /陪聊/,
+              /成人.*网站/, /成人.*视频/,
+              /av.*网站/, /黄色.*网站/,
+            ];
+
+            // 贷款/金融诈骗类
+            const financePatterns = [
+              /秒到账.*贷款/, /无抵押.*贷款/,
+              /征信.*贷款/, /黑户.*贷款/,
+              /快速.*放款/, /私人.*放贷/,
+              /刷单/, /兼职.*日入/, /兼职.*月入/,
+              /网赚/, /躺赚/, /被动收入.*平台/,
+              /虚拟货币.*投资/, /usdt.*投资/,
+              /炒币.*平台/, /数字货币.*平台/,
+            ];
+
+            // 垃圾推广类
+            const spamPromoPatterns = [
+              /代刷/, /粉丝.*购买/, /涨粉/,
+              /seo.*优化/, /快速排名/,
+              /微商/, /代理.*招募/,
+            ];
+
+            // 账号特征检测（新账号 + 无 contribution）
+            const allPatterns = [
+              ...gamblingPatterns,
+              ...adultPatterns,
+              ...financePatterns,
+              ...spamPromoPatterns,
+            ];
+
+            const isSpam = allPatterns.some(pattern => pattern.test(text));
+
+            // 额外检测：标题超短且含可疑关键词（常见于批量刷单）
+            const suspiciousShort = title.length < 10 && /(买球|投注|博彩|赌博|下注|押注)/.test(title);
+
+            if (isSpam || suspiciousShort) {
+              // 确保 spam label 存在
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'spam',
+                  color: 'e4e669',
+                  description: 'Spam issue'
+                });
+              } catch (e) {
+                // label 已存在，忽略
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '此 issue 已被自动识别为垃圾内容并关闭。\n\nThis issue has been automatically identified as spam and closed.'
+              });
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['spam']
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              await github.rest.issues.lock({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                lock_reason: 'spam'
+              });
+
+              console.log(`Closed spam issue #${issue.number}: ${issue.title}`);
+            }

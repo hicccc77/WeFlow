@@ -304,11 +304,8 @@ class MessagePushService {
     }
 
     const groupNicknames = await this.getGroupNicknames(chatroomId)
-    const normalizedSender = this.normalizeAccountId(senderUsername)
-    const nickname = groupNicknames[senderUsername]
-      || groupNicknames[senderUsername.toLowerCase()]
-      || groupNicknames[normalizedSender]
-      || groupNicknames[normalizedSender.toLowerCase()]
+    const senderKey = senderUsername.toLowerCase()
+    const nickname = groupNicknames[senderKey]
 
     if (nickname) {
       return nickname
@@ -328,22 +325,33 @@ class MessagePushService {
     }
 
     const result = await wcdbService.getGroupNicknames(cacheKey)
-    const nicknames = result.success && result.nicknames ? result.nicknames : {}
+    const nicknames = result.success && result.nicknames
+      ? this.sanitizeGroupNicknames(result.nicknames)
+      : {}
     this.groupNicknameCache.set(cacheKey, { nicknames, updatedAt: Date.now() })
     return nicknames
   }
 
-  private normalizeAccountId(value: string): string {
-    const trimmed = String(value || '').trim()
-    if (!trimmed) return trimmed
-
-    if (trimmed.toLowerCase().startsWith('wxid_')) {
-      const match = trimmed.match(/^(wxid_[^_]+)/i)
-      return match ? match[1] : trimmed
+  private sanitizeGroupNicknames(nicknames: Record<string, string>): Record<string, string> {
+    const buckets = new Map<string, Set<string>>()
+    for (const [memberIdRaw, nicknameRaw] of Object.entries(nicknames || {})) {
+      const memberId = String(memberIdRaw || '').trim().toLowerCase()
+      const nickname = String(nicknameRaw || '').trim()
+      if (!memberId || !nickname) continue
+      const slot = buckets.get(memberId)
+      if (slot) {
+        slot.add(nickname)
+      } else {
+        buckets.set(memberId, new Set([nickname]))
+      }
     }
 
-    const suffixMatch = trimmed.match(/^(.+)_([a-zA-Z0-9]{4})$/)
-    return suffixMatch ? suffixMatch[1] : trimmed
+    const trusted: Record<string, string> = {}
+    for (const [memberId, nicknameSet] of buckets.entries()) {
+      if (nicknameSet.size !== 1) continue
+      trusted[memberId] = Array.from(nicknameSet)[0]
+    }
+    return trusted
   }
 
   private isRecentMessage(messageKey: string): boolean {

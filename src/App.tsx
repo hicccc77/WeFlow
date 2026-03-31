@@ -312,10 +312,14 @@ function App() {
     const removeUpdateListener = window.electronAPI?.app?.onUpdateAvailable?.((info: any) => {
       // 发现新版本时保存更新信息，锁定状态下不弹窗，解锁后再显示
       if (info) {
-        setUpdateInfo({ ...info, hasUpdate: true })
-        if (!useAppStore.getState().isLocked) {
-          setShowUpdateDialog(true)
-        }
+        window.electronAPI.app.getVersion().then((currentVersion: string) => {
+          const isMandatory = !!(info.minimumVersion && currentVersion &&
+            currentVersion.localeCompare(info.minimumVersion, undefined, { numeric: true, sensitivity: 'base' }) <= 0)
+          setUpdateInfo({ ...info, hasUpdate: true, isMandatory })
+          if (!useAppStore.getState().isLocked) {
+            setShowUpdateDialog(true)
+          }
+        })
       }
     })
     const removeProgressListener = window.electronAPI?.app?.onDownloadProgress?.((progress: any) => {
@@ -685,10 +689,11 @@ function App() {
       <UpdateDialog
         open={showUpdateDialog}
         updateInfo={updateInfo}
-        onClose={() => setShowUpdateDialog(false)}
+        onClose={() => { if (!(updateInfo as any)?.isMandatory) setShowUpdateDialog(false) }}
         onUpdate={handleUpdateNow}
         onIgnore={handleIgnoreUpdate}
         isDownloading={isDownloading}
+        isMandatory={!!(updateInfo as any)?.isMandatory}
         progress={downloadProgress}
       />
 

@@ -389,7 +389,7 @@ export class KeyServiceMac {
       `set timeoutSec to ${timeoutSec}`,
       'try',
       'with timeout of timeoutSec seconds',
-      'set outText to do shell script cmd with administrator privileges',
+      'set outText to do shell script (cmd & " 2>&1") with administrator privileges',
       'end timeout',
       'return "WF_OK::" & outText',
       'on error errMsg number errNum partial result pr',
@@ -935,10 +935,17 @@ export class KeyServiceMac {
   private resolveXwechatRootFromPath(accountPath?: string): string | null {
     const normalized = String(accountPath || '').replace(/\\/g, '/').replace(/\/+$/, '')
     if (!normalized) return null
+
+    // 旧路径：xwechat_files
     const marker = '/xwechat_files'
     const markerIdx = normalized.indexOf(marker)
-    if (markerIdx < 0) return null
-    return normalized.slice(0, markerIdx + marker.length)
+    if (markerIdx >= 0) return normalized.slice(0, markerIdx + marker.length)
+
+    // 新路径（微信 4.0.5+）：Application Support/com.tencent.xinWeChat/2.0b4.0.9
+    const newMarkerMatch = normalized.match(/^(.*\/com\.tencent\.xinWeChat\/(?:\d+\.\d+b\d+\.\d+|\d+\.\d+\.\d+))(\/|$)/)
+    if (newMarkerMatch) return newMarkerMatch[1]
+
+    return null
   }
 
   private pushAccountIdCandidates(candidates: string[], value?: string): void {
@@ -1094,6 +1101,16 @@ export class KeyServiceMac {
       if (idx >= 0) {
         const base = normalized.slice(0, idx)
         candidates.add(`${base}/app_data/net/kvcomm`)
+      }
+
+      // 微信 4.0.5+ 新路径推导：版本目录同级的 net/kvcomm
+      const newMarkerMatch = normalized.match(/^(.*\/com\.tencent\.xinWeChat\/(?:\d+\.\d+b\d+\.\d+|\d+\.\d+\.\d+))/)
+      if (newMarkerMatch) {
+        const versionBase = newMarkerMatch[1]
+        candidates.add(`${versionBase}/net/kvcomm`)
+        // 上级目录也尝试
+        const parentBase = versionBase.replace(/\/[^\/]+$/, '')
+        candidates.add(`${parentBase}/net/kvcomm`)
       }
 
       let cursor = accountPath

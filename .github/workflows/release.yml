@@ -49,6 +49,22 @@ jobs:
         run: |
           npx electron-builder --mac dmg --arm64 --publish always
 
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          for YML_FILE in latest-mac.yml latest-arm64-mac.yml; do
+            gh release download "$TAG" --repo "$REPO" --pattern "$YML_FILE" --output "/tmp/$YML_FILE" 2>/dev/null || continue
+            if ! grep -q 'minimumVersion' "/tmp/$YML_FILE"; then
+              echo "minimumVersion: $MINIMUM_VERSION" >> "/tmp/$YML_FILE"
+            fi
+            gh release upload "$TAG" --repo "$REPO" "/tmp/$YML_FILE" --clobber
+          done
+
   release-linux:
     runs-on: ubuntu-latest
 
@@ -85,6 +101,20 @@ jobs:
         run: |
           npx electron-builder --linux --publish always
 
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          gh release download "$TAG" --repo "$REPO" --pattern "latest-linux.yml" --output "/tmp/latest-linux.yml" 2>/dev/null
+          if [ -f /tmp/latest-linux.yml ] && ! grep -q 'minimumVersion' /tmp/latest-linux.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest-linux.yml
+            gh release upload "$TAG" --repo "$REPO" /tmp/latest-linux.yml --clobber
+          fi
+
   release:
     runs-on: windows-latest
 
@@ -119,7 +149,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --publish always
+          npx electron-builder --win nsis --x64 --publish always '--config.artifactName=${productName}-${version}-x64-Setup.${ext}'
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          gh release download "$TAG" --repo "$REPO" --pattern "latest.yml" --output "/tmp/latest.yml" 2>/dev/null
+          if [ -f /tmp/latest.yml ] && ! grep -q 'minimumVersion' /tmp/latest.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest.yml
+            gh release upload "$TAG" --repo "$REPO" /tmp/latest.yml --clobber
+          fi
 
   release-windows-arm64:
     runs-on: windows-latest
@@ -155,7 +199,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --win nsis --arm64 --publish always '--config.artifactName=${productName}-${version}-arm64-Setup.${ext}'
+          npx electron-builder --win nsis --arm64 --publish always '--config.publish.channel=latest-arm64' '--config.artifactName=${productName}-${version}-arm64-Setup.${ext}'
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          gh release download "$TAG" --repo "$REPO" --pattern "latest-arm64.yml" --output "/tmp/latest-arm64.yml" 2>/dev/null
+          if [ -f /tmp/latest-arm64.yml ] && ! grep -q 'minimumVersion' /tmp/latest-arm64.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest-arm64.yml
+            gh release upload "$TAG" --repo "$REPO" /tmp/latest-arm64.yml --clobber
+          fi
 
   update-release-notes:
     runs-on: ubuntu-latest
@@ -184,10 +242,12 @@ jobs:
             echo "$ASSETS_JSON" | jq -r --arg p "$pattern" '[.assets[].name | select(test($p))][0] // ""'
           }
 
-          WINDOWS_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("\\.exe$")) | select(test("arm64") | not)][0] // ""')"
+          WINDOWS_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("x64.*\\.exe$"))][0] // ""')"
+          if [ -z "$WINDOWS_ASSET" ]; then
+            WINDOWS_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("\\.exe$")) | select(test("arm64") | not)][0] // ""')"
+          fi
           WINDOWS_ARM64_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("arm64.*\\.exe$"))][0] // ""')"
           MAC_ASSET="$(pick_asset "\\.dmg$")"
-          LINUX_DEB_ASSET="$(pick_asset "\\.deb$")"
           LINUX_TAR_ASSET="$(pick_asset "\\.tar\\.gz$")"
           LINUX_APPIMAGE_ASSET="$(pick_asset "\\.AppImage$")"
 
@@ -201,7 +261,6 @@ jobs:
           WINDOWS_URL="$(build_link "$WINDOWS_ASSET")"
           WINDOWS_ARM64_URL="$(build_link "$WINDOWS_ARM64_ASSET")"
           MAC_URL="$(build_link "$MAC_ASSET")"
-          LINUX_DEB_URL="$(build_link "$LINUX_DEB_ASSET")"
           LINUX_TAR_URL="$(build_link "$LINUX_TAR_ASSET")"
           LINUX_APPIMAGE_URL="$(build_link "$LINUX_APPIMAGE_ASSET")"
 
@@ -216,9 +275,14 @@ jobs:
           - Windows x64（Win10+）: ${WINDOWS_URL:-$RELEASE_PAGE}
           - Windows arm64: ${WINDOWS_ARM64_URL:-$RELEASE_PAGE}
           - macOS（M系列芯片）: ${MAC_URL:-$RELEASE_PAGE}
-          - Linux (.deb) (即将废弃): ${LINUX_DEB_URL:-$RELEASE_PAGE}
           - Linux (.tar.gz): ${LINUX_TAR_URL:-$RELEASE_PAGE}
           - linux (.AppImage): ${LINUX_APPIMAGE_URL:-$RELEASE_PAGE}
+
+          ## macOS 安装提示（未知来源）
+          - 若打开时提示“来自未知开发者”或“无法验证开发者”，请到「系统设置 -> 隐私与安全性」中允许打开该应用。
+          - 如果仍被系统拦截，请在终端执行以下命令去除隔离标记：
+          - \`xattr -dr com.apple.quarantine "/Applications/WeFlow.app"\`
+          - 执行后重新打开 WeFlow。
 
           > 如果某个平台链接暂时未生成，可进入完整发布页查看全部资源：$RELEASE_PAGE
           EOF

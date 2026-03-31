@@ -1404,33 +1404,60 @@ class ExportService {
   }
 
   /**
-   * 获取群成员群昵称。优先使用 DLL，必要时回退到 `contact.chat_room.ext_buffer` 解析。
+   * 获取群成员群昵称。后端结果为唯一业务真值，前端仅做冲突净化防串号。
    */
   async getGroupNicknamesForRoom(chatroomId: string, candidates: string[] = []): Promise<Map<string, string>> {
-    const nicknameMap = new Map<string, string>()
-
     try {
       const dllResult = await wcdbService.getGroupNicknames(chatroomId)
-      if (dllResult.success && dllResult.nicknames) {
-        this.mergeGroupNicknameEntries(nicknameMap, Object.entries(dllResult.nicknames))
+      if (!dllResult.success || !dllResult.nicknames) {
+        return new Map<string, string>()
       }
+      return this.buildTrustedGroupNicknameMap(Object.entries(dllResult.nicknames), candidates)
     } catch (e) {
       console.error('getGroupNicknamesForRoom dll error:', e)
+      return new Map<string, string>()
+    }
+  }
+
+  private normalizeGroupNicknameIdentity(value: string): string {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    return raw.toLowerCase()
+  }
+
+  private buildTrustedGroupNicknameMap(
+    entries: Iterable<[string, string]>,
+    candidates: string[] = []
+  ): Map<string, string> {
+    const candidateSet = new Set(
+      this.buildGroupNicknameIdCandidates(candidates)
+        .map((id) => this.normalizeGroupNicknameIdentity(id))
+        .filter(Boolean)
+    )
+
+    const buckets = new Map<string, Set<string>>()
+    for (const [memberIdRaw, nicknameRaw] of entries) {
+      const identity = this.normalizeGroupNicknameIdentity(memberIdRaw || '')
+      if (!identity) continue
+      if (candidateSet.size > 0 && !candidateSet.has(identity)) continue
+
+      const nickname = this.normalizeGroupNickname(nicknameRaw || '')
+      if (!nickname) continue
+
+      const slot = buckets.get(identity)
+      if (slot) {
+        slot.add(nickname)
+      } else {
+        buckets.set(identity, new Set([nickname]))
+      }
     }
 
-    try {
-      const result = await wcdbService.getChatRoomExtBuffer(chatroomId)
-      if (!result.success || !result.extBuffer) {
-        return nicknameMap
-      }
-      const extBuffer = this.decodeExtBuffer(result.extBuffer)
-      if (!extBuffer) return nicknameMap
-      this.mergeGroupNicknameEntries(nicknameMap, this.parseGroupNicknamesFromExtBuffer(extBuffer, candidates).entries())
-      return nicknameMap
-    } catch (e) {
-      console.error('getGroupNicknamesForRoom error:', e)
-      return nicknameMap
+    const trusted = new Map<string, string>()
+    for (const [identity, nicknameSet] of buckets.entries()) {
+      if (nicknameSet.size !== 1) continue
+      trusted.set(identity, Array.from(nicknameSet)[0])
     }
+    return trusted
   }
 
   private mergeGroupNicknameEntries(
@@ -1680,8 +1707,6 @@ class ExportService {
       const raw = String(rawValue || '').trim()
       if (!raw) continue
       set.add(raw)
-      const cleaned = this.cleanAccountDirName(raw)
-      if (cleaned && cleaned !== raw) set.add(cleaned)
     }
     return Array.from(set)
   }
@@ -1690,29 +1715,20 @@ class ExportService {
     const idCandidates = this.buildGroupNicknameIdCandidates(candidates)
     if (idCandidates.length === 0) return ''
 
+    let resolved = ''
     for (const id of idCandidates) {
-      const exact = this.normalizeGroupNickname(groupNicknamesMap.get(id) || '')
-      if (exact) return exact
-      const lower = this.normalizeGroupNickname(groupNicknamesMap.get(id.toLowerCase()) || '')
-      if (lower) return lower
-    }
-
-    for (const id of idCandidates) {
-      const lower = id.toLowerCase()
-      let found = ''
-      let matched = 0
-      for (const [key, value] of groupNicknamesMap.entries()) {
-        if (String(key || '').toLowerCase() !== lower) continue
-        const normalized = this.normalizeGroupNickname(value || '')
-        if (!normalized) continue
-        found = normalized
-        matched += 1
-        if (matched > 1) return ''
+      const normalizedId = this.normalizeGroupNicknameIdentity(id)
+      if (!normalizedId) continue
+      const candidateNickname = this.normalizeGroupNickname(groupNicknamesMap.get(normalizedId) || '')
+      if (!candidateNickname) continue
+      if (!resolved) {
+        resolved = candidateNickname
+        continue
       }
-      if (matched === 1 && found) return found
+      if (resolved !== candidateNickname) return ''
     }
 
-    return ''
+    return resolved
   }
 
   /**

@@ -93,27 +93,39 @@ export class DbPathService {
       const possiblePaths: string[] = []
       const home = homedir()
 
-      // macOS 微信路径（固定）
       if (process.platform === 'darwin') {
+        // macOS 微信 4.0.5+ 新路径（优先检测）
+        const appSupportBase = join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Library', 'Application Support', 'com.tencent.xinWeChat')
+        if (existsSync(appSupportBase)) {
+          try {
+            const entries = readdirSync(appSupportBase)
+            for (const entry of entries) {
+              // 匹配形如 2.0b4.0.9 的版本目录
+              if (/^\d+\.\d+b\d+\.\d+/.test(entry) || /^\d+\.\d+\.\d+/.test(entry)) {
+                possiblePaths.push(join(appSupportBase, entry))
+              }
+            }
+          } catch { }
+        }
+        // macOS 旧路径兜底
         possiblePaths.push(join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Documents', 'xwechat_files'))
       } else {
         // Windows 微信4.x 数据目录
         possiblePaths.push(join(home, 'Documents', 'xwechat_files'))
       }
 
-
       for (const path of possiblePaths) {
-        if (existsSync(path)) {
-          const rootName = path.split(/[/\\]/).pop()?.toLowerCase()
-          if (rootName !== 'xwechat_files' && rootName !== 'wechat files') {
-            continue
-          }
+        if (!existsSync(path)) continue
 
-          // 检查是否有有效的账号目录
-          const accounts = this.findAccountDirs(path)
-          if (accounts.length > 0) {
-            return { success: true, path }
-          }
+        // 检查是否有有效的账号目录，或本身就是账号目录
+        const accounts = this.findAccountDirs(path)
+        if (accounts.length > 0) {
+          return { success: true, path }
+        }
+
+        // 如果该目录本身就是账号目录（直接包含 db_storage 等）
+        if (this.isAccountDir(path)) {
+          return { success: true, path }
         }
       }
 
@@ -295,6 +307,20 @@ export class DbPathService {
   getDefaultPath(): string {
     const home = homedir()
     if (process.platform === 'darwin') {
+      // 优先返回 4.0.5+ 新路径
+      const appSupportBase = join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Library', 'Application Support', 'com.tencent.xinWeChat')
+      if (existsSync(appSupportBase)) {
+        try {
+          const entries = readdirSync(appSupportBase)
+          for (const entry of entries) {
+            if (/^\d+\.\d+b\d+\.\d+/.test(entry) || /^\d+\.\d+\.\d+/.test(entry)) {
+              const candidate = join(appSupportBase, entry)
+              if (existsSync(candidate)) return candidate
+            }
+          }
+        } catch { }
+      }
+      // 旧版本路径兜底
       return join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Documents', 'xwechat_files')
     }
     return join(home, 'Documents', 'xwechat_files')

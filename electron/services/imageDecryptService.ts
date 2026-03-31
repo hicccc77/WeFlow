@@ -562,14 +562,14 @@ export class ImageDecryptService {
           if (allowThumbnail || !isThumb) {
             this.logInfo('[ImageDecrypt] hardlink hit (datName)', { imageMd5: imageDatName, path: preferredPath })
             this.cacheDatPath(accountDir, imageDatName, preferredPath)
-            if (imageMd5) this.cacheDatPath(accountDir, imageMd5, preferredPath)
+            this.cacheDatPath(accountDir, imageMd5, preferredPath)
             return preferredPath
           }
           // 找到缩略图但要求高清图，尝试同目录查找高清图变体
           const hdPath = this.findHdVariantInSameDir(preferredPath)
           if (hdPath) {
             this.cacheDatPath(accountDir, imageDatName, hdPath)
-            if (imageMd5) this.cacheDatPath(accountDir, imageMd5, hdPath)
+            this.cacheDatPath(accountDir, imageMd5, hdPath)
             return hdPath
           }
           return null

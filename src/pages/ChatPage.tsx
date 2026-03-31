@@ -3227,7 +3227,7 @@ function ChatPage(props: ChatPageProps) {
     const session = sessionMapRef.current.get(sessionId)
     const unreadCount = session?.unreadCount ?? 0
 
-    let messageLimit = currentBatchSizeRef.current
+    let messageLimit: number
 
     if (offset === 0) {
       const preferredLimit = Number.isFinite(options.forceInitialLimit)
@@ -7901,7 +7901,7 @@ function MessageBubble({
   useEffect(() => {
     if (emojiLocalPath) return
     // 后端已从本地缓存找到文件（转发表情包无 CDN URL 的情况）
-    if (isEmoji && message.emojiLocalPath && !emojiLocalPath) {
+    if (isEmoji && message.emojiLocalPath) {
       captureEmojiResizeBaseline()
       setEmojiLocalPath(message.emojiLocalPath)
       return

@@ -1145,9 +1145,13 @@
   }
 }
 
+.quote-layout-group {
+  margin-top: 14px;
+}
+
 .quote-layout-picker {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 12px;
   margin-top: 10px;
 }
@@ -1155,32 +1159,146 @@
 .quote-layout-card {
   position: relative;
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 14px;
-  background: var(--bg-primary);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-primary));
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 35%, var(--border-color));
-    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 32%, var(--border-color));
   }
 
   &.active {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
-    background: color-mix(in srgb, var(--bg-primary) 92%, var(--primary) 8%);
+    border-color: color-mix(in srgb, var(--primary) 68%, var(--border-color));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+    background: color-mix(in srgb, var(--primary) 10%, var(--bg-primary));
   }
 }
 
-.quote-layout-card-header {
+.quote-layout-card-check {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 46%, var(--border-color));
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+
+  &::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--primary) 78%, #6f8653);
+    transform: scale(0);
+    transition: transform 0.2s ease;
+  }
+
+  &.active {
+    border-color: color-mix(in srgb, var(--primary) 78%, var(--border-color));
+  }
+
+  &.active::after {
+    transform: scale(1);
+  }
+}
+
+.quote-layout-preview-shell {
+  padding-left: 22px;
+  min-height: 72px;
+}
+
+.quote-layout-preview-chat {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+}
+
+.quote-layout-preview-chat .message-bubble {
+  display: flex;
+  gap: 10px;
+  max-width: 70%;
+  align-items: flex-start;
+}
+
+.quote-layout-preview-chat .message-bubble.sent {
+  flex-direction: row-reverse;
+}
+
+.quote-layout-preview-chat .message-bubble.sent .bubble-content {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 18px 18px 4px 18px;
+}
+
+.quote-layout-preview-chat .bubble-content {
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.quote-layout-preview-chat .message-text {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.quote-layout-preview-chat .quoted-message {
+  background: rgba(0, 0, 0, 0.04);
+  border-left: 2px solid var(--primary);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.quote-layout-preview-chat .quoted-sender {
+  color: var(--primary);
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.quote-layout-preview-chat .quoted-sender::after {
+  content: ':';
+}
+
+.quote-layout-preview-chat .quoted-text {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.quote-layout-preview-chat .message-bubble.sent .quoted-message {
+  background: color-mix(in srgb, var(--on-primary) 12%, var(--primary));
+  border-left-color: color-mix(in srgb, var(--on-primary) 36%, var(--primary));
+}
+
+.quote-layout-preview-chat .message-bubble.sent .quoted-sender {
+  color: color-mix(in srgb, var(--on-primary) 92%, var(--primary));
+}
+
+.quote-layout-preview-chat .message-bubble.sent .quoted-text {
+  color: color-mix(in srgb, var(--on-primary) 80%, var(--primary));
+}
+
+.quote-layout-preview-chat .bubble-content.quote-layout-top .quoted-message {
+  margin-bottom: 8px;
+}
+
+.quote-layout-preview-chat .bubble-content.quote-layout-bottom .quoted-message {
+  margin-top: 8px;
+}
+
+.quote-layout-card-footer {
+  margin-top: 8px;
+  padding-left: 22px;
 }
 
 .quote-layout-card-title-group {
@@ -1190,87 +1308,20 @@
 }
 
 .quote-layout-card-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .quote-layout-card-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 
-.quote-layout-card-check {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  color: transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
-
-  &.active {
-    border-color: var(--primary);
-    background: var(--primary);
-    color: #fff;
+@media (max-width: 760px) {
+  .quote-layout-picker {
+    grid-template-columns: 1fr;
   }
-}
-
-.quote-layout-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary));
-  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
-  min-height: 112px;
-
-  &.quote-bottom {
-    .quote-layout-preview-message {
-      order: 1;
-    }
-
-    .quote-layout-preview-quote {
-      order: 2;
-    }
-  }
-}
-
-.quote-layout-preview-quote {
-  padding: 8px 10px;
-  border-left: 2px solid var(--primary);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.quote-layout-preview-sender {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary);
-}
-
-.quote-layout-preview-text {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
-.quote-layout-preview-message {
-  align-self: flex-start;
-  max-width: 88%;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--primary) 14%, var(--bg-primary));
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .theme-grid {

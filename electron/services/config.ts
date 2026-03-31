@@ -52,13 +52,17 @@ interface ConfigSchema {
   notificationFilterMode: 'all' | 'whitelist' | 'blacklist'
   notificationFilterList: string[]
   messagePushEnabled: boolean
+  httpApiEnabled: boolean
+  httpApiPort: number
+  httpApiHost: string
+  httpApiToken: string
   windowCloseBehavior: 'ask' | 'tray' | 'quit'
   quoteLayout: 'quote-top' | 'quote-bottom'
   wordCloudExcludeWords: string[]
 }
 
 // 需要 safeStorage 加密的字段（普通模式）
-const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword'])
+const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken'])
 const ENCRYPTED_BOOL_KEYS: Set<string> = new Set(['authEnabled', 'authUseHello'])
 const ENCRYPTED_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 
@@ -119,6 +123,10 @@ export class ConfigService {
       notificationPosition: 'top-right',
       notificationFilterMode: 'all',
       notificationFilterList: [],
+      httpApiToken: '',
+      httpApiEnabled: false,
+      httpApiPort: 5031,
+      httpApiHost: '127.0.0.1',
       messagePushEnabled: false,
       windowCloseBehavior: 'ask',
       quoteLayout: 'quote-top',
@@ -662,11 +670,9 @@ export class ConfigService {
 
     // 即使 authEnabled 被删除/篡改，如果密钥是 lock: 格式，说明曾开启过应用锁
     const rawDecryptKey: any = this.store.get('decryptKey')
-    if (typeof rawDecryptKey === 'string' && rawDecryptKey.startsWith(LOCK_PREFIX)) {
-      return true
-    }
+    return typeof rawDecryptKey === 'string' && rawDecryptKey.startsWith(LOCK_PREFIX);
 
-    return false
+
   }
 
   // === 工具方法 ===

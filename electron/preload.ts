@@ -225,7 +225,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('chat:voiceTranscriptPartial', listener)
       return () => ipcRenderer.removeListener('chat:voiceTranscriptPartial', listener)
     },
-    getContacts: () => ipcRenderer.invoke('chat:getContacts'),
+    getContacts: (options?: { lite?: boolean }) => ipcRenderer.invoke('chat:getContacts', options),
     getMessage: (sessionId: string, localId: number) =>
       ipcRenderer.invoke('chat:getMessage', sessionId, localId),
     searchMessages: (keyword: string, sessionId?: string, limit?: number, offset?: number, beginTimestamp?: number, endTimestamp?: number) =>
@@ -297,6 +297,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getGroupMessageRanking: (chatroomId: string, limit?: number, startTime?: number, endTime?: number) => ipcRenderer.invoke('groupAnalytics:getGroupMessageRanking', chatroomId, limit, startTime, endTime),
     getGroupActiveHours: (chatroomId: string, startTime?: number, endTime?: number) => ipcRenderer.invoke('groupAnalytics:getGroupActiveHours', chatroomId, startTime, endTime),
     getGroupMediaStats: (chatroomId: string, startTime?: number, endTime?: number) => ipcRenderer.invoke('groupAnalytics:getGroupMediaStats', chatroomId, startTime, endTime),
+    getGroupMemberAnalytics: (chatroomId: string, memberUsername: string, startTime?: number, endTime?: number) => ipcRenderer.invoke('groupAnalytics:getGroupMemberAnalytics', chatroomId, memberUsername, startTime, endTime),
     getGroupMemberMessages: (
       chatroomId: string,
       memberUsername: string,
@@ -422,7 +423,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // HTTP API 服务
   http: {
-    start: (port?: number) => ipcRenderer.invoke('http:start', port),
+    start: (port?: number, host?: string) => ipcRenderer.invoke('http:start', port, host),
     stop: () => ipcRenderer.invoke('http:stop'),
     status: () => ipcRenderer.invoke('http:status')
   }

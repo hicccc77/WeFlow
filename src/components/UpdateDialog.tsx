@@ -14,6 +14,7 @@ interface UpdateDialogProps {
     onUpdate: () => void
     onIgnore?: () => void
     isDownloading: boolean
+    isMandatory?: boolean
     progress: number | {
         percent: number
         bytesPerSecond?: number
@@ -30,6 +31,7 @@ const UpdateDialog: React.FC<UpdateDialogProps> = ({
     onUpdate,
     onIgnore,
     isDownloading,
+    isMandatory,
     progress
 }) => {
     if (!open || !updateInfo) return null
@@ -69,7 +71,7 @@ const UpdateDialog: React.FC<UpdateDialogProps> = ({
     return (
         <div className="update-dialog-overlay">
             <div className="update-dialog">
-                {!isDownloading && (
+                {!isDownloading && !isMandatory && (
                     <button className="close-btn" onClick={onClose}>
                         <X size={20} />
                     </button>
@@ -119,10 +121,13 @@ const UpdateDialog: React.FC<UpdateDialogProps> = ({
                         </div>
                     ) : (
                         <div className="actions">
-                            {onIgnore && (
+                            {onIgnore && !isMandatory && (
                                 <button className="btn-ignore" onClick={onIgnore}>
                                     忽略本次更新
                                 </button>
+                            )}
+                            {isMandatory && (
+                                <p className="mandatory-tip">此版本存在安全风险，必须更新后才能继续使用</p>
                             )}
                             <button className="btn-update" onClick={onUpdate}>
                                 开启新旅程

@@ -568,7 +568,7 @@ const createTaskId = (): string => `task-${Date.now()}-${Math.random().toString(
 const CONTACT_ENRICH_TIMEOUT_MS = 7000
 const EXPORT_SNS_STATS_CACHE_STALE_MS = 12 * 60 * 60 * 1000
 const EXPORT_AVATAR_ENRICH_BATCH_SIZE = 80
-const DEFAULT_CONTACTS_LOAD_TIMEOUT_MS = 3000
+const DEFAULT_CONTACTS_LOAD_TIMEOUT_MS = 10000
 const EXPORT_REENTER_SESSION_SOFT_REFRESH_MS = 5 * 60 * 1000
 const EXPORT_REENTER_CONTACTS_SOFT_REFRESH_MS = 5 * 60 * 1000
 const EXPORT_REENTER_SNS_SOFT_REFRESH_MS = 3 * 60 * 1000
@@ -1928,7 +1928,7 @@ function ExportPage() {
 
     setIsContactsListLoading(true)
     try {
-      const contactsResult = await window.electronAPI.chat.getContacts()
+      const contactsResult = await window.electronAPI.chat.getContacts({ lite: true })
       if (contactsLoadVersionRef.current !== loadVersion) return
 
       if (contactsResult.success && contactsResult.contacts) {
@@ -3782,7 +3782,7 @@ function ExportPage() {
 
             if (isStale()) return
             if (detailStatsPriorityRef.current) return
-            const contactsResult = await withTimeout(window.electronAPI.chat.getContacts(), CONTACT_ENRICH_TIMEOUT_MS)
+            const contactsResult = await withTimeout(window.electronAPI.chat.getContacts({ lite: true }), CONTACT_ENRICH_TIMEOUT_MS)
             if (isStale()) return
 
             const contactsFromNetwork: ContactInfo[] = contactsResult?.success && contactsResult.contacts ? contactsResult.contacts : []

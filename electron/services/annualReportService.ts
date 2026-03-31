@@ -1135,7 +1135,7 @@ class AnnualReportService {
 
               const now = Date.now()
               if (now - lastProgressAt > 200) {
-                let progress = 30
+                let progress: number
                 if (totalMessagesForProgress > 0) {
                   const ratio = Math.min(1, processedMessages / totalMessagesForProgress)
                   progress = 30 + Math.floor(ratio * 50)
