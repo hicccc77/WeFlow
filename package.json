@@ -18,7 +18,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build && electron-builder",
-    "build:cn": "ELECTRON_MIRROR=https://ghfast.top/https://github.com/electron/electron/releases/download/ ELECTRON_BUILDER_BINARIES_MIRROR=https://ghfast.top/https://github.com/electron-userland/electron-builder-binaries/releases/download/ FFMPEG_BINARIES_URL=https://ghfast.top/https://github.com/eugeneware/ffmpeg-static/releases/download npm run build",
+    "build:cn": "ELECTRON_BUILDER_BINARIES_MIRROR=https://ghfast.top/https://github.com/electron-userland/electron-builder-binaries/releases/download/ npm run build",
     "install:cn": "ELECTRON_MIRROR=https://ghfast.top/https://github.com/electron/electron/releases/download/ FFMPEG_BINARIES_URL=https://ghfast.top/https://github.com/eugeneware/ffmpeg-static/releases/download npm install",
     "preview": "vite preview",
     "electron:dev": "vite --mode electron",
