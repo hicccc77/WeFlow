@@ -169,9 +169,12 @@ export class DbPathService {
 
   private isAccountDir(entryPath: string): boolean {
     return (
+      // 旧版 WeChat (4.0) 目录结构
       existsSync(join(entryPath, 'db_storage')) ||
       existsSync(join(entryPath, 'FileStorage', 'Image')) ||
-      existsSync(join(entryPath, 'FileStorage', 'Image2'))
+      existsSync(join(entryPath, 'FileStorage', 'Image2')) ||
+      // 新版 WeChat (4.0.5+) 目录结构：账号目录为 MD5 哈希，包含 Message/Session/Contact 等
+      existsSync(join(entryPath, 'Message'))
     )
   }
 
@@ -188,6 +191,7 @@ export class DbPathService {
       const accountStat = statSync(entryPath)
       let latest = accountStat.mtimeMs
 
+      // 旧版 WeChat (4.0) 目录
       const dbPath = join(entryPath, 'db_storage')
       if (existsSync(dbPath)) {
         const dbStat = statSync(dbPath)
@@ -204,6 +208,19 @@ export class DbPathService {
       if (existsSync(image2Path)) {
         const image2Stat = statSync(image2Path)
         latest = Math.max(latest, image2Stat.mtimeMs)
+      }
+
+      // 新版 WeChat (4.0.5+) 目录
+      const messagePath = join(entryPath, 'Message')
+      if (existsSync(messagePath)) {
+        const messageStat = statSync(messagePath)
+        latest = Math.max(latest, messageStat.mtimeMs)
+      }
+
+      const sessionPath = join(entryPath, 'Session')
+      if (existsSync(sessionPath)) {
+        const sessionStat = statSync(sessionPath)
+        latest = Math.max(latest, sessionStat.mtimeMs)
       }
 
       return latest
@@ -226,9 +243,9 @@ export class DbPathService {
           let stat: ReturnType<typeof statSync>
           try { stat = statSync(entryPath) } catch { continue }
           if (!stat.isDirectory()) continue
-          const lower = entry.toLowerCase()
-          if (lower === 'all_users') continue
-          if (!entry.includes('_')) continue
+          if (!this.isPotentialAccountName(entry)) continue
+          // 接受 wxid_ 格式 或 MD5 哈希格式（32位十六进制，新版 WeChat 4.0.5+）
+          if (!entry.includes('_') && !/^[0-9a-f]{32}$/i.test(entry)) continue
           wxids.push({ wxid: entry, modifiedTime: stat.mtimeMs })
         }
       }
@@ -236,7 +253,7 @@ export class DbPathService {
 
       if (wxids.length === 0) {
         const rootName = basename(rootPath)
-        if (rootName.includes('_') && rootName.toLowerCase() !== 'all_users') {
+        if ((rootName.includes('_') || /^[0-9a-f]{32}$/i.test(rootName)) && rootName.toLowerCase() !== 'all_users') {
           const rootStat = statSync(rootPath)
           wxids.push({ wxid: rootName, modifiedTime: rootStat.mtimeMs })
         }
