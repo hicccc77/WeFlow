@@ -8272,6 +8272,28 @@ function ExportPage() {
                 </div>
               )}
 
+              {options.format === 'excel' && (
+                <div className="dialog-section">
+                  <div className="dialog-switch-row">
+                    <div className="dialog-switch-copy">
+                      <h4>导出完整列</h4>
+                      <div className="format-note">
+                        开启后将在 Excel 表格中单独拆分出「发送者昵称」、「微信ID」、「备注」和「群昵称」列。关闭则只保留紧凑的「发送者身份」。
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`dialog-switch ${!options.excelCompactColumns ? 'on' : ''}`}
+                      aria-pressed={!options.excelCompactColumns}
+                      aria-label="切换导出完整列"
+                      onClick={() => setOptions(prev => ({ ...prev, excelCompactColumns: !prev.excelCompactColumns }))}
+                    >
+                      <span className="dialog-switch-thumb" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="dialog-section">
                 <div className="section-header-action">
                   <h4>时间范围</h4>
