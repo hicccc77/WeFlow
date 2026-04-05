@@ -80,7 +80,7 @@ export class WcdbService {
         // Worker 退出，需要 reject 所有 pending promises
         if (code !== 0) {
           console.error('WCDB Worker 异常退出，退出码:', code)
-          const errorMsg = `Worker 异常退出 (退出码: ${code})。可能是 DLL 加载失败，请检查是否安装了 Visual C++ Redistributable。`
+          const errorMsg = `Worker 异常退出 (退出码: ${code})。可能是数据服务加载失败，请检查是否安装了 Visual C++ Redistributable。`
           for (const [id, p] of this.pending) {
             p.reject(new Error(errorMsg))
           }
@@ -467,7 +467,7 @@ export class WcdbService {
   }
 
   /**
-   * 获取表情包释义（严格 DLL 接口）
+   * 获取表情包释义（严格数据服务接口）
    */
   async getEmoticonCaptionStrict(md5: string): Promise<{ success: boolean; caption?: string; error?: string }> {
     return this.callWorker('getEmoticonCaptionStrict', { md5 })
@@ -608,7 +608,7 @@ export class WcdbService {
   }
 
   /**
-   * 获取 DLL 内部日志
+   * 获取数据服务内部日志
    */
   async getLogs(): Promise<{ success: boolean; logs?: string[]; error?: string }> {
     return this.callWorker('getLogs')

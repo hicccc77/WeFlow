@@ -1062,14 +1062,14 @@ class SnsService {
     }
 
     /**
-     * 补全 DLL 返回的评论中缺失的 refNickname
-     * DLL 返回的 refCommentId 是被回复评论的 cmtid
+     * 补全数据服务返回的评论中缺失的 refNickname
+     *数据服务返回的 refCommentId 是被回复评论的 cmtid
      * 评论按 cmtid 从小到大排列，cmtid 从 1 开始递增
      */
     private fixCommentRefs(comments: any[]): any[] {
         if (!comments || comments.length === 0) return []
 
-        // DLL 现在返回完整的评论数据（含 emojis、refNickname）
+        //数据服务现在返回完整的评论数据（含 emojis、refNickname）
         // 此处做最终的格式化和兜底补全
         const idToNickname = new Map<string, string>()
         comments.forEach((c, idx) => {
@@ -1140,14 +1140,14 @@ class SnsService {
                 } : undefined
             }))
 
-            // DLL 已返回完整评论数据（含 emojis、refNickname）
-            // 如果 DLL 评论缺少表情包信息，回退到从 rawXml 重新解析
+            //数据服务已返回完整评论数据（含 emojis、refNickname）
+            // 如果数据服务评论缺少表情包信息，回退到从 rawXml 重新解析
             const dllComments: any[] = post.comments || []
             const hasEmojisInDll = dllComments.some((c: any) => c.emojis && c.emojis.length > 0)
 
             let finalComments: any[]
             if (dllComments.length > 0 && (hasEmojisInDll || !rawXml)) {
-                // DLL 数据完整，直接使用
+                //数据服务数据完整，直接使用
                 finalComments = this.fixCommentRefs(dllComments)
             } else if (rawXml) {
                 // 回退：从 rawXml 重新解析（兼容旧版 DLL）

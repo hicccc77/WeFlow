@@ -430,7 +430,7 @@ function App() {
             }
           } else {
 
-            // 如果错误信息包含 VC++ 或 DLL 相关内容，不清除配置，只提示用户
+            // 如果错误信息包含 VC++ 或数据服务相关内容，不清除配置，只提示用户
             // 其他错误可能需要重新配置
             const errorMsg = result.error || ''
             if (errorMsg.includes('Visual C++') ||

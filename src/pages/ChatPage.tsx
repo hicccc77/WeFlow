@@ -68,6 +68,21 @@ const MESSAGE_LIST_SCROLL_IDLE_MS = 160
 const MESSAGE_TOP_WHEEL_LOAD_COOLDOWN_MS = 160
 const MESSAGE_EDGE_TRIGGER_DISTANCE_PX = 96
 
+type RequestIdleCallbackCompat = (callback: () => void, options?: { timeout?: number }) => number
+
+function scheduleWhenIdle(task: () => void, options?: { timeout?: number; fallbackDelay?: number }): void {
+  const requestIdleCallbackFn = (
+    globalThis as typeof globalThis & { requestIdleCallback?: RequestIdleCallbackCompat }
+  ).requestIdleCallback
+
+  if (typeof requestIdleCallbackFn === 'function') {
+    requestIdleCallbackFn(task, options?.timeout !== undefined ? { timeout: options.timeout } : undefined)
+    return
+  }
+
+  window.setTimeout(task, options?.fallbackDelay ?? 0)
+}
+
 function isGlobalMsgSearchCanceled(error: unknown): boolean {
   return String(error || '') === GLOBAL_MSG_SEARCH_CANCELED_ERROR
 }
@@ -2959,15 +2974,9 @@ function ChatPage(props: ChatPageProps) {
           await loadContactInfoBatch(usernames)
         } else {
           await new Promise<void>((resolve) => {
-            if ('requestIdleCallback' in window) {
-              window.requestIdleCallback(() => {
-                void loadContactInfoBatch(usernames).finally(resolve)
-              }, { timeout: 700 })
-            } else {
-              setTimeout(() => {
-                void loadContactInfoBatch(usernames).finally(resolve)
-              }, 80)
-            }
+            scheduleWhenIdle(() => {
+              void loadContactInfoBatch(usernames).finally(resolve)
+            }, { timeout: 700, fallbackDelay: 80 })
           })
         }
         processedBatchCount += 1
@@ -3066,7 +3075,7 @@ function ChatPage(props: ChatPageProps) {
   const loadContactInfoBatch = async (usernames: string[]) => {
     const startTime = performance.now()
     try {
-      // 在 DLL 调用前让出控制权（使用 setTimeout 0 代替 setImmediate）
+      // 在数据服务调用前让出控制权（使用 setTimeout 0 代替 setImmediate）
       await new Promise(resolve => setTimeout(resolve, 0))
 
       const dllStart = performance.now()
@@ -3077,7 +3086,7 @@ function ChatPage(props: ChatPageProps) {
       }
       const dllTime = performance.now() - dllStart
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setTimeout(resolve, 0))
 
       const totalTime = performance.now() - startTime
@@ -3259,13 +3268,7 @@ function ChatPage(props: ChatPageProps) {
     }
 
     if (defer) {
-      if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(() => {
-          runWarmup()
-        }, { timeout: 1200 })
-      } else {
-        globalThis.setTimeout(runWarmup, 120)
-      }
+      scheduleWhenIdle(runWarmup, { timeout: 1200, fallbackDelay: 120 })
       return
     }
 
@@ -3288,11 +3291,7 @@ function ChatPage(props: ChatPageProps) {
       run()
     }
 
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(runWhenIdle, { timeout: 1200 })
-    } else {
-      window.setTimeout(runWhenIdle, MESSAGE_LIST_SCROLL_IDLE_MS)
-    }
+    scheduleWhenIdle(runWhenIdle, { timeout: 1200, fallbackDelay: MESSAGE_LIST_SCROLL_IDLE_MS })
   }, [warmupGroupSenderProfiles])
 
   // 加载消息
@@ -6796,13 +6795,7 @@ function ChatPage(props: ChatPageProps) {
 
               {/* 会话详情面板 */}
               {showDetailPanel && (
-                <div className="detail-panel">
-                  <div className="detail-header">
-                    <h4>会话详情</h4>
-                    <button className="close-btn" onClick={() => setShowDetailPanel(false)}>
-                      <X size={16} />
-                    </button>
-                  </div>
+                <div className="detail-panel session-detail-panel">
                   {isLoadingDetail && !sessionDetail ? (
                     <div className="detail-loading">
                       <Loader2 size={20} className="spin" />
@@ -6810,7 +6803,27 @@ function ChatPage(props: ChatPageProps) {
                     </div>
                   ) : sessionDetail ? (
                     <div className="detail-content">
-                      <div className="detail-section">
+                      <div className="detail-overview-card">
+                        <Avatar
+                          src={currentSession?.avatarUrl}
+                          name={sessionDetail.remark || sessionDetail.nickName || currentSession?.displayName || sessionDetail.wxid}
+                          size={42}
+                          className="detail-overview-avatar"
+                        />
+                        <div className="detail-overview-meta">
+                          <span className="detail-overview-name">
+                            {sessionDetail.remark || sessionDetail.nickName || currentSession?.displayName || sessionDetail.alias || sessionDetail.wxid}
+                          </span>
+                          <span className="detail-overview-sub">
+                            {sessionDetail.alias || sessionDetail.wxid}
+                          </span>
+                        </div>
+                        <button className="detail-overview-close-btn" onClick={() => setShowDetailPanel(false)} title="关闭详情">
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      <div className="detail-section detail-basic-section">
                         <div className="detail-item">
                           <Hash size={14} />
                           <span className="label">微信ID</span>
@@ -6848,10 +6861,10 @@ function ChatPage(props: ChatPageProps) {
                         )}
                       </div>
 
-                      <div className="detail-section">
+                      <div className="detail-section detail-stats-section">
                         <div className="section-title">
                           <MessageSquare size={14} />
-                          <span>消息统计（导出口径）</span>
+                          <span>消息统计</span>
                         </div>
                         <div className="detail-stats-meta">
                           {isRefreshingDetailStats
@@ -7009,7 +7022,7 @@ function ChatPage(props: ChatPageProps) {
                         </div>
                       </div>
 
-                      <div className="detail-section">
+                      <div className="detail-section detail-db-section">
                         <div className="section-title">
                           <Database size={14} />
                           <span>数据库分布</span>

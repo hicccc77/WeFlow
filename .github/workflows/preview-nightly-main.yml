@@ -107,6 +107,7 @@ jobs:
         run: npm version "${{ needs.prepare.outputs.preview_version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -160,6 +161,7 @@ jobs:
         run: npm version "${{ needs.prepare.outputs.preview_version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -211,6 +213,7 @@ jobs:
         run: npm version "${{ needs.prepare.outputs.preview_version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -262,6 +265,7 @@ jobs:
         run: npm version "${{ needs.prepare.outputs.preview_version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build

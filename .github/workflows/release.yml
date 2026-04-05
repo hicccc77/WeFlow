@@ -39,6 +39,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -95,6 +96,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -145,6 +147,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -195,6 +198,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build

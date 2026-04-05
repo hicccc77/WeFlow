@@ -1867,8 +1867,8 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       <div className="tab-content anti-revoke-tab">
         <div className="anti-revoke-hero">
           <div className="anti-revoke-hero-main">
-            <h3>会话级防撤回触发器</h3>
-            <p>仅针对勾选会话执行批量安装或卸载，状态可随时刷新。</p>
+            <h3>防撤回</h3>
+            <p>你可以根据会话进行防撤回部署，安装后无需保持 WeFlow 运行即可实现防撤回</p>
           </div>
           <div className="anti-revoke-metrics">
             <div className="anti-revoke-metric is-total">

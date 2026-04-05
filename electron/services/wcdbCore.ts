@@ -2,7 +2,7 @@ import { join, dirname, basename } from 'path'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 
-// DLL 初始化错误信息，用于帮助用户诊断问题
+//数据服务初始化错误信息，用于帮助用户诊断问题
 let lastDllInitError: string | null = null
 
 export function getLastDllInitError(): string | null {
@@ -157,7 +157,7 @@ export class WcdbCore {
         return false
       }
 
-      // 从 DLL 获取动态管道名（含 PID）
+      // 从数据服务获取动态管道名（含 PID）
       let pipePath = '\\\\.\\pipe\\weflow_monitor'
       if (this.wcdbGetMonitorPipeName) {
         try {
@@ -638,8 +638,8 @@ export class WcdbCore {
       this.writeLog(`[bootstrap] initialize platform=${process.platform} dllPath=${dllPath} resourcesPath=${this.resourcesPath || ''} userDataPath=${this.userDataPath || ''}`, true)
 
       if (!existsSync(dllPath)) {
-        console.error('WCDB DLL 不存在:', dllPath)
-        this.writeLog(`[bootstrap] initialize failed: dll not found path=${dllPath}`, true)
+        console.error('WCDB数据服务不存在:', dllPath)
+        this.writeLog(`[bootstrap] initialize failed:数据服务not found path=${dllPath}`, true)
         return false
       }
 
@@ -694,7 +694,7 @@ export class WcdbCore {
 
         // 尝试多个可能的资源路径
         const resourcePaths = [
-          dllDir,  // DLL 所在目录
+          dllDir,  //数据服务所在目录
           dirname(dllDir),  // 上级目录
           process.resourcesPath,  // 打包后 Contents/Resources
           process.resourcesPath ? join(process.resourcesPath as string, 'resources') : null,  // Contents/Resources/resources
@@ -1280,7 +1280,7 @@ export class WcdbCore {
   }
 
   /**
-   * 打印 DLL 内部日志（仅在出错时调用）
+   * 打印数据服务内部日志（仅在出错时调用）
    */
   private async printLogs(force = false): Promise<void> {
     try {
@@ -1603,7 +1603,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetSessions(this.handle, outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -1958,7 +1958,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetDisplayNames(this.handle, JSON.stringify(usernames), outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -2043,7 +2043,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetAvatarUrls(handle, JSON.stringify(toFetch), outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -2143,7 +2143,7 @@ export class WcdbCore {
       return { success: false, error: 'WCDB 未连接' }
     }
     if (!this.wcdbGetGroupNicknames) {
-      return { success: false, error: '当前 DLL 版本不支持获取群昵称接口' }
+      return { success: false, error: '当前数据服务版本不支持获取群昵称接口' }
     }
     try {
       const outPtr = [null as any]
@@ -2986,7 +2986,7 @@ export class WcdbCore {
 
   async getVoiceData(sessionId: string, createTime: number, candidates: string[], localId: number = 0, svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbGetVoiceData) return { success: false, error: '当前 DLL 版本不支持获取语音数据' }
+    if (!this.wcdbGetVoiceData) return { success: false, error: '当前数据服务版本不支持获取语音数据' }
     try {
       const outPtr = [null as any]
       const result = this.wcdbGetVoiceData(this.handle, sessionId, createTime, localId, BigInt(svrId || 0), JSON.stringify(candidates), outPtr)
@@ -3400,7 +3400,7 @@ export class WcdbCore {
 
   async searchMessages(keyword: string, sessionId?: string, limit?: number, offset?: number, beginTimestamp?: number, endTimestamp?: number): Promise<{ success: boolean; messages?: any[]; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbSearchMessages) return { success: false, error: '当前 DLL 版本不支持搜索消息' }
+    if (!this.wcdbSearchMessages) return { success: false, error: '当前数据服务版本不支持搜索消息' }
     try {
       const handle = this.handle
       await new Promise(resolve => setImmediate(resolve))
@@ -3430,7 +3430,7 @@ export class WcdbCore {
 
   async getSnsTimeline(limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number): Promise<{ success: boolean; timeline?: any[]; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbGetSnsTimeline) return { success: false, error: '当前 DLL 版本不支持获取朋友圈' }
+    if (!this.wcdbGetSnsTimeline) return { success: false, error: '当前数据服务版本不支持获取朋友圈' }
     try {
       const outPtr = [null as any]
       const usernamesJson = usernames && usernames.length > 0 ? JSON.stringify(usernames) : ''
@@ -3522,7 +3522,7 @@ export class WcdbCore {
 
   async installMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; alreadyInstalled?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbInstallMessageAntiRevokeTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbInstallMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     const normalizedSessionId = String(sessionId || '').trim()
     if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
     try {
@@ -3547,7 +3547,7 @@ export class WcdbCore {
 
   async uninstallMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbUninstallMessageAntiRevokeTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbUninstallMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     const normalizedSessionId = String(sessionId || '').trim()
     if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
     try {
@@ -3569,7 +3569,7 @@ export class WcdbCore {
 
   async checkMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; installed?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbCheckMessageAntiRevokeTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbCheckMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     const normalizedSessionId = String(sessionId || '').trim()
     if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
     try {
@@ -3640,7 +3640,7 @@ export class WcdbCore {
    */
   async installSnsBlockDeleteTrigger(): Promise<{ success: boolean; alreadyInstalled?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbInstallSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbInstallSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbInstallSnsBlockDeleteTrigger(this.handle, outPtr)
@@ -3650,7 +3650,7 @@ export class WcdbCore {
         try { this.wcdbFreeString(outPtr[0]) } catch { }
       }
       if (status === 1) {
-        // DLL 返回 1 表示已安装
+        //数据服务返回 1 表示已安装
         return { success: true, alreadyInstalled: true }
       }
       if (status !== 0) {
@@ -3667,7 +3667,7 @@ export class WcdbCore {
    */
   async uninstallSnsBlockDeleteTrigger(): Promise<{ success: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbUninstallSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbUninstallSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbUninstallSnsBlockDeleteTrigger(this.handle, outPtr)
@@ -3690,7 +3690,7 @@ export class WcdbCore {
    */
   async checkSnsBlockDeleteTrigger(): Promise<{ success: boolean; installed?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbCheckSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbCheckSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outInstalled = [0]
       const status = this.wcdbCheckSnsBlockDeleteTrigger(this.handle, outInstalled)
@@ -3705,7 +3705,7 @@ export class WcdbCore {
 
   async deleteSnsPost(postId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbDeleteSnsPost) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbDeleteSnsPost) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbDeleteSnsPost(this.handle, postId, outPtr)

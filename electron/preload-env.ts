@@ -2,7 +2,7 @@ import { join, dirname } from 'path'
 
 /**
  * 强制将本地资源目录添加到 PATH 最前端，确保优先加载本地 DLL
- * 解决系统中存在冲突版本的 DLL 导致的应用崩溃问题
+ * 解决系统中存在冲突版本的数据服务导致的应用崩溃问题
  */
 function enforceLocalDllPriority() {
     const isDev = !!process.env.VITE_DEV_SERVER_URL
@@ -35,5 +35,5 @@ function enforceLocalDllPriority() {
 try {
     enforceLocalDllPriority()
 } catch (e) {
-    console.error('[WeFlow] Failed to enforce local DLL priority:', e)
+    console.error('[WeFlow] Failed to enforce local service priority:', e)
 }

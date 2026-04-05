@@ -469,7 +469,7 @@ class ChatService {
     if (this.monitorSetup) return
     this.monitorSetup = true
 
-    // 使用 C++ DLL 内部的文件监控 (ReadDirectoryChangesW)
+    // 使用 C++数据服务内部的文件监控 (ReadDirectoryChangesW)
     // 这种方式更高效，且不占用 JS 线程，并能直接监听 session/message 目录变更
     wcdbService.setMonitor((type, json) => {
       this.handleSessionStatsMonitorChange(type, json)
@@ -5117,7 +5117,7 @@ class ChatService {
     }
   }
 
-  //手动查找 media_*.db 文件（当 WCDB DLL 不支持 listMediaDbs 时的 fallback）
+  //手动查找 media_*.db 文件（当 WCDB数据服务不支持 listMediaDbs 时的 fallback）
   private async findMediaDbsManually(): Promise<string[]> {
     try {
       const dbPath = this.configService.get('dbPath')
@@ -5676,7 +5676,7 @@ class ChatService {
       if (!result.success || !result.contact) return null
       const contact = result.contact as Record<string, any>
       let alias = String(contact.alias || contact.Alias || '')
-      // DLL 有时不返回 alias 字段，补一条直接 SQL 查询兜底
+      //数据服务有时不返回 alias 字段，补一条直接 SQL 查询兜底
       if (!alias) {
         try {
           const aliasResult = await wcdbService.getContactAliasMap([username])
