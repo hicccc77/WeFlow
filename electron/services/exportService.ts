@@ -2960,7 +2960,7 @@ class ExportService {
 
       switch (referType) {
         case '1':
-          displayContent = this.sanitizeQuotedContent(referContent)
+          displayContent = this.extractPreferredQuotedText(referMsgXml)
           break
         case '3':
           displayContent = '[图片]'
@@ -2999,6 +2999,76 @@ class ExportService {
     } catch {
       return {}
     }
+  }
+
+  private extractPreferredQuotedText(referMsgXml: string): string {
+    if (!referMsgXml) return ''
+
+    const sources = [this.decodeHtmlEntities(referMsgXml)]
+    const rawMsgSource = this.extractXmlValue(referMsgXml, 'msgsource')
+    if (rawMsgSource) {
+      const decodedMsgSource = this.decodeHtmlEntities(rawMsgSource)
+      if (decodedMsgSource) {
+        sources.push(decodedMsgSource)
+      }
+    }
+
+    const fullContent = this.sanitizeQuotedContent(this.extractXmlValue(sources[0] || referMsgXml, 'content'))
+    const partialText = this.extractPartialQuotedText(sources[0] || referMsgXml, fullContent)
+    if (partialText) return partialText
+
+    const candidateTags = [
+      'selectedcontent',
+      'selectedtext',
+      'selectcontent',
+      'selecttext',
+      'quotecontent',
+      'quotetext',
+      'partcontent',
+      'parttext',
+      'excerpt',
+      'summary',
+      'preview'
+    ]
+
+    for (const source of sources) {
+      for (const tag of candidateTags) {
+        const value = this.sanitizeQuotedContent(this.extractXmlValue(source, tag))
+        if (value) return value
+      }
+    }
+
+    return fullContent
+  }
+
+  private extractPartialQuotedText(xml: string, fullContent: string): string {
+    if (!xml || !fullContent) return ''
+
+    const startChar = this.extractXmlValue(xml, 'start')
+    const endChar = this.extractXmlValue(xml, 'end')
+    const startIndexRaw = this.extractXmlValue(xml, 'startindex')
+    const endIndexRaw = this.extractXmlValue(xml, 'endindex')
+    const startIndex = Number.parseInt(startIndexRaw, 10)
+    const endIndex = Number.parseInt(endIndexRaw, 10)
+
+    if (startChar && endChar) {
+      const startPos = fullContent.indexOf(startChar)
+      if (startPos !== -1) {
+        const endPos = fullContent.indexOf(endChar, startPos + startChar.length - 1)
+        if (endPos !== -1 && endPos >= startPos) {
+          const sliced = fullContent.slice(startPos, endPos + endChar.length).trim()
+          if (sliced) return sliced
+        }
+      }
+    }
+
+    if (Number.isFinite(startIndex) && Number.isFinite(endIndex) && endIndex >= startIndex) {
+      const chars = Array.from(fullContent)
+      const sliced = chars.slice(startIndex, endIndex + 1).join('').trim()
+      if (sliced) return sliced
+    }
+
+    return ''
   }
 
   private extractChatLabReplyToMessageId(content: string): string | undefined {
