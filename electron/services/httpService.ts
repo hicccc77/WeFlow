@@ -6,6 +6,7 @@ import * as http from 'http'
 import * as fs from 'fs'
 import * as path from 'path'
 import { URL } from 'url'
+import { timingSafeEqual } from 'crypto'
 import { chatService, Message } from './chatService'
 import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
@@ -268,9 +269,19 @@ class HttpService {
      */
     private async parseBody(req: http.IncomingMessage): Promise<Record<string, any>> {
         if (req.method !== 'POST') return {}
+        const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10MB
         return new Promise((resolve) => {
             let body = ''
-            req.on('data', chunk => { body += chunk.toString() })
+            let bodySize = 0
+            req.on('data', chunk => {
+                bodySize += chunk.length
+                if (bodySize > MAX_BODY_SIZE) {
+                    req.destroy()
+                    resolve({})
+                    return
+                }
+                body += chunk.toString()
+            })
             req.on('end', () => {
                 try {
                     resolve(JSON.parse(body))
@@ -285,30 +296,44 @@ class HttpService {
     /**
      * 鉴权拦截器
      */
+    private safeEqual(a: string, b: string): boolean {
+        const bufA = Buffer.from(a)
+        const bufB = Buffer.from(b)
+        if (bufA.length !== bufB.length) return false
+        return timingSafeEqual(bufA, bufB)
+    }
+
     private verifyToken(req: http.IncomingMessage, url: URL, body: Record<string, any>): boolean {
         const expectedToken = String(this.configService.get('httpApiToken') || '').trim()
-        if (!expectedToken) return true
+        if (!expectedToken) {
+            // token 未配置时拒绝所有请求，防止未授权访问
+            console.warn('[HttpService] Access denied: httpApiToken not configured')
+            return false
+        }
 
         const authHeader = req.headers.authorization
         if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
             const token = authHeader.substring(7).trim()
-            if (token === expectedToken) return true
+            if (this.safeEqual(token, expectedToken)) return true
         }
 
         const queryToken = url.searchParams.get('access_token')
-        if (queryToken && queryToken.trim() === expectedToken) return true
+        if (queryToken && this.safeEqual(queryToken.trim(), expectedToken)) return true
 
         const bodyToken = body['access_token']
-        return !!(bodyToken && String(bodyToken).trim() === expectedToken);
-
-
+        return !!(bodyToken && this.safeEqual(String(bodyToken).trim(), expectedToken))
     }
 
     /**
      * 处理 HTTP 请求 (重构后)
      */
     private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        res.setHeader('Access-Control-Allow-Origin', '*')
+        // 仅允许本地来源的跨域请求
+        const origin = req.headers.origin || ''
+        if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
@@ -431,9 +456,15 @@ class HttpService {
   }
 
   private handleMediaRequest(pathname: string, res: http.ServerResponse): void {
-    const mediaBasePath = this.getApiMediaExportPath()
+    const mediaBasePath = path.resolve(this.getApiMediaExportPath())
     const relativePath = pathname.replace('/api/v1/media/', '')
-    const fullPath = path.join(mediaBasePath, relativePath)
+    const fullPath = path.resolve(mediaBasePath, relativePath)
+
+    // 防止路径穿越攻击
+    if (!fullPath.startsWith(mediaBasePath + path.sep) && fullPath !== mediaBasePath) {
+      this.sendError(res, 403, 'Forbidden')
+      return
+    }
 
     if (!fs.existsSync(fullPath)) {
       this.sendError(res, 404, 'Media not found')
