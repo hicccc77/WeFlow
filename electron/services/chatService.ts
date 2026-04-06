@@ -1,4 +1,4 @@
-﻿import { join, dirname, basename, extname } from 'path'
+import { join, dirname, basename, extname } from 'path'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, unlinkSync, watch, promises as fsPromises } from 'fs'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -75,6 +75,7 @@ export interface Message {
   fileName?: string         // 文件名
   fileSize?: number         // 文件大小
   fileExt?: string          // 文件扩展名
+  fileMd5?: string          // 文件 MD5
   xmlType?: string          // XML 中的 type 字段
   appMsgKind?: string       // 归一化 appmsg 类型
   appMsgDesc?: string
@@ -468,7 +469,7 @@ class ChatService {
     if (this.monitorSetup) return
     this.monitorSetup = true
 
-    // 使用 C++ DLL 内部的文件监控 (ReadDirectoryChangesW)
+    // 使用 C++数据服务内部的文件监控 (ReadDirectoryChangesW)
     // 这种方式更高效，且不占用 JS 线程，并能直接监听 session/message 目录变更
     wcdbService.setMonitor((type, json) => {
       this.handleSessionStatsMonitorChange(type, json)
@@ -553,6 +554,51 @@ class ChatService {
       const connectResult = await this.ensureConnected()
       if (!connectResult.success) return { success: false, error: connectResult.error }
       return await wcdbService.deleteMessage(sessionId, localId, createTime, dbPathHint)
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async checkAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; installed?: boolean; error?: string }>
+    error?: string
+  }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) return { success: false, error: connectResult.error }
+      const normalizedIds = Array.from(new Set((sessionIds || []).map((id) => String(id || '').trim()).filter(Boolean)))
+      return await wcdbService.checkMessageAntiRevokeTriggers(normalizedIds)
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async installAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; alreadyInstalled?: boolean; error?: string }>
+    error?: string
+  }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) return { success: false, error: connectResult.error }
+      const normalizedIds = Array.from(new Set((sessionIds || []).map((id) => String(id || '').trim()).filter(Boolean)))
+      return await wcdbService.installMessageAntiRevokeTriggers(normalizedIds)
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async uninstallAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; error?: string }>
+    error?: string
+  }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) return { success: false, error: connectResult.error }
+      const normalizedIds = Array.from(new Set((sessionIds || []).map((id) => String(id || '').trim()).filter(Boolean)))
+      return await wcdbService.uninstallMessageAntiRevokeTriggers(normalizedIds)
     } catch (e) {
       return { success: false, error: String(e) }
     }
@@ -1773,18 +1819,9 @@ class ChatService {
   }
 
   private getMessageSourceInfo(row: Record<string, any>): { dbName?: string; tableName?: string; dbPath?: string } {
-    const dbPath = String(
-      this.getRowField(row, ['_db_path', 'db_path', 'dbPath', 'database_path', 'databasePath', 'source_db_path'])
-      || ''
-    ).trim()
-    const explicitDbName = String(
-      this.getRowField(row, ['db_name', 'dbName', 'database_name', 'databaseName', 'db', 'database', 'source_db'])
-      || ''
-    ).trim()
-    const tableName = String(
-      this.getRowField(row, ['table_name', 'tableName', 'table', 'source_table', 'sourceTable'])
-      || ''
-    ).trim()
+    const dbPath = String(row._db_path || row.db_path || '').trim()
+    const explicitDbName = String(row.db_name || '').trim()
+    const tableName = String(row.table_name || '').trim()
     const dbName = explicitDbName || (dbPath ? basename(dbPath, extname(dbPath)) : '')
     return {
       dbName: dbName || undefined,
@@ -3201,7 +3238,7 @@ class ChatService {
         if (!batch.success) break
         const rows = Array.isArray(batch.rows) ? batch.rows as Record<string, any>[] : []
         for (const row of rows) {
-          const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 1)
+          const localType = this.getRowInt(row, ['local_type'], 1)
           if (localType === 50) {
             counters.callMessages += 1
             continue
@@ -3216,8 +3253,8 @@ class ChatService {
           }
           if (localType !== 49) continue
 
-          const rawMessageContent = this.getRowField(row, ['message_content', 'messageContent', 'msg_content', 'msgContent', 'content', 'WCDB_CT_message_content'])
-          const rawCompressContent = this.getRowField(row, ['compress_content', 'compressContent', 'compressed_content', 'compressedContent', 'WCDB_CT_compress_content'])
+          const rawMessageContent = row.message_content
+          const rawCompressContent = row.compress_content
           const content = this.decodeMessageContent(rawMessageContent, rawCompressContent)
           const xmlType = this.extractType49XmlTypeForStats(content)
           if (xmlType === '2000') counters.transferMessages += 1
@@ -3270,7 +3307,7 @@ class ChatService {
         for (const row of rows) {
           stats.totalMessages += 1
 
-          const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 1)
+          const localType = this.getRowInt(row, ['local_type'], 1)
           if (localType === 34) stats.voiceMessages += 1
           if (localType === 3) stats.imageMessages += 1
           if (localType === 43) stats.videoMessages += 1
@@ -3279,8 +3316,8 @@ class ChatService {
           if (localType === 8589934592049) stats.transferMessages += 1
           if (localType === 8594229559345) stats.redPacketMessages += 1
           if (localType === 49) {
-            const rawMessageContent = this.getRowField(row, ['message_content', 'messageContent', 'msg_content', 'msgContent', 'content', 'WCDB_CT_message_content'])
-            const rawCompressContent = this.getRowField(row, ['compress_content', 'compressContent', 'compressed_content', 'compressedContent', 'WCDB_CT_compress_content'])
+            const rawMessageContent = row.message_content
+            const rawCompressContent = row.compress_content
             const content = this.decodeMessageContent(rawMessageContent, rawCompressContent)
             const xmlType = this.extractType49XmlTypeForStats(content)
             if (xmlType === '2000') stats.transferMessages += 1
@@ -3289,7 +3326,7 @@ class ChatService {
 
           const createTime = this.getRowInt(
             row,
-            ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'],
+            ['create_time'],
             0
           )
           if (createTime > 0) {
@@ -3302,7 +3339,7 @@ class ChatService {
           }
 
           if (sessionId.endsWith('@chatroom')) {
-            const sender = String(this.getRowField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username']) || '').trim()
+            const sender = String(row.sender_username || '').trim()
             const senderKeys = this.buildIdentityKeys(sender)
             if (senderKeys.length > 0) {
               senderIdentities.add(senderKeys[0])
@@ -3310,7 +3347,7 @@ class ChatService {
                 stats.groupMyMessages = (stats.groupMyMessages || 0) + 1
               }
             } else {
-              const isSend = this.coerceRowNumber(this.getRowField(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send']))
+              const isSend = this.coerceRowNumber(row.computed_is_send ?? row.is_send)
               if (Number.isFinite(isSend) && isSend === 1) {
                 stats.groupMyMessages = (stats.groupMyMessages || 0) + 1
               }
@@ -3744,32 +3781,18 @@ class ChatService {
     const messages: Message[] = []
     for (const row of rows) {
       const sourceInfo = this.getMessageSourceInfo(row)
-      const rawMessageContent = this.getRowField(row, [
-        'message_content',
-        'messageContent',
-        'content',
-        'msg_content',
-        'msgContent',
-        'WCDB_CT_message_content',
-        'WCDB_CT_messageContent'
-      ]);
-      const rawCompressContent = this.getRowField(row, [
-        'compress_content',
-        'compressContent',
-        'compressed_content',
-        'WCDB_CT_compress_content',
-        'WCDB_CT_compressContent'
-      ]);
+      const rawMessageContent = row.message_content
+      const rawCompressContent = row.compress_content
 
       const content = this.decodeMessageContent(rawMessageContent, rawCompressContent);
-      const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 1)
-      const isSendRaw = this.getRowField(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send'])
+      const localType = this.getRowInt(row, ['local_type'], 1)
+      const isSendRaw = row.computed_is_send ?? row.is_send
       const parsedRawIsSend = isSendRaw === null ? null : parseInt(isSendRaw, 10)
-      const senderUsername = this.getRowField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username'])
+      const senderUsername = row.sender_username
         || this.extractSenderUsernameFromContent(content)
         || null
       const { isSend } = this.resolveMessageIsSend(parsedRawIsSend, senderUsername)
-      const createTime = this.getRowInt(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'], 0)
+      const createTime = this.getRowInt(row, ['create_time'], 0)
 
       if (senderUsername && !myWxid) {
         // [DEBUG] Issue #34: 未配置 myWxid，无法判断是否发送
@@ -3796,6 +3819,7 @@ class ChatService {
       let fileName: string | undefined
       let fileSize: number | undefined
       let fileExt: string | undefined
+      let fileMd5: string | undefined
       let xmlType: string | undefined
       let appMsgKind: string | undefined
       let appMsgDesc: string | undefined
@@ -3900,6 +3924,7 @@ class ChatService {
         fileName = type49Info.fileName
         fileSize = type49Info.fileSize
         fileExt = type49Info.fileExt
+        fileMd5 = type49Info.fileMd5
         chatRecordTitle = type49Info.chatRecordTitle
         chatRecordList = type49Info.chatRecordList
         transferPayerUsername = type49Info.transferPayerUsername
@@ -3923,6 +3948,7 @@ class ChatService {
         fileName = fileName || type49Info.fileName
         fileSize = fileSize ?? type49Info.fileSize
         fileExt = fileExt || type49Info.fileExt
+        fileMd5 = fileMd5 || type49Info.fileMd5
         appMsgKind = appMsgKind || type49Info.appMsgKind
         appMsgDesc = appMsgDesc || type49Info.appMsgDesc
         appMsgAppName = appMsgAppName || type49Info.appMsgAppName
@@ -3954,10 +3980,10 @@ class ChatService {
         if (!quotedSender && type49Info.quotedSender !== undefined) quotedSender = type49Info.quotedSender
       }
 
-      const localId = this.getRowInt(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'], 0)
-      const serverIdRaw = this.normalizeUnsignedIntegerToken(this.getRowField(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id']))
-      const serverId = this.getRowInt(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id'], 0)
-      const sortSeq = this.getRowInt(row, ['sort_seq', 'sortSeq', 'seq', 'sequence', 'WCDB_CT_sort_seq'], createTime)
+      const localId = this.getRowInt(row, ['local_id'], 0)
+      const serverIdRaw = this.normalizeUnsignedIntegerToken(row.server_id)
+      const serverId = this.getRowInt(row, ['server_id'], 0)
+      const sortSeq = this.getRowInt(row, ['sort_seq'], createTime)
 
       messages.push({
         messageKey: this.buildMessageKey({
@@ -3996,6 +4022,7 @@ class ChatService {
         fileName,
         fileSize,
         fileExt,
+        fileMd5,
         xmlType,
         appMsgKind,
         appMsgDesc,
@@ -4404,18 +4431,7 @@ class ChatService {
   }
 
   private parseImageDatNameFromRow(row: Record<string, any>): string | undefined {
-    const packed = this.getRowField(row, [
-      'packed_info_data',
-      'packed_info',
-      'packedInfoData',
-      'packedInfo',
-      'PackedInfoData',
-      'PackedInfo',
-      'WCDB_CT_packed_info_data',
-      'WCDB_CT_packed_info',
-      'WCDB_CT_PackedInfoData',
-      'WCDB_CT_PackedInfo'
-    ])
+    const packed = row.packed_info_data
     const buffer = this.decodePackedInfo(packed)
     if (!buffer || buffer.length === 0) return undefined
     const printable: number[] = []
@@ -4599,6 +4615,7 @@ class ChatService {
     fileName?: string
     fileSize?: number
     fileExt?: string
+    fileMd5?: string
     transferPayerUsername?: string
     transferReceiverUsername?: string
     chatRecordTitle?: string
@@ -4795,6 +4812,7 @@ class ChatService {
 
           // 提取文件扩展名
           const fileExt = this.extractXmlValue(content, 'fileext')
+          const fileMd5 = this.extractXmlValue(content, 'md5') || this.extractXmlValue(content, 'filemd5')
           if (fileExt) {
             result.fileExt = fileExt
           } else if (result.fileName) {
@@ -4803,6 +4821,9 @@ class ChatService {
             if (match) {
               result.fileExt = match[1]
             }
+          }
+          if (fileMd5) {
+            result.fileMd5 = fileMd5.toLowerCase()
           }
           break
         }
@@ -5096,7 +5117,7 @@ class ChatService {
     }
   }
 
-  //手动查找 media_*.db 文件（当 WCDB DLL 不支持 listMediaDbs 时的 fallback）
+  //手动查找 media_*.db 文件（当 WCDB数据服务不支持 listMediaDbs 时的 fallback）
   private async findMediaDbsManually(): Promise<string[]> {
     try {
       const dbPath = this.configService.get('dbPath')
@@ -5303,14 +5324,14 @@ class ChatService {
     row: Record<string, any>,
     rawContent: string
   ): Promise<string | null> {
-    const directSender = this.getRowField(row, ['sender_username', 'senderUsername', 'sender', 'WCDB_CT_sender_username'])
+    const directSender = row.sender_username
       || this.extractSenderUsernameFromContent(rawContent)
     if (directSender) {
       return directSender
     }
 
-    const dbPath = this.getRowField(row, ['db_path', 'dbPath', '_db_path'])
-    const realSenderId = this.getRowField(row, ['real_sender_id', 'realSenderId'])
+    const dbPath = row._db_path
+    const realSenderId = row.real_sender_id
     if (!dbPath || realSenderId === null || realSenderId === undefined || String(realSenderId).trim() === '') {
       return null
     }
@@ -5359,7 +5380,7 @@ class ChatService {
       50: '[通话]',
       10000: '[系统消息]',
       244813135921: '[引用消息]',
-      266287972401: '[拍一拍]',
+      266287972401: '拍一拍',
       81604378673: '[聊天记录]',
       154618822705: '[小程序]',
       8594229559345: '[红包]',
@@ -5468,7 +5489,7 @@ class ChatService {
    *   XML: <msg><appmsg...><title>"XX"拍了拍"XX"相信未来!</title>...</msg>
    */
   private cleanPatMessage(content: string): string {
-    if (!content) return '[拍一拍]'
+    if (!content) return '拍一拍'
 
     // 1. 优先从 XML <title> 标签提取内容
     const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(content)
@@ -5478,14 +5499,14 @@ class ChatService {
         .replace(/\]\]>/g, '')
         .trim()
       if (title) {
-        return `[拍一拍] ${title}`
+        return title
       }
     }
 
     // 2. 尝试匹配标准的 "A拍了拍B" 格式
     const match = /^(.+?拍了拍.+?)(?:[\r\n]|$|ງ|wxid_)/.exec(content)
     if (match) {
-      return `[拍一拍] ${match[1].trim()}`
+      return match[1].trim()
     }
 
     // 3. 如果匹配失败，尝试清理掉疑似的 garbage (wxid, 乱码)
@@ -5499,10 +5520,10 @@ class ChatService {
 
     // 如果清理后还有内容，返回
     if (cleaned && cleaned.length > 1 && !cleaned.includes('xml')) {
-      return `[拍一拍] ${cleaned}`
+      return cleaned
     }
 
-    return '[拍一拍]'
+    return '拍一拍'
   }
 
   /**
@@ -5655,7 +5676,7 @@ class ChatService {
       if (!result.success || !result.contact) return null
       const contact = result.contact as Record<string, any>
       let alias = String(contact.alias || contact.Alias || '')
-      // DLL 有时不返回 alias 字段，补一条直接 SQL 查询兜底
+      //数据服务有时不返回 alias 字段，补一条直接 SQL 查询兜底
       if (!alias) {
         try {
           const aliasResult = await wcdbService.getContactAliasMap([username])
@@ -7520,11 +7541,7 @@ class ChatService {
 
       for (const row of result.messages) {
         let message = await this.parseMessage(row, { source: 'search', sessionId })
-        const resolvedSessionId = String(
-          sessionId ||
-          this.getRowField(row, ['_session_id', 'session_id', 'sessionId', 'talker', 'username'])
-          || ''
-        ).trim()
+        const resolvedSessionId = String(sessionId || row._session_id || '').trim()
         const needsDetailHydration = isGroupSearch &&
           Boolean(sessionId) &&
           message.localId > 0 &&
@@ -7559,32 +7576,18 @@ class ChatService {
   private async parseMessage(row: any, options?: { source?: 'search' | 'detail'; sessionId?: string }): Promise<Message> {
     const sourceInfo = this.getMessageSourceInfo(row)
     const rawContent = this.decodeMessageContent(
-      this.getRowField(row, [
-        'message_content',
-        'messageContent',
-        'content',
-        'msg_content',
-        'msgContent',
-        'WCDB_CT_message_content',
-        'WCDB_CT_messageContent'
-      ]),
-      this.getRowField(row, [
-        'compress_content',
-        'compressContent',
-        'compressed_content',
-        'WCDB_CT_compress_content',
-        'WCDB_CT_compressContent'
-      ])
+      row.message_content,
+      row.compress_content
     )
     // 这里复用 parseMessagesBatch 里面的解析逻辑，为了简单我这里先写个基础的
     // 实际项目中建议抽取 parseRawMessage(row) 供多处使用
-    const localId = this.getRowInt(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'], 0)
-    const serverIdRaw = this.normalizeUnsignedIntegerToken(this.getRowField(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id']))
-    const serverId = this.getRowInt(row, ['server_id', 'serverId', 'ServerId', 'msg_server_id', 'msgServerId', 'MsgServerId', 'WCDB_CT_server_id'], 0)
-    const localType = this.getRowInt(row, ['local_type', 'localType', 'type', 'msg_type', 'msgType', 'WCDB_CT_local_type'], 0)
-    const createTime = this.getRowInt(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'], 0)
-    const sortSeq = this.getRowInt(row, ['sort_seq', 'sortSeq', 'seq', 'sequence', 'WCDB_CT_sort_seq'], createTime)
-    const rawIsSend = this.getRowField(row, ['computed_is_send', 'computedIsSend', 'is_send', 'isSend', 'WCDB_CT_is_send'])
+    const localId = this.getRowInt(row, ['local_id'], 0)
+    const serverIdRaw = this.normalizeUnsignedIntegerToken(row.server_id)
+    const serverId = this.getRowInt(row, ['server_id'], 0)
+    const localType = this.getRowInt(row, ['local_type'], 0)
+    const createTime = this.getRowInt(row, ['create_time'], 0)
+    const sortSeq = this.getRowInt(row, ['sort_seq'], createTime)
+    const rawIsSend = row.computed_is_send ?? row.is_send
     const senderUsername = await this.resolveSenderUsernameForMessageRow(row, rawContent)
     const sendState = this.resolveMessageIsSend(rawIsSend === null ? null : parseInt(rawIsSend, 10), senderUsername)
     const msg: Message = {
@@ -7612,8 +7615,8 @@ class ChatService {
     }
 
     if (msg.localId === 0 || msg.createTime === 0) {
-      const rawLocalId = this.getRowField(row, ['local_id', 'localId', 'LocalId', 'msg_local_id', 'msgLocalId', 'MsgLocalId', 'msg_id', 'msgId', 'MsgId', 'id', 'WCDB_CT_local_id'])
-      const rawCreateTime = this.getRowField(row, ['create_time', 'createTime', 'createtime', 'msg_create_time', 'msgCreateTime', 'msg_time', 'msgTime', 'time', 'WCDB_CT_create_time'])
+      const rawLocalId = row.local_id
+      const rawCreateTime = row.create_time
       console.warn('[ChatService] parseMessage raw keys', {
         rawLocalId,
         rawLocalIdType: rawLocalId ? typeof rawLocalId : 'null',

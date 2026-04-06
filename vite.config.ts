@@ -15,6 +15,7 @@ export default defineConfig({
     strictPort: false  // 如果3000被占用，自动尝试下一个
   },
   build: {
+    chunkSizeWarningLimit: 900,
     commonjsOptions: {
       ignoreDynamicRequires: true
     }
@@ -171,6 +172,7 @@ export default defineConfig({
     renderer()
   ],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': resolve(__dirname, 'src')
     }

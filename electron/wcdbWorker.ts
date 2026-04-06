@@ -230,6 +230,15 @@ if (parentPort) {
                 case 'getSnsExportStats':
                     result = await core.getSnsExportStats(payload.myWxid)
                     break
+                case 'checkMessageAntiRevokeTriggers':
+                    result = await core.checkMessageAntiRevokeTriggers(payload.sessionIds)
+                    break
+                case 'installMessageAntiRevokeTriggers':
+                    result = await core.installMessageAntiRevokeTriggers(payload.sessionIds)
+                    break
+                case 'uninstallMessageAntiRevokeTriggers':
+                    result = await core.uninstallMessageAntiRevokeTriggers(payload.sessionIds)
+                    break
                 case 'installSnsBlockDeleteTrigger':
                     result = await core.installSnsBlockDeleteTrigger()
                     break

@@ -13,6 +13,7 @@ export const CONFIG_KEYS = {
   LAST_SESSION: 'lastSession',
   WINDOW_BOUNDS: 'windowBounds',
   CACHE_PATH: 'cachePath',
+  LAUNCH_AT_STARTUP: 'launchAtStartup',
 
   EXPORT_PATH: 'exportPath',
   AGREEMENT_ACCEPTED: 'agreementAccepted',
@@ -58,6 +59,7 @@ export const CONFIG_KEYS = {
 
   // 更新
   IGNORED_UPDATE_VERSION: 'ignoredUpdateVersion',
+  UPDATE_CHANNEL: 'updateChannel',
 
   // 通知
   NOTIFICATION_ENABLED: 'notificationEnabled',
@@ -92,16 +94,19 @@ export interface ExportDefaultMediaConfig {
   videos: boolean
   voices: boolean
   emojis: boolean
+  files: boolean
 }
 
 export type WindowCloseBehavior = 'ask' | 'tray' | 'quit'
 export type QuoteLayout = 'quote-top' | 'quote-bottom'
+export type UpdateChannel = 'stable' | 'preview' | 'dev'
 
 const DEFAULT_EXPORT_MEDIA_CONFIG: ExportDefaultMediaConfig = {
   images: true,
   videos: true,
   voices: true,
-  emojis: true
+  emojis: true,
+  files: true
 }
 
 // 获取解密密钥
@@ -256,6 +261,18 @@ export async function setLogEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.LOG_ENABLED, enabled)
 }
 
+// 获取开机自启动偏好
+export async function getLaunchAtStartup(): Promise<boolean | null> {
+  const value = await config.get(CONFIG_KEYS.LAUNCH_AT_STARTUP)
+  if (typeof value === 'boolean') return value
+  return null
+}
+
+// 设置开机自启动偏好
+export async function setLaunchAtStartup(enabled: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.LAUNCH_AT_STARTUP, enabled)
+}
+
 // 获取 LLM 模型路径
 export async function getLlmModelPath(): Promise<string | null> {
   const value = await config.get(CONFIG_KEYS.LLM_MODEL_PATH)
@@ -408,7 +425,8 @@ export async function getExportDefaultMedia(): Promise<ExportDefaultMediaConfig 
       images: value,
       videos: value,
       voices: value,
-      emojis: value
+      emojis: value,
+      files: value
     }
   }
   if (value && typeof value === 'object') {
@@ -417,7 +435,8 @@ export async function getExportDefaultMedia(): Promise<ExportDefaultMediaConfig 
       images: typeof raw.images === 'boolean' ? raw.images : DEFAULT_EXPORT_MEDIA_CONFIG.images,
       videos: typeof raw.videos === 'boolean' ? raw.videos : DEFAULT_EXPORT_MEDIA_CONFIG.videos,
       voices: typeof raw.voices === 'boolean' ? raw.voices : DEFAULT_EXPORT_MEDIA_CONFIG.voices,
-      emojis: typeof raw.emojis === 'boolean' ? raw.emojis : DEFAULT_EXPORT_MEDIA_CONFIG.emojis
+      emojis: typeof raw.emojis === 'boolean' ? raw.emojis : DEFAULT_EXPORT_MEDIA_CONFIG.emojis,
+      files: typeof raw.files === 'boolean' ? raw.files : DEFAULT_EXPORT_MEDIA_CONFIG.files
     }
   }
   return null
@@ -429,7 +448,8 @@ export async function setExportDefaultMedia(media: ExportDefaultMediaConfig): Pr
     images: media.images,
     videos: media.videos,
     voices: media.voices,
-    emojis: media.emojis
+    emojis: media.emojis,
+    files: media.files
   })
 }
 
@@ -1379,6 +1399,18 @@ export async function getIgnoredUpdateVersion(): Promise<string | null> {
 // 设置被忽略的更新版本
 export async function setIgnoredUpdateVersion(version: string): Promise<void> {
   await config.set(CONFIG_KEYS.IGNORED_UPDATE_VERSION, version)
+}
+
+// 获取更新渠道（空值/auto 视为未显式设置，交由安装包类型决定默认渠道）
+export async function getUpdateChannel(): Promise<UpdateChannel | null> {
+  const value = await config.get(CONFIG_KEYS.UPDATE_CHANNEL)
+  if (value === 'stable' || value === 'preview' || value === 'dev') return value
+  return null
+}
+
+// 设置更新渠道
+export async function setUpdateChannel(channel: UpdateChannel): Promise<void> {
+  await config.set(CONFIG_KEYS.UPDATE_CHANNEL, channel)
 }
 
 // 获取通知开关

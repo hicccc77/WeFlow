@@ -238,7 +238,7 @@
   }
 
   .scene-message.sent .scene-avatar {
-    border-color: color-mix(in srgb, var(--primary) 30%, var(--bg-tertiary, rgba(0, 0, 0, 0.08)));
+    border-color: rgba(var(--ar-primary-rgb), 0.3);
   }
 
   .dual-stat-grid {

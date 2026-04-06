@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   app: {
     getDownloadsPath: () => ipcRenderer.invoke('app:getDownloadsPath'),
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    getLaunchAtStartupStatus: () => ipcRenderer.invoke('app:getLaunchAtStartupStatus'),
+    setLaunchAtStartup: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtStartup', enabled),
     checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
     downloadAndInstall: () => ipcRenderer.invoke('app:downloadAndInstall'),
     ignoreUpdate: (version: string) => ipcRenderer.invoke('app:ignoreUpdate', version),
@@ -188,6 +190,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('chat:updateMessage', sessionId, localId, createTime, newContent),
     deleteMessage: (sessionId: string, localId: number, createTime: number, dbPathHint?: string) =>
       ipcRenderer.invoke('chat:deleteMessage', sessionId, localId, createTime, dbPathHint),
+    checkAntiRevokeTriggers: (sessionIds: string[]) =>
+      ipcRenderer.invoke('chat:checkAntiRevokeTriggers', sessionIds),
+    installAntiRevokeTriggers: (sessionIds: string[]) =>
+      ipcRenderer.invoke('chat:installAntiRevokeTriggers', sessionIds),
+    uninstallAntiRevokeTriggers: (sessionIds: string[]) =>
+      ipcRenderer.invoke('chat:uninstallAntiRevokeTriggers', sessionIds),
     resolveTransferDisplayNames: (chatroomId: string, payerUsername: string, receiverUsername: string) =>
       ipcRenderer.invoke('chat:resolveTransferDisplayNames', chatroomId, payerUsername, receiverUsername),
     getMyAvatarUrl: () => ipcRenderer.invoke('chat:getMyAvatarUrl'),
@@ -411,6 +419,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkBlockDeleteTrigger: () => ipcRenderer.invoke('sns:checkBlockDeleteTrigger'),
     deleteSnsPost: (postId: string) => ipcRenderer.invoke('sns:deleteSnsPost', postId),
     downloadEmoji: (params: { url: string; encryptUrl?: string; aesKey?: string }) => ipcRenderer.invoke('sns:downloadEmoji', params)
+  },
+
+  biz: {
+    listAccounts: (account?: string) => ipcRenderer.invoke('biz:listAccounts', account),
+    listMessages: (username: string, account?: string, limit?: number, offset?: number) =>
+        ipcRenderer.invoke('biz:listMessages', username, account, limit, offset),
+    listPayRecords: (account?: string, limit?: number, offset?: number) =>
+        ipcRenderer.invoke('biz:listPayRecords', account, limit, offset)
   },
 
 

@@ -31,14 +31,20 @@ const JumpToDatePopover: React.FC<JumpToDatePopoverProps> = ({
   loadingDates = false,
   loadingDateCounts = false
 }) => {
+  type CalendarViewMode = 'day' | 'month' | 'year'
+  const getYearPageStart = (year: number): number => Math.floor(year / 12) * 12
   const [calendarDate, setCalendarDate] = useState<Date>(new Date(currentDate))
   const [selectedDate, setSelectedDate] = useState<Date>(new Date(currentDate))
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('day')
+  const [yearPageStart, setYearPageStart] = useState<number>(getYearPageStart(new Date(currentDate).getFullYear()))
 
   useEffect(() => {
     if (!isOpen) return
     const normalized = new Date(currentDate)
     setCalendarDate(normalized)
     setSelectedDate(normalized)
+    setViewMode('day')
+    setYearPageStart(getYearPageStart(normalized.getFullYear()))
   }, [isOpen, currentDate])
 
   if (!isOpen) return null
@@ -114,25 +120,78 @@ const JumpToDatePopover: React.FC<JumpToDatePopoverProps> = ({
   const weekdays = ['日', '一', '二', '三', '四', '五', '六']
   const days = generateCalendar()
   const mergedClassName = ['jump-date-popover', className || ''].join(' ').trim()
+
   const updateCalendarDate = (nextDate: Date) => {
     setCalendarDate(nextDate)
     onMonthChange?.(nextDate)
   }
+
+  const openMonthView = () => setViewMode('month')
+  const openYearView = () => {
+    setYearPageStart(getYearPageStart(calendarDate.getFullYear()))
+    setViewMode('year')
+  }
+
+  const handleTitleClick = () => {
+    if (viewMode === 'day') {
+      openMonthView()
+      return
+    }
+    if (viewMode === 'month') {
+      openYearView()
+    }
+  }
+
+  const handlePrev = () => {
+    if (viewMode === 'day') {
+      updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))
+      return
+    }
+    if (viewMode === 'month') {
+      updateCalendarDate(new Date(calendarDate.getFullYear() - 1, calendarDate.getMonth(), 1))
+      return
+    }
+    setYearPageStart((prev) => prev - 12)
+  }
+
+  const handleNext = () => {
+    if (viewMode === 'day') {
+      updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))
+      return
+    }
+    if (viewMode === 'month') {
+      updateCalendarDate(new Date(calendarDate.getFullYear() + 1, calendarDate.getMonth(), 1))
+      return
+    }
+    setYearPageStart((prev) => prev + 12)
+  }
+
+  const navTitle = viewMode === 'day'
+    ? `${calendarDate.getFullYear()}年${calendarDate.getMonth() + 1}月`
+    : viewMode === 'month'
+      ? `${calendarDate.getFullYear()}年`
+      : `${yearPageStart}年 - ${yearPageStart + 11}年`
 
   return (
     <div className={mergedClassName} style={style} role="dialog" aria-label="跳转日期">
       <div className="calendar-nav">
         <button
           className="nav-btn"
-          onClick={() => updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+          onClick={handlePrev}
           aria-label="上一月"
         >
           <ChevronLeft size={16} />
         </button>
-        <span className="current-month">{calendarDate.getFullYear()}年{calendarDate.getMonth() + 1}月</span>
+        <button
+          className={`current-month ${viewMode === 'year' ? '' : 'clickable'}`.trim()}
+          onClick={handleTitleClick}
+          type="button"
+        >
+          {navTitle}
+        </button>
         <button
           className="nav-btn"
-          onClick={() => updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+          onClick={handleNext}
           aria-label="下一月"
         >
           <ChevronRight size={16} />
@@ -154,36 +213,74 @@ const JumpToDatePopover: React.FC<JumpToDatePopoverProps> = ({
         )}
       </div>
 
-      <div className="calendar-grid">
-        <div className="weekdays">
-          {weekdays.map(day => (
-            <div key={day} className="weekday">{day}</div>
+      {viewMode === 'day' && (
+        <div className="calendar-grid">
+          <div className="weekdays">
+            {weekdays.map(day => (
+              <div key={day} className="weekday">{day}</div>
+            ))}
+          </div>
+          <div className="days">
+            {days.map((day, index) => {
+              if (day === null) return <div key={index} className="day-cell empty" />
+              const dateKey = toDateKey(day)
+              const hasMessageOnDay = hasMessage(day)
+              const count = Number(messageDateCounts?.[dateKey] || 0)
+              const showCount = count > 0
+              const showCountLoading = hasMessageOnDay && loadingDateCounts && !showCount
+              return (
+                <button
+                  key={index}
+                  className={getDayClassName(day)}
+                  onClick={() => handleDateClick(day)}
+                  disabled={hasLoadedMessageDates && !hasMessageOnDay}
+                  type="button"
+                >
+                  <span className="day-number">{day}</span>
+                  {showCount && <span className="day-count">{count}</span>}
+                  {showCountLoading && <Loader2 size={11} className="day-count-loading spin" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'month' && (
+        <div className="month-grid">
+          {['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'].map((name, monthIndex) => (
+            <button
+              key={name}
+              className={`month-cell ${monthIndex === calendarDate.getMonth() ? 'active' : ''}`}
+              onClick={() => {
+                updateCalendarDate(new Date(calendarDate.getFullYear(), monthIndex, 1))
+                setViewMode('day')
+              }}
+              type="button"
+            >
+              {name}
+            </button>
           ))}
         </div>
-        <div className="days">
-          {days.map((day, index) => {
-            if (day === null) return <div key={index} className="day-cell empty" />
-            const dateKey = toDateKey(day)
-            const hasMessageOnDay = hasMessage(day)
-            const count = Number(messageDateCounts?.[dateKey] || 0)
-            const showCount = count > 0
-            const showCountLoading = hasMessageOnDay && loadingDateCounts && !showCount
-            return (
-              <button
-                key={index}
-                className={getDayClassName(day)}
-                onClick={() => handleDateClick(day)}
-                disabled={hasLoadedMessageDates && !hasMessageOnDay}
-                type="button"
-              >
-                <span className="day-number">{day}</span>
-                {showCount && <span className="day-count">{count}</span>}
-                {showCountLoading && <Loader2 size={11} className="day-count-loading spin" />}
-              </button>
-            )
-          })}
+      )}
+
+      {viewMode === 'year' && (
+        <div className="year-grid">
+          {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((year) => (
+            <button
+              key={year}
+              className={`year-cell ${year === calendarDate.getFullYear() ? 'active' : ''}`}
+              onClick={() => {
+                updateCalendarDate(new Date(year, calendarDate.getMonth(), 1))
+                setViewMode('month')
+              }}
+              type="button"
+            >
+              {year}年
+            </button>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   )
 }

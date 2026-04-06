@@ -66,7 +66,8 @@ export function ExportDefaultsSettingsForm({
     images: true,
     videos: true,
     voices: true,
-    emojis: true
+    emojis: true,
+    files: true
   })
   const [exportDefaultVoiceAsText, setExportDefaultVoiceAsText] = useState(false)
   const [exportDefaultExcelCompactColumns, setExportDefaultExcelCompactColumns] = useState(true)
@@ -94,7 +95,8 @@ export function ExportDefaultsSettingsForm({
         images: true,
         videos: true,
         voices: true,
-        emojis: true
+        emojis: true,
+        files: true
       })
       setExportDefaultVoiceAsText(savedVoiceAsText ?? false)
       setExportDefaultExcelCompactColumns(savedExcelCompactColumns ?? true)
@@ -292,7 +294,7 @@ export function ExportDefaultsSettingsForm({
       <div className="form-group media-setting-group">
         <div className="form-copy">
           <label>默认导出媒体内容</label>
-          <span className="form-hint">控制图片、视频、语音、表情包的默认导出开关</span>
+          <span className="form-hint">控制图片、视频、语音、表情包、文件的默认导出开关</span>
         </div>
         <div className="form-control">
           <div className="media-default-grid">
@@ -351,6 +353,20 @@ export function ExportDefaultsSettingsForm({
                 }}
               />
               表情包
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={exportDefaultMedia.files}
+                onChange={async (e) => {
+                  const next = { ...exportDefaultMedia, files: e.target.checked }
+                  setExportDefaultMedia(next)
+                  await configService.setExportDefaultMedia(next)
+                  onDefaultsChanged?.({ media: next })
+                  notify(`已${e.target.checked ? '开启' : '关闭'}默认导出文件`, true)
+                }}
+              />
+              文件
             </label>
           </div>
         </div>

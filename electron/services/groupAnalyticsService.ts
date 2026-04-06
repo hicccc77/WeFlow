@@ -275,7 +275,7 @@ class GroupAnalyticsService {
       }
       return this.buildTrustedGroupNicknameMap(Object.entries(dllResult.nicknames), candidates)
     } catch (e) {
-      console.error('getGroupNicknamesForRoom dll error:', e)
+      console.error('getGroupNicknamesForRoom service error:', e)
       return new Map<string, string>()
     }
   }

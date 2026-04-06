@@ -75,6 +75,7 @@ export interface Message {
   fileName?: string         // 文件名
   fileSize?: number         // 文件大小
   fileExt?: string          // 文件扩展名
+  fileMd5?: string          // 文件 MD5
   xmlType?: string          // XML 中的 type 字段
   appMsgKind?: string       // 归一化 appmsg 类型
   appMsgDesc?: string

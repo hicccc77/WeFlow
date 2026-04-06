@@ -15,15 +15,31 @@ class CloudControlService {
   private timer: NodeJS.Timeout | null = null
   private pages: Set<string> = new Set()
   private platformVersionCache: string | null = null
+  private pendingReports: UsageStats[] = []
+  private flushInProgress = false
+  private retryDelayMs = 5_000
+  private consecutiveFailures = 0
+  private circuitOpenedAt = 0
+  private nextDelayOverrideMs: number | null = null
+  private initialized = false
+
+  private static readonly BASE_FLUSH_MS = 300_000
+  private static readonly JITTER_MS = 30_000
+  private static readonly MAX_BUFFER_REPORTS = 200
+  private static readonly MAX_BATCH_REPORTS = 20
+  private static readonly MAX_RETRY_MS = 120_000
+  private static readonly CIRCUIT_FAIL_THRESHOLD = 5
+  private static readonly CIRCUIT_COOLDOWN_MS = 120_000
 
   async init() {
+    if (this.initialized) return
+    this.initialized = true
     this.deviceId = this.getDeviceId()
     await wcdbService.cloudInit(300)
-    await this.reportOnline()
-
-    this.timer = setInterval(() => {
-      this.reportOnline()
-    }, 300000)
+    this.enqueueCurrentReport()
+    await this.flushQueue(true)
+    this.scheduleNextFlush(this.nextDelayOverrideMs ?? undefined)
+    this.nextDelayOverrideMs = null
   }
 
   private getDeviceId(): string {
@@ -33,8 +49,8 @@ class CloudControlService {
     return crypto.createHash('md5').update(machineId).digest('hex')
   }
 
-  private async reportOnline() {
-    const data: UsageStats = {
+  private buildCurrentReport(): UsageStats {
+    return {
       appVersion: app.getVersion(),
       platform: this.getPlatformVersion(),
       deviceId: this.deviceId,
@@ -42,9 +58,67 @@ class CloudControlService {
       online: true,
       pages: Array.from(this.pages)
     }
+  }
 
-    await wcdbService.cloudReport(JSON.stringify(data))
+  private enqueueCurrentReport() {
+    const report = this.buildCurrentReport()
+    this.pendingReports.push(report)
+    if (this.pendingReports.length > CloudControlService.MAX_BUFFER_REPORTS) {
+      this.pendingReports.splice(0, this.pendingReports.length - CloudControlService.MAX_BUFFER_REPORTS)
+    }
     this.pages.clear()
+  }
+
+  private isCircuitOpen(nowMs: number): boolean {
+    if (this.circuitOpenedAt <= 0) return false
+    return nowMs-this.circuitOpenedAt < CloudControlService.CIRCUIT_COOLDOWN_MS
+  }
+
+  private scheduleNextFlush(delayMs?: number) {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    const jitter = Math.floor(Math.random() * CloudControlService.JITTER_MS)
+    const nextDelay = Math.max(1_000, Number(delayMs) > 0 ? Number(delayMs) : CloudControlService.BASE_FLUSH_MS + jitter)
+    this.timer = setTimeout(() => {
+      this.enqueueCurrentReport()
+      this.flushQueue(false).finally(() => {
+        this.scheduleNextFlush(this.nextDelayOverrideMs ?? undefined)
+        this.nextDelayOverrideMs = null
+      })
+    }, nextDelay)
+  }
+
+  private async flushQueue(force: boolean) {
+    if (this.flushInProgress) return
+    if (this.pendingReports.length === 0) return
+    const now = Date.now()
+    if (!force && this.isCircuitOpen(now)) {
+      return
+    }
+    this.flushInProgress = true
+    try {
+      while (this.pendingReports.length > 0) {
+        const batch = this.pendingReports.slice(0, CloudControlService.MAX_BATCH_REPORTS)
+        const result = await wcdbService.cloudReport(JSON.stringify(batch))
+        if (!result || result.success !== true) {
+          this.consecutiveFailures += 1
+          this.retryDelayMs = Math.min(CloudControlService.MAX_RETRY_MS, this.retryDelayMs * 2)
+          if (this.consecutiveFailures >= CloudControlService.CIRCUIT_FAIL_THRESHOLD) {
+            this.circuitOpenedAt = Date.now()
+          }
+          this.nextDelayOverrideMs = this.retryDelayMs
+          return
+        }
+        this.pendingReports.splice(0, batch.length)
+        this.consecutiveFailures = 0
+        this.retryDelayMs = 5_000
+        this.circuitOpenedAt = 0
+      }
+    } finally {
+      this.flushInProgress = false
+    }
   }
 
   private getPlatformVersion(): string {
@@ -146,9 +220,16 @@ class CloudControlService {
 
   stop() {
     if (this.timer) {
-      clearInterval(this.timer)
+      clearTimeout(this.timer)
       this.timer = null
     }
+    this.pendingReports = []
+    this.flushInProgress = false
+    this.retryDelayMs = 5_000
+    this.consecutiveFailures = 0
+    this.circuitOpenedAt = 0
+    this.nextDelayOverrideMs = null
+    this.initialized = false
     wcdbService.cloudStop()
   }
 
@@ -158,4 +239,3 @@ class CloudControlService {
 }
 
 export const cloudControlService = new CloudControlService()
-

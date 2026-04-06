@@ -684,10 +684,7 @@ export class KeyService {
     return { success: false, error: '获取密钥超时', logs }
   }
 
-  // --- Image Key (通过 DLL 从缓存目录获取 code，用前端 wxid 计算密钥) ---
-
   private cleanWxid(wxid: string): string {
-    // 截断到第二个下划线: wxid_g4pshorcc0r529_da6c → wxid_g4pshorcc0r529
     const first = wxid.indexOf('_')
     if (first === -1) return wxid
     const second = wxid.indexOf('_', first + 1)

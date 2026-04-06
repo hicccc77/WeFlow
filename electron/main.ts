@@ -30,20 +30,277 @@ import { cloudControlService } from './services/cloudControlService'
 import { destroyNotificationWindow, registerNotificationHandlers, showNotification } from './windows/notificationWindow'
 import { httpService } from './services/httpService'
 import { messagePushService } from './services/messagePushService'
-
+import { bizService } from './services/bizService'
 
 // 配置自动更新
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 autoUpdater.disableDifferentialDownload = true  // 禁用差分更新，强制全量下载
-// Windows x64 与 arm64 使用不同更新通道，避免 latest.yml 互相覆盖导致下错架构安装包。
-if (process.platform === 'win32' && process.arch === 'arm64') {
-  autoUpdater.channel = 'latest-arm64'
+// 更新通道策略：
+// - 稳定版（如 4.3.0）默认走 latest
+// - 预览版（如 0.26.2）默认走 preview（0.年.当年发布序号）
+// - 开发版（如 26.4.5）默认走 dev（年.月.日）
+// - 用户可在设置页切换稳定/预览/开发，切换后即时生效
+// 同时区分 Windows x64 / arm64，避免更新清单互相覆盖。
+const appVersion = app.getVersion()
+const inferUpdateTrackFromVersion = (version: string): 'stable' | 'preview' | 'dev' => {
+  const normalized = String(version || '').trim().replace(/^v/i, '')
+  if (/^0\.\d{2}\.\d+$/i.test(normalized)) return 'preview'
+  if (/^\d{2}\.\d{1,2}\.\d{1,2}$/i.test(normalized)) return 'dev'
+  // 兼容旧版命名（如 4.3.0-preview.26.1 / 4.3.0-dev.26.3.4）
+  if (/-preview\.\d+\.\d+$/i.test(normalized)) return 'preview'
+  if (/-dev\.\d+\.\d+\.\d+$/i.test(normalized)) return 'dev'
+  // 兼容 alpha/beta/rc 预发布
+  if (/(alpha|beta|rc)/i.test(normalized)) return 'dev'
+  return 'stable'
 }
+
+const defaultUpdateTrack: 'stable' | 'preview' | 'dev' = (() => {
+  const inferred = inferUpdateTrackFromVersion(appVersion)
+  if (inferred === 'preview' || inferred === 'dev') return inferred
+  return 'stable'
+})()
+let configService: ConfigService | null = null
+
+const normalizeUpdateTrack = (raw: unknown): 'stable' | 'preview' | 'dev' | null => {
+  if (raw === 'stable' || raw === 'preview' || raw === 'dev') return raw
+  return null
+}
+
+const getEffectiveUpdateTrack = (): 'stable' | 'preview' | 'dev' => {
+  const configuredTrack = normalizeUpdateTrack(configService?.get('updateChannel'))
+  return configuredTrack || defaultUpdateTrack
+}
+
+const isRemoteVersionNewer = (latestVersion: string, currentVersion: string): boolean => {
+  const latest = String(latestVersion || '').trim()
+  const current = String(currentVersion || '').trim()
+  if (!latest || !current) return false
+
+  const parseVersion = (version: string) => {
+    const normalized = version.replace(/^v/i, '')
+    const [main, pre = ''] = normalized.split('-', 2)
+    const core = main.split('.').map((segment) => Number.parseInt(segment, 10) || 0)
+    const prerelease = pre ? pre.split('.').map((segment) => /^\d+$/.test(segment) ? Number.parseInt(segment, 10) : segment) : []
+    return { core, prerelease }
+  }
+
+  const compareParsedVersion = (a: ReturnType<typeof parseVersion>, b: ReturnType<typeof parseVersion>): number => {
+    const maxLen = Math.max(a.core.length, b.core.length)
+    for (let i = 0; i < maxLen; i += 1) {
+      const left = a.core[i] || 0
+      const right = b.core[i] || 0
+      if (left > right) return 1
+      if (left < right) return -1
+    }
+
+    const aPre = a.prerelease
+    const bPre = b.prerelease
+    if (aPre.length === 0 && bPre.length === 0) return 0
+    if (aPre.length === 0) return 1
+    if (bPre.length === 0) return -1
+
+    const preMaxLen = Math.max(aPre.length, bPre.length)
+    for (let i = 0; i < preMaxLen; i += 1) {
+      const left = aPre[i]
+      const right = bPre[i]
+      if (left === undefined) return -1
+      if (right === undefined) return 1
+      if (left === right) continue
+
+      const leftNum = typeof left === 'number'
+      const rightNum = typeof right === 'number'
+      if (leftNum && rightNum) return left > right ? 1 : -1
+      if (leftNum) return -1
+      if (rightNum) return 1
+      return String(left) > String(right) ? 1 : -1
+    }
+
+    return 0
+  }
+
+  try {
+    return autoUpdater.currentVersion.compare(latest) < 0
+  } catch {
+    return compareParsedVersion(parseVersion(latest), parseVersion(current)) > 0
+  }
+}
+
+const shouldOfferUpdateForTrack = (latestVersion: string, currentVersion: string): boolean => {
+  if (isRemoteVersionNewer(latestVersion, currentVersion)) return true
+  const effectiveTrack = getEffectiveUpdateTrack()
+  const currentTrack = inferUpdateTrackFromVersion(currentVersion)
+  // 切换通道后，目标通道最新版本与当前版本不同即提示更新（即使是降级）
+  if (effectiveTrack !== currentTrack && latestVersion !== currentVersion) return true
+  return false
+}
+
+let lastAppliedUpdaterChannel: string | null = null
+let lastAppliedUpdaterFeedUrl: string | null = null
+const resetUpdaterProviderCache = () => {
+  const updater = autoUpdater as any
+  // electron-updater 会缓存 provider；切换 channel 后需清理缓存，避免仍请求旧通道
+  for (const key of ['clientPromise', '_clientPromise', 'updateInfoAndProvider']) {
+    if (Object.prototype.hasOwnProperty.call(updater, key)) {
+      updater[key] = null
+    }
+  }
+}
+
+const getUpdaterFeedUrlByTrack = (track: 'stable' | 'preview' | 'dev'): string => {
+  const repoBase = 'https://github.com/hicccc77/WeFlow/releases'
+  if (track === 'stable') return `${repoBase}/latest/download`
+  if (track === 'preview') return `${repoBase}/download/nightly-preview`
+  return `${repoBase}/download/nightly-dev`
+}
+
+const applyAutoUpdateChannel = (reason: 'startup' | 'settings' = 'startup') => {
+  const track = getEffectiveUpdateTrack()
+  const currentTrack = inferUpdateTrackFromVersion(appVersion)
+  const baseUpdateChannel = track === 'stable' ? 'latest' : track
+  const nextFeedUrl = getUpdaterFeedUrlByTrack(track)
+  const nextUpdaterChannel =
+    process.platform === 'win32' && process.arch === 'arm64'
+      ? `${baseUpdateChannel}-arm64`
+      : baseUpdateChannel
+  if (
+    (lastAppliedUpdaterChannel && lastAppliedUpdaterChannel !== nextUpdaterChannel) ||
+    (lastAppliedUpdaterFeedUrl && lastAppliedUpdaterFeedUrl !== nextFeedUrl)
+  ) {
+    resetUpdaterProviderCache()
+  }
+  autoUpdater.allowPrerelease = track !== 'stable'
+  // 只要用户当前选择的目标通道与当前安装版本所属通道不同，就允许跨通道更新（含降级）
+  autoUpdater.allowDowngrade = track !== currentTrack
+  // 统一走 generic feed，确保 preview/dev 命中各自固定发布页，不受 GitHub provider 的 prerelease 选择影响。
+  autoUpdater.setFeedURL({
+    provider: 'generic',
+    url: nextFeedUrl,
+    channel: nextUpdaterChannel
+  })
+  autoUpdater.channel = nextUpdaterChannel
+  lastAppliedUpdaterChannel = nextUpdaterChannel
+  lastAppliedUpdaterFeedUrl = nextFeedUrl
+  console.log(`[Update](${reason}) 当前版本 ${appVersion}，当前轨道: ${currentTrack}，渠道偏好: ${track}，更新通道: ${autoUpdater.channel}，feed=${nextFeedUrl}，allowDowngrade=${autoUpdater.allowDowngrade}`)
+}
+
+applyAutoUpdateChannel('startup')
 const AUTO_UPDATE_ENABLED =
   process.env.AUTO_UPDATE_ENABLED === 'true' ||
   process.env.AUTO_UPDATE_ENABLED === '1' ||
   (process.env.AUTO_UPDATE_ENABLED == null && !process.env.VITE_DEV_SERVER_URL)
+
+const getLaunchAtStartupUnsupportedReason = (): string | null => {
+  if (process.platform !== 'win32' && process.platform !== 'darwin') {
+    return '当前平台暂不支持开机自启动'
+  }
+  if (!app.isPackaged) {
+    return '仅安装后的 Windows / macOS 版本支持开机自启动'
+  }
+  return null
+}
+
+const isLaunchAtStartupSupported = (): boolean => getLaunchAtStartupUnsupportedReason() == null
+
+const getStoredLaunchAtStartupPreference = (): boolean | undefined => {
+  const value = configService?.get('launchAtStartup')
+  return typeof value === 'boolean' ? value : undefined
+}
+
+const getSystemLaunchAtStartup = (): boolean => {
+  if (!isLaunchAtStartupSupported()) return false
+  try {
+    return app.getLoginItemSettings().openAtLogin === true
+  } catch (error) {
+    console.error('[WeFlow] 读取开机自启动状态失败:', error)
+    return false
+  }
+}
+
+const buildLaunchAtStartupSettings = (enabled: boolean): Parameters<typeof app.setLoginItemSettings>[0] =>
+  process.platform === 'win32'
+    ? { openAtLogin: enabled, path: process.execPath }
+    : { openAtLogin: enabled }
+
+const setSystemLaunchAtStartup = (enabled: boolean): { success: boolean; enabled: boolean; error?: string } => {
+  try {
+    app.setLoginItemSettings(buildLaunchAtStartupSettings(enabled))
+    const effectiveEnabled = app.getLoginItemSettings().openAtLogin === true
+    if (effectiveEnabled !== enabled) {
+      return {
+        success: false,
+        enabled: effectiveEnabled,
+        error: '系统未接受该开机自启动设置'
+      }
+    }
+    return { success: true, enabled: effectiveEnabled }
+  } catch (error) {
+    return {
+      success: false,
+      enabled: getSystemLaunchAtStartup(),
+      error: `设置开机自启动失败: ${String((error as Error)?.message || error)}`
+    }
+  }
+}
+
+const getLaunchAtStartupStatus = (): { enabled: boolean; supported: boolean; reason?: string } => {
+  const unsupportedReason = getLaunchAtStartupUnsupportedReason()
+  if (unsupportedReason) {
+    return {
+      enabled: getStoredLaunchAtStartupPreference() === true,
+      supported: false,
+      reason: unsupportedReason
+    }
+  }
+  return {
+    enabled: getSystemLaunchAtStartup(),
+    supported: true
+  }
+}
+
+const applyLaunchAtStartupPreference = (
+  enabled: boolean
+): { success: boolean; enabled: boolean; supported: boolean; reason?: string; error?: string } => {
+  const unsupportedReason = getLaunchAtStartupUnsupportedReason()
+  if (unsupportedReason) {
+    return {
+      success: false,
+      enabled: getStoredLaunchAtStartupPreference() === true,
+      supported: false,
+      reason: unsupportedReason
+    }
+  }
+
+  const result = setSystemLaunchAtStartup(enabled)
+  configService?.set('launchAtStartup', result.enabled)
+  return {
+    ...result,
+    supported: true
+  }
+}
+
+const syncLaunchAtStartupPreference = () => {
+  if (!configService) return
+
+  const unsupportedReason = getLaunchAtStartupUnsupportedReason()
+  if (unsupportedReason) return
+
+  const storedPreference = getStoredLaunchAtStartupPreference()
+  const systemEnabled = getSystemLaunchAtStartup()
+
+  if (typeof storedPreference !== 'boolean') {
+    configService.set('launchAtStartup', systemEnabled)
+    return
+  }
+
+  if (storedPreference === systemEnabled) return
+
+  const result = setSystemLaunchAtStartup(storedPreference)
+  configService.set('launchAtStartup', result.enabled)
+  if (!result.success && result.error) {
+    console.error('[WeFlow] 同步开机自启动设置失败:', result.error)
+  }
+}
 
 // 使用白名单过滤 PATH，避免被第三方目录中的旧版 VC++ 运行库劫持。
 // 仅保留系统目录（Windows/System32/SysWOW64）和应用自身目录（可执行目录、resources）。
@@ -87,7 +344,6 @@ function sanitizePathEnv() {
 sanitizePathEnv()
 
 // 单例服务
-let configService: ConfigService | null = null
 
 // 协议窗口实例
 let agreementWindow: BrowserWindow | null = null
@@ -241,6 +497,14 @@ const normalizeReleaseNotes = (rawReleaseNotes: unknown): string => {
     .trim()
 
   return cleaned
+}
+
+const getDialogReleaseNotes = (rawReleaseNotes: unknown): string => {
+  const track = getEffectiveUpdateTrack()
+  if (track !== 'stable') {
+    return '修复了一些已知问题'
+  }
+  return normalizeReleaseNotes(rawReleaseNotes)
 }
 
 type AnnualReportYearsLoadStrategy = 'cache' | 'native' | 'hybrid'
@@ -1110,18 +1374,33 @@ const removeMatchedEntriesInDir = async (
 // 注册 IPC 处理器
 function registerIpcHandlers() {
   registerNotificationHandlers()
+  bizService.registerHandlers()
   // 配置相关
   ipcMain.handle('config:get', async (_, key: string) => {
     return configService?.get(key as any)
   })
 
   ipcMain.handle('config:set', async (_, key: string, value: any) => {
-    const result = configService?.set(key as any, value)
+    let result: unknown
+    if (key === 'launchAtStartup') {
+      result = applyLaunchAtStartupPreference(value === true)
+    } else {
+      result = configService?.set(key as any, value)
+    }
+    if (key === 'updateChannel') {
+      applyAutoUpdateChannel('settings')
+    }
     void messagePushService.handleConfigChanged(key)
     return result
   })
 
   ipcMain.handle('config:clear', async () => {
+    if (isLaunchAtStartupSupported() && getSystemLaunchAtStartup()) {
+      const result = setSystemLaunchAtStartup(false)
+      if (!result.success && result.error) {
+        console.error('[WeFlow] 清空配置时关闭开机自启动失败:', result.error)
+      }
+    }
     configService?.clear()
     messagePushService.handleConfigCleared()
     return true
@@ -1162,6 +1441,14 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:getVersion', async () => {
     return app.getVersion()
+  })
+
+  ipcMain.handle('app:getLaunchAtStartupStatus', async () => {
+    return getLaunchAtStartupStatus()
+  })
+
+  ipcMain.handle('app:setLaunchAtStartup', async (_, enabled: boolean) => {
+    return applyLaunchAtStartupPreference(enabled === true)
   })
 
   ipcMain.handle('app:checkWayland', async () => {
@@ -1233,16 +1520,18 @@ function registerIpcHandlers() {
     if (!AUTO_UPDATE_ENABLED) {
       return { hasUpdate: false }
     }
+    // 每次主动检查前重新应用一次通道配置，确保使用最新选择的更新通道。
+    applyAutoUpdateChannel('settings')
     try {
       const result = await autoUpdater.checkForUpdates()
       if (result && result.updateInfo) {
         const currentVersion = app.getVersion()
         const latestVersion = result.updateInfo.version
-        if (latestVersion !== currentVersion) {
+        if (shouldOfferUpdateForTrack(latestVersion, currentVersion)) {
           return {
             hasUpdate: true,
             version: latestVersion,
-            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes),
+            releaseNotes: getDialogReleaseNotes(result.updateInfo.releaseNotes),
             minimumVersion: (result.updateInfo as any).minimumVersion
           }
         }
@@ -1576,6 +1865,18 @@ function registerIpcHandlers() {
 
   ipcMain.handle('chat:deleteMessage', async (_, sessionId: string, localId: number, createTime: number, dbPathHint?: string) => {
     return chatService.deleteMessage(sessionId, localId, createTime, dbPathHint)
+  })
+
+  ipcMain.handle('chat:checkAntiRevokeTriggers', async (_, sessionIds: string[]) => {
+    return chatService.checkAntiRevokeTriggers(sessionIds)
+  })
+
+  ipcMain.handle('chat:installAntiRevokeTriggers', async (_, sessionIds: string[]) => {
+    return chatService.installAntiRevokeTriggers(sessionIds)
+  })
+
+  ipcMain.handle('chat:uninstallAntiRevokeTriggers', async (_, sessionIds: string[]) => {
+    return chatService.uninstallAntiRevokeTriggers(sessionIds)
   })
 
   ipcMain.handle('chat:getContact', async (_, username: string) => {
@@ -2010,10 +2311,47 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('export:exportSessions', async (event, sessionIds: string[], outputDir: string, options: ExportOptions) => {
-    const onProgress = (progress: ExportProgress) => {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send('export:progress', progress)
+    const PROGRESS_FORWARD_INTERVAL_MS = 180
+    let pendingProgress: ExportProgress | null = null
+    let progressTimer: NodeJS.Timeout | null = null
+    let lastProgressSentAt = 0
+
+    const flushProgress = () => {
+      if (!pendingProgress) return
+      if (progressTimer) {
+        clearTimeout(progressTimer)
+        progressTimer = null
       }
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('export:progress', pendingProgress)
+      }
+      pendingProgress = null
+      lastProgressSentAt = Date.now()
+    }
+
+    const queueProgress = (progress: ExportProgress) => {
+      pendingProgress = progress
+      const force = progress.phase === 'complete'
+      if (force) {
+        flushProgress()
+        return
+      }
+
+      const now = Date.now()
+      const elapsed = now - lastProgressSentAt
+      if (elapsed >= PROGRESS_FORWARD_INTERVAL_MS) {
+        flushProgress()
+        return
+      }
+
+      if (progressTimer) return
+      progressTimer = setTimeout(() => {
+        flushProgress()
+      }, PROGRESS_FORWARD_INTERVAL_MS - elapsed)
+    }
+
+    const onProgress = (progress: ExportProgress) => {
+      queueProgress(progress)
     }
 
     const runMainFallback = async (reason: string) => {
@@ -2092,6 +2430,12 @@ function registerIpcHandlers() {
       return await runWorker()
     } catch (error) {
       return runMainFallback(error instanceof Error ? error.message : String(error))
+    } finally {
+      flushProgress()
+      if (progressTimer) {
+        clearTimeout(progressTimer)
+        progressTimer = null
+      }
     }
   })
 
@@ -2696,7 +3040,7 @@ function checkForUpdatesOnStartup() {
         const latestVersion = result.updateInfo.version
 
         // 检查是否有新版本
-        if (latestVersion !== currentVersion && mainWindow) {
+        if (shouldOfferUpdateForTrack(latestVersion, currentVersion) && mainWindow) {
           // 检查该版本是否被用户忽略
           const ignoredVersion = configService?.get('ignoredUpdateVersion')
           if (ignoredVersion === latestVersion) {
@@ -2707,7 +3051,7 @@ function checkForUpdatesOnStartup() {
           // 通知渲染进程有新版本
           mainWindow.webContents.send('app:updateAvailable', {
             version: latestVersion,
-            releaseNotes: normalizeReleaseNotes(result.updateInfo.releaseNotes),
+            releaseNotes: getDialogReleaseNotes(result.updateInfo.releaseNotes),
             minimumVersion: (result.updateInfo as any).minimumVersion
           })
         }
@@ -2741,6 +3085,8 @@ app.whenReady().then(async () => {
   // 初始化配置服务
   updateSplashProgress(5, '正在加载配置...')
   configService = new ConfigService()
+  applyAutoUpdateChannel('startup')
+  syncLaunchAtStartupPreference()
 
   // 将用户主题配置推送给 Splash 窗口
   if (splashWindow && !splashWindow.isDestroyed()) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
 import { X, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2 } from 'lucide-react'
 import './JumpToDateDialog.scss'
 
@@ -21,10 +21,15 @@ const JumpToDateDialog: React.FC<JumpToDateDialogProps> = ({
     messageDates,
     loadingDates = false
 }) => {
+    type CalendarViewMode = 'day' | 'month' | 'year'
+    const getYearPageStart = (year: number): number => Math.floor(year / 12) * 12
     const isValidDate = (d: any) => d instanceof Date && !isNaN(d.getTime())
     const [calendarDate, setCalendarDate] = useState(isValidDate(currentDate) ? new Date(currentDate) : new Date())
     const [selectedDate, setSelectedDate] = useState(new Date(currentDate))
-    const [showYearMonthPicker, setShowYearMonthPicker] = useState(false)
+    const [viewMode, setViewMode] = useState<CalendarViewMode>('day')
+    const [yearPageStart, setYearPageStart] = useState<number>(
+        getYearPageStart((isValidDate(currentDate) ? new Date(currentDate) : new Date()).getFullYear())
+    )
 
     if (!isOpen) return null
 
@@ -116,6 +121,57 @@ const JumpToDateDialog: React.FC<JumpToDateDialogProps> = ({
 
     const weekdays = ['日', '一', '二', '三', '四', '五', '六']
     const days = generateCalendar()
+    const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
+
+    const updateCalendarDate = (nextDate: Date) => {
+        setCalendarDate(nextDate)
+    }
+
+    const openMonthView = () => setViewMode('month')
+    const openYearView = () => {
+        setYearPageStart(getYearPageStart(calendarDate.getFullYear()))
+        setViewMode('year')
+    }
+
+    const handleTitleClick = () => {
+        if (viewMode === 'day') {
+            openMonthView()
+            return
+        }
+        if (viewMode === 'month') {
+            openYearView()
+        }
+    }
+
+    const handlePrev = () => {
+        if (viewMode === 'day') {
+            updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))
+            return
+        }
+        if (viewMode === 'month') {
+            updateCalendarDate(new Date(calendarDate.getFullYear() - 1, calendarDate.getMonth(), 1))
+            return
+        }
+        setYearPageStart((prev) => prev - 12)
+    }
+
+    const handleNext = () => {
+        if (viewMode === 'day') {
+            updateCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))
+            return
+        }
+        if (viewMode === 'month') {
+            updateCalendarDate(new Date(calendarDate.getFullYear() + 1, calendarDate.getMonth(), 1))
+            return
+        }
+        setYearPageStart((prev) => prev + 12)
+    }
+
+    const navTitle = viewMode === 'day'
+        ? `${calendarDate.getFullYear()}年${calendarDate.getMonth() + 1}月`
+        : viewMode === 'month'
+            ? `${calendarDate.getFullYear()}年`
+            : `${yearPageStart}年 - ${yearPageStart + 11}年`
 
     return (
         <div className="jump-date-overlay" onClick={onClose}>
@@ -134,42 +190,54 @@ const JumpToDateDialog: React.FC<JumpToDateDialogProps> = ({
                     <div className="calendar-nav">
                         <button
                             className="nav-btn"
-                            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+                            onClick={handlePrev}
                         >
                             <ChevronLeft size={18} />
                         </button>
-                        <span className="current-month clickable" onClick={() => setShowYearMonthPicker(!showYearMonthPicker)}>
-                            {calendarDate.getFullYear()}年{calendarDate.getMonth() + 1}月
-                        </span>
+                        <button
+                            className={`current-month ${viewMode === 'year' ? '' : 'clickable'}`.trim()}
+                            onClick={handleTitleClick}
+                            type="button"
+                        >
+                            {navTitle}
+                        </button>
                         <button
                             className="nav-btn"
-                            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+                            onClick={handleNext}
                         >
                             <ChevronRight size={18} />
                         </button>
                     </div>
 
-                    {showYearMonthPicker ? (
+                    {viewMode === 'month' ? (
                         <div className="year-month-picker">
-                            <div className="year-selector">
-                                <button className="nav-btn" onClick={() => setCalendarDate(new Date(calendarDate.getFullYear() - 1, calendarDate.getMonth(), 1))}>
-                                    <ChevronLeft size={16} />
-                                </button>
-                                <span className="year-label">{calendarDate.getFullYear()}年</span>
-                                <button className="nav-btn" onClick={() => setCalendarDate(new Date(calendarDate.getFullYear() + 1, calendarDate.getMonth(), 1))}>
-                                    <ChevronRight size={16} />
-                                </button>
-                            </div>
                             <div className="month-grid">
-                                {['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'].map((name, i) => (
+                                {monthNames.map((name, i) => (
                                     <button
                                         key={i}
                                         className={`month-btn ${i === calendarDate.getMonth() ? 'active' : ''}`}
                                         onClick={() => {
-                                            setCalendarDate(new Date(calendarDate.getFullYear(), i, 1))
-                                            setShowYearMonthPicker(false)
+                                            updateCalendarDate(new Date(calendarDate.getFullYear(), i, 1))
+                                            setViewMode('day')
                                         }}
                                     >{name}</button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : viewMode === 'year' ? (
+                        <div className="year-month-picker">
+                            <div className="year-grid">
+                                {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((year) => (
+                                    <button
+                                        key={year}
+                                        className={`year-btn ${year === calendarDate.getFullYear() ? 'active' : ''}`}
+                                        onClick={() => {
+                                            updateCalendarDate(new Date(year, calendarDate.getMonth(), 1))
+                                            setViewMode('month')
+                                        }}
+                                    >
+                                        {year}年
+                                    </button>
                                 ))}
                             </div>
                         </div>
@@ -208,18 +276,21 @@ const JumpToDateDialog: React.FC<JumpToDateDialogProps> = ({
                         const d = new Date()
                         setSelectedDate(d)
                         setCalendarDate(new Date(d))
+                        setViewMode('day')
                     }}>今天</button>
                     <button onClick={() => {
                         const d = new Date()
                         d.setDate(d.getDate() - 7)
                         setSelectedDate(d)
                         setCalendarDate(new Date(d))
+                        setViewMode('day')
                     }}>一周前</button>
                     <button onClick={() => {
                         const d = new Date()
                         d.setMonth(d.getMonth() - 1)
                         setSelectedDate(d)
                         setCalendarDate(new Date(d))
+                        setViewMode('day')
                     }}>一月前</button>
                 </div>
 

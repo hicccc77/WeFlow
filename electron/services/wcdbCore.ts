@@ -1,8 +1,8 @@
-﻿import { join, dirname, basename } from 'path'
+import { join, dirname, basename } from 'path'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 
-// DLL 初始化错误信息，用于帮助用户诊断问题
+//数据服务初始化错误信息，用于帮助用户诊断问题
 let lastDllInitError: string | null = null
 
 export function getLastDllInitError(): string | null {
@@ -92,6 +92,9 @@ export class WcdbCore {
   private wcdbResolveImageHardlinkBatch: any = null
   private wcdbResolveVideoHardlinkMd5: any = null
   private wcdbResolveVideoHardlinkMd5Batch: any = null
+  private wcdbInstallMessageAntiRevokeTrigger: any = null
+  private wcdbUninstallMessageAntiRevokeTrigger: any = null
+  private wcdbCheckMessageAntiRevokeTrigger: any = null
   private wcdbInstallSnsBlockDeleteTrigger: any = null
   private wcdbUninstallSnsBlockDeleteTrigger: any = null
   private wcdbCheckSnsBlockDeleteTrigger: any = null
@@ -154,7 +157,7 @@ export class WcdbCore {
         return false
       }
 
-      // 从 DLL 获取动态管道名（含 PID）
+      // 从数据服务获取动态管道名（含 PID）
       let pipePath = '\\\\.\\pipe\\weflow_monitor'
       if (this.wcdbGetMonitorPipeName) {
         try {
@@ -163,7 +166,7 @@ export class WcdbCore {
             pipePath = this.koffi.decode(namePtr[0], 'char', -1)
             this.wcdbFreeString(namePtr[0])
           }
-        } catch {}
+        } catch { }
       }
       this.connectMonitorPipe(pipePath)
       return true
@@ -181,7 +184,7 @@ export class WcdbCore {
     setTimeout(() => {
       if (!this.monitorCallback) return
 
-      this.monitorPipeClient = net.createConnection(this.monitorPipePath, () => {})
+      this.monitorPipeClient = net.createConnection(this.monitorPipePath, () => { })
 
       let buffer = ''
       this.monitorPipeClient.on('data', (data: Buffer) => {
@@ -273,7 +276,7 @@ export class WcdbCore {
     const isArm64 = process.arch === 'arm64'
     const libName = isMac ? 'libwcdb_api.dylib' : isLinux ? 'libwcdb_api.so' : 'wcdb_api.dll'
     const subDir = isMac ? 'macos' : isLinux ? 'linux' : (isArm64 ? 'arm64' : '')
-    
+
     const envDllPath = process.env.WCDB_DLL_PATH
     if (envDllPath && envDllPath.length > 0) {
       return envDllPath
@@ -313,7 +316,7 @@ export class WcdbCore {
       '-2302': 'WCDB 初始化异常，请重试',
       '-2303': 'WCDB 未能成功初始化',
     }
-    const msg = messages[String(code) as keyof typeof messages]
+    const msg = messages[String(code) as unknown as keyof typeof messages]
     return msg ? `${msg} (错误码: ${code})` : `操作失败，错误码: ${code}`
   }
 
@@ -635,15 +638,15 @@ export class WcdbCore {
       this.writeLog(`[bootstrap] initialize platform=${process.platform} dllPath=${dllPath} resourcesPath=${this.resourcesPath || ''} userDataPath=${this.userDataPath || ''}`, true)
 
       if (!existsSync(dllPath)) {
-        console.error('WCDB DLL 不存在:', dllPath)
-        this.writeLog(`[bootstrap] initialize failed: dll not found path=${dllPath}`, true)
+        console.error('WCDB数据服务不存在:', dllPath)
+        this.writeLog(`[bootstrap] initialize failed:数据服务not found path=${dllPath}`, true)
         return false
       }
 
       const dllDir = dirname(dllPath)
       const isMac = process.platform === 'darwin'
       const isLinux = process.platform === 'linux'
-      
+
       // 预加载依赖库
       if (isMac) {
         const wcdbCorePath = join(dllDir, 'libWCDB.dylib')
@@ -691,7 +694,7 @@ export class WcdbCore {
 
         // 尝试多个可能的资源路径
         const resourcePaths = [
-          dllDir,  // DLL 所在目录
+          dllDir,  //数据服务所在目录
           dirname(dllDir),  // 上级目录
           process.resourcesPath,  // 打包后 Contents/Resources
           process.resourcesPath ? join(process.resourcesPath as string, 'resources') : null,  // Contents/Resources/resources
@@ -1077,6 +1080,27 @@ export class WcdbCore {
         this.wcdbResolveVideoHardlinkMd5Batch = null
       }
 
+      // wcdb_status wcdb_install_message_anti_revoke_trigger(wcdb_handle handle, const char* session_id, char** out_error)
+      try {
+        this.wcdbInstallMessageAntiRevokeTrigger = this.lib.func('int32 wcdb_install_message_anti_revoke_trigger(int64 handle, const char* sessionId, _Out_ void** outError)')
+      } catch {
+        this.wcdbInstallMessageAntiRevokeTrigger = null
+      }
+
+      // wcdb_status wcdb_uninstall_message_anti_revoke_trigger(wcdb_handle handle, const char* session_id, char** out_error)
+      try {
+        this.wcdbUninstallMessageAntiRevokeTrigger = this.lib.func('int32 wcdb_uninstall_message_anti_revoke_trigger(int64 handle, const char* sessionId, _Out_ void** outError)')
+      } catch {
+        this.wcdbUninstallMessageAntiRevokeTrigger = null
+      }
+
+      // wcdb_status wcdb_check_message_anti_revoke_trigger(wcdb_handle handle, const char* session_id, int32_t* out_installed)
+      try {
+        this.wcdbCheckMessageAntiRevokeTrigger = this.lib.func('int32 wcdb_check_message_anti_revoke_trigger(int64 handle, const char* sessionId, _Out_ int32* outInstalled)')
+      } catch {
+        this.wcdbCheckMessageAntiRevokeTrigger = null
+      }
+
       // wcdb_status wcdb_install_sns_block_delete_trigger(wcdb_handle handle, char** out_error)
       try {
         this.wcdbInstallSnsBlockDeleteTrigger = this.lib.func('int32 wcdb_install_sns_block_delete_trigger(int64 handle, _Out_ void** outError)')
@@ -1256,7 +1280,7 @@ export class WcdbCore {
   }
 
   /**
-   * 打印 DLL 内部日志（仅在出错时调用）
+   * 打印数据服务内部日志（仅在出错时调用）
    */
   private async printLogs(force = false): Promise<void> {
     try {
@@ -1337,12 +1361,12 @@ export class WcdbCore {
     const raw = String(jsonStr || '')
     if (!raw) return []
     // 热路径优化：仅在检测到 16+ 位整数字段时才进行字符串包裹，避免每批次多轮全量 replace。
-    const needsInt64Normalize = /"(?:server_id|serverId|ServerId|msg_server_id|msgServerId|MsgServerId)"\s*:\s*-?\d{16,}/.test(raw)
+    const needsInt64Normalize = /"server_id"\s*:\s*-?\d{16,}/.test(raw)
     if (!needsInt64Normalize) {
       return JSON.parse(raw)
     }
     const normalized = raw.replace(
-      /("(?:server_id|serverId|ServerId|msg_server_id|msgServerId|MsgServerId)"\s*:\s*)(-?\d{16,})/g,
+      /("server_id"\s*:\s*)(-?\d{16,})/g,
       '$1"$2"'
     )
     return JSON.parse(normalized)
@@ -1579,7 +1603,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetSessions(this.handle, outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -1655,6 +1679,9 @@ export class WcdbCore {
       const outCount = [0]
       const result = this.wcdbGetMessageCount(this.handle, sessionId, outCount)
       if (result !== 0) {
+        if (result === -7) {
+          return { success: false, error: 'message schema mismatch：当前账号消息表结构与程序要求不一致' }
+        }
         return { success: false, error: `获取消息总数失败: ${result}` }
       }
       return { success: true, count: outCount[0] }
@@ -1685,6 +1712,9 @@ export class WcdbCore {
         const sessionId = normalizedSessionIds[i]
         const outCount = [0]
         const result = this.wcdbGetMessageCount(this.handle, sessionId, outCount)
+        if (result === -7) {
+          return { success: false, error: `message schema mismatch：会话 ${sessionId} 的消息表结构不匹配` }
+        }
         counts[sessionId] = result === 0 && Number.isFinite(outCount[0]) ? Math.max(0, Math.floor(outCount[0])) : 0
 
         if (i > 0 && i % 160 === 0) {
@@ -1704,6 +1734,9 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetSessionMessageCounts(this.handle, JSON.stringify(sessionIds || []), outPtr)
       if (result !== 0 || !outPtr[0]) {
+        if (result === -7) {
+          return { success: false, error: 'message schema mismatch：当前账号消息表结构与程序要求不一致' }
+        }
         return { success: false, error: `获取会话消息总数失败: ${result}` }
       }
       const jsonStr = this.decodeJsonPtr(outPtr[0])
@@ -1925,7 +1958,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetDisplayNames(this.handle, JSON.stringify(usernames), outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -2010,7 +2043,7 @@ export class WcdbCore {
       const outPtr = [null as any]
       const result = this.wcdbGetAvatarUrls(handle, JSON.stringify(toFetch), outPtr)
 
-      // DLL 调用后再次让出控制权
+      //数据服务调用后再次让出控制权
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
@@ -2110,7 +2143,7 @@ export class WcdbCore {
       return { success: false, error: 'WCDB 未连接' }
     }
     if (!this.wcdbGetGroupNicknames) {
-      return { success: false, error: '当前 DLL 版本不支持获取群昵称接口' }
+      return { success: false, error: '当前数据服务版本不支持获取群昵称接口' }
     }
     try {
       const outPtr = [null as any]
@@ -2661,7 +2694,9 @@ export class WcdbCore {
         )
         const hint = result === -3
           ? `创建游标失败: ${result}（消息数据库未找到）。如果你最近重装过微信，请尝试重新指定数据目录后重试`
-          : `创建游标失败: ${result}，请查看日志`
+          : result === -7
+            ? 'message schema mismatch：当前账号消息表结构与程序要求不一致'
+            : `创建游标失败: ${result}，请查看日志`
         return { success: false, error: hint }
       }
       return { success: true, cursor: outCursor[0] }
@@ -2681,7 +2716,7 @@ export class WcdbCore {
     }
     try {
       const outCursor = [0]
-      const result = this.wcdbOpenMessageCursorLite(
+      let result = this.wcdbOpenMessageCursorLite(
         this.handle,
         sessionId,
         batchSize,
@@ -2690,12 +2725,38 @@ export class WcdbCore {
         endTimestamp,
         outCursor
       )
+
+      // result=-3 表示 WCDB_STATUS_NO_MESSAGE_DB：消息数据库缓存为空
+      // 自动强制重连并重试一次
+      if (result === -3 && outCursor[0] <= 0) {
+        this.writeLog('openMessageCursorLite: result=-3 (no message db), attempting forceReopen...', true)
+        const reopened = await this.forceReopen()
+        if (reopened && this.handle !== null) {
+          outCursor[0] = 0
+          result = this.wcdbOpenMessageCursorLite(
+            this.handle,
+            sessionId,
+            batchSize,
+            ascending ? 1 : 0,
+            beginTimestamp,
+            endTimestamp,
+            outCursor
+          )
+          this.writeLog(`openMessageCursorLite retry after forceReopen: result=${result} cursor=${outCursor[0]}`, true)
+        } else {
+          this.writeLog('openMessageCursorLite forceReopen failed, giving up', true)
+        }
+      }
+
       if (result !== 0 || outCursor[0] <= 0) {
         await this.printLogs(true)
         this.writeLog(
           `openMessageCursorLite failed: sessionId=${sessionId} batchSize=${batchSize} ascending=${ascending ? 1 : 0} begin=${beginTimestamp} end=${endTimestamp} result=${result} cursor=${outCursor[0]}`,
           true
         )
+        if (result === -7) {
+          return { success: false, error: 'message schema mismatch：当前账号消息表结构与程序要求不一致' }
+        }
         return { success: false, error: `创建游标失败: ${result}，请查看日志` }
       }
       return { success: true, cursor: outCursor[0] }
@@ -2767,14 +2828,14 @@ export class WcdbCore {
       if (!this.wcdbExecQuery) return { success: false, error: '接口未就绪' }
       const fallbackFlag = /fallback|diag|diagnostic/i.test(String(sql || ''))
       this.writeLog(`[audit:execQuery] kind=${kind} path=${path || ''} sql_len=${String(sql || '').length} fallback=${fallbackFlag ? 1 : 0}`)
-      
+
       // 如果提供了参数，使用参数化查询（需要 C++ 层支持）
       // 注意：当前 wcdbExecQuery 可能不支持参数化，这是一个占位符实现
       // TODO: 需要更新 C++ 层的 wcdb_exec_query 以支持参数绑定
       if (params && params.length > 0) {
         console.warn('[wcdbCore] execQuery: 参数化查询暂未在 C++ 层实现，将使用原始 SQL（可能存在注入风险）')
       }
-      
+
       const normalizedKind = String(kind || '').toLowerCase()
       const isContactQuery = normalizedKind === 'contact' || /\bfrom\s+contact\b/i.test(String(sql))
       let effectivePath = path || ''
@@ -2925,7 +2986,7 @@ export class WcdbCore {
 
   async getVoiceData(sessionId: string, createTime: number, candidates: string[], localId: number = 0, svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbGetVoiceData) return { success: false, error: '当前 DLL 版本不支持获取语音数据' }
+    if (!this.wcdbGetVoiceData) return { success: false, error: '当前数据服务版本不支持获取语音数据' }
     try {
       const outPtr = [null as any]
       const result = this.wcdbGetVoiceData(this.handle, sessionId, createTime, localId, BigInt(svrId || 0), JSON.stringify(candidates), outPtr)
@@ -3339,7 +3400,7 @@ export class WcdbCore {
 
   async searchMessages(keyword: string, sessionId?: string, limit?: number, offset?: number, beginTimestamp?: number, endTimestamp?: number): Promise<{ success: boolean; messages?: any[]; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbSearchMessages) return { success: false, error: '当前 DLL 版本不支持搜索消息' }
+    if (!this.wcdbSearchMessages) return { success: false, error: '当前数据服务版本不支持搜索消息' }
     try {
       const handle = this.handle
       await new Promise(resolve => setImmediate(resolve))
@@ -3369,7 +3430,7 @@ export class WcdbCore {
 
   async getSnsTimeline(limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number): Promise<{ success: boolean; timeline?: any[]; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbGetSnsTimeline) return { success: false, error: '当前 DLL 版本不支持获取朋友圈' }
+    if (!this.wcdbGetSnsTimeline) return { success: false, error: '当前数据服务版本不支持获取朋友圈' }
     try {
       const outPtr = [null as any]
       const usernamesJson = usernames && usernames.length > 0 ? JSON.stringify(usernames) : ''
@@ -3458,12 +3519,128 @@ export class WcdbCore {
       return { success: false, error: String(e) }
     }
   }
+
+  async installMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; alreadyInstalled?: boolean; error?: string }> {
+    if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
+    if (!this.wcdbInstallMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
+    try {
+      const outPtr = [null]
+      const status = this.wcdbInstallMessageAntiRevokeTrigger(this.handle, normalizedSessionId, outPtr)
+      let msg = ''
+      if (outPtr[0]) {
+        try { msg = this.koffi.decode(outPtr[0], 'char', -1) } catch { }
+        try { this.wcdbFreeString(outPtr[0]) } catch { }
+      }
+      if (status === 1) {
+        return { success: true, alreadyInstalled: true }
+      }
+      if (status !== 0) {
+        return { success: false, error: msg || `DLL error ${status}` }
+      }
+      return { success: true, alreadyInstalled: false }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async uninstallMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
+    if (!this.wcdbUninstallMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
+    try {
+      const outPtr = [null]
+      const status = this.wcdbUninstallMessageAntiRevokeTrigger(this.handle, normalizedSessionId, outPtr)
+      let msg = ''
+      if (outPtr[0]) {
+        try { msg = this.koffi.decode(outPtr[0], 'char', -1) } catch { }
+        try { this.wcdbFreeString(outPtr[0]) } catch { }
+      }
+      if (status !== 0) {
+        return { success: false, error: msg || `DLL error ${status}` }
+      }
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async checkMessageAntiRevokeTrigger(sessionId: string): Promise<{ success: boolean; installed?: boolean; error?: string }> {
+    if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
+    if (!this.wcdbCheckMessageAntiRevokeTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId) return { success: false, error: 'sessionId 不能为空' }
+    try {
+      const outInstalled = [0]
+      const status = this.wcdbCheckMessageAntiRevokeTrigger(this.handle, normalizedSessionId, outInstalled)
+      if (status !== 0) {
+        return { success: false, error: `DLL error ${status}` }
+      }
+      return { success: true, installed: outInstalled[0] === 1 }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async checkMessageAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; installed?: boolean; error?: string }>
+    error?: string
+  }> {
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return { success: true, rows: [] }
+    }
+    const uniqueIds = Array.from(new Set(sessionIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    const rows: Array<{ sessionId: string; success: boolean; installed?: boolean; error?: string }> = []
+    for (const sessionId of uniqueIds) {
+      const result = await this.checkMessageAntiRevokeTrigger(sessionId)
+      rows.push({ sessionId, success: result.success, installed: result.installed, error: result.error })
+    }
+    return { success: true, rows }
+  }
+
+  async installMessageAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; alreadyInstalled?: boolean; error?: string }>
+    error?: string
+  }> {
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return { success: true, rows: [] }
+    }
+    const uniqueIds = Array.from(new Set(sessionIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    const rows: Array<{ sessionId: string; success: boolean; alreadyInstalled?: boolean; error?: string }> = []
+    for (const sessionId of uniqueIds) {
+      const result = await this.installMessageAntiRevokeTrigger(sessionId)
+      rows.push({ sessionId, success: result.success, alreadyInstalled: result.alreadyInstalled, error: result.error })
+    }
+    return { success: true, rows }
+  }
+
+  async uninstallMessageAntiRevokeTriggers(sessionIds: string[]): Promise<{
+    success: boolean
+    rows?: Array<{ sessionId: string; success: boolean; error?: string }>
+    error?: string
+  }> {
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return { success: true, rows: [] }
+    }
+    const uniqueIds = Array.from(new Set(sessionIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    const rows: Array<{ sessionId: string; success: boolean; error?: string }> = []
+    for (const sessionId of uniqueIds) {
+      const result = await this.uninstallMessageAntiRevokeTrigger(sessionId)
+      rows.push({ sessionId, success: result.success, error: result.error })
+    }
+    return { success: true, rows }
+  }
+
   /**
    * 为朋友圈安装删除
    */
   async installSnsBlockDeleteTrigger(): Promise<{ success: boolean; alreadyInstalled?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbInstallSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbInstallSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbInstallSnsBlockDeleteTrigger(this.handle, outPtr)
@@ -3473,7 +3650,7 @@ export class WcdbCore {
         try { this.wcdbFreeString(outPtr[0]) } catch { }
       }
       if (status === 1) {
-        // DLL 返回 1 表示已安装
+        //数据服务返回 1 表示已安装
         return { success: true, alreadyInstalled: true }
       }
       if (status !== 0) {
@@ -3490,7 +3667,7 @@ export class WcdbCore {
    */
   async uninstallSnsBlockDeleteTrigger(): Promise<{ success: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbUninstallSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbUninstallSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbUninstallSnsBlockDeleteTrigger(this.handle, outPtr)
@@ -3513,7 +3690,7 @@ export class WcdbCore {
    */
   async checkSnsBlockDeleteTrigger(): Promise<{ success: boolean; installed?: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbCheckSnsBlockDeleteTrigger) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbCheckSnsBlockDeleteTrigger) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outInstalled = [0]
       const status = this.wcdbCheckSnsBlockDeleteTrigger(this.handle, outInstalled)
@@ -3528,7 +3705,7 @@ export class WcdbCore {
 
   async deleteSnsPost(postId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbDeleteSnsPost) return { success: false, error: '当前 DLL 版本不支持此功能' }
+    if (!this.wcdbDeleteSnsPost) return { success: false, error: '当前数据服务版本不支持此功能' }
     try {
       const outPtr = [null]
       const status = this.wcdbDeleteSnsPost(this.handle, postId, outPtr)

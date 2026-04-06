@@ -10,6 +10,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
 
 jobs:
   release-mac-arm64:
@@ -38,6 +39,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -46,7 +48,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        shell: bash
         run: |
+          export ELECTRON_BUILDER_BINARIES_MIRROR="https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+          echo "Using ELECTRON_BUILDER_BINARIES_MIRROR=$ELECTRON_BUILDER_BINARIES_MIRROR"
           npx electron-builder --mac dmg --arm64 --publish always
 
       - name: Inject minimumVersion into latest yml
@@ -91,6 +96,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -141,6 +147,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -191,6 +198,7 @@ jobs:
           npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Build Frontend & Type Check
+        shell: bash
         run: |
           npx tsc
           npx vite build
@@ -272,19 +280,18 @@ jobs:
           [点击加入 Telegram 频道](https://t.me/weflow_cc)
 
           ## 下载
-          - Windows x64（Win10+）: ${WINDOWS_URL:-$RELEASE_PAGE}
-          - Windows arm64: ${WINDOWS_ARM64_URL:-$RELEASE_PAGE}
-          - macOS（M系列芯片）: ${MAC_URL:-$RELEASE_PAGE}
-          - Linux (.tar.gz): ${LINUX_TAR_URL:-$RELEASE_PAGE}
-          - linux (.AppImage): ${LINUX_APPIMAGE_URL:-$RELEASE_PAGE}
+          - Windows x64（Win10+）: [点击下载](${WINDOWS_URL:-$RELEASE_PAGE})
+          - Windows arm64: [点击下载](${WINDOWS_ARM64_URL:-$RELEASE_PAGE})
+          - macOS（M系列芯片）: [点击下载](${MAC_URL:-$RELEASE_PAGE})
+          - Linux (.tar.gz): [点击下载](${LINUX_TAR_URL:-$RELEASE_PAGE})
+          - Linux (.AppImage): [点击下载](${LINUX_APPIMAGE_URL:-$RELEASE_PAGE})
 
-          ## macOS 安装提示（未知来源）
-          - 若打开时提示“来自未知开发者”或“无法验证开发者”，请到「系统设置 -> 隐私与安全性」中允许打开该应用。
-          - 如果仍被系统拦截，请在终端执行以下命令去除隔离标记：
+          ## macOS 安装提示
+          - 如果被系统提示已损坏，你需要在终端执行以下命令去除隔离标记：
           - \`xattr -dr com.apple.quarantine "/Applications/WeFlow.app"\`
           - 执行后重新打开 WeFlow。
 
-          > 如果某个平台链接暂时未生成，可进入完整发布页查看全部资源：$RELEASE_PAGE
+          > 如果某个平台链接暂时未生成，可进入[完整发布页]($RELEASE_PAGE)查看全部资源
           EOF
 
           gh release edit "$TAG" --repo "$REPO" --notes-file release_notes.md

@@ -8,43 +8,8 @@ import {
   registerBackgroundTask,
   updateBackgroundTask
 } from '../services/backgroundTaskMonitor'
+import { drawPatternBackground } from '../utils/reportExport'
 import './AnnualReportWindow.scss'
-
-// SVG 背景图案 (用于导出)
-const PATTERN_LIGHT_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'><defs><style>.a{fill:none;stroke:#000;stroke-width:1.2;opacity:0.045}.b{fill:none;stroke:#000;stroke-width:1;opacity:0.035}.c{fill:none;stroke:#000;stroke-width:0.8;opacity:0.04}</style></defs><g transform='translate(45,35) rotate(-8)'><circle class='a' cx='0' cy='0' r='16'/><circle class='a' cx='-5' cy='-4' r='2.5'/><circle class='a' cx='5' cy='-4' r='2.5'/><path class='a' d='M-8 4 Q0 12 8 4'/></g><g transform='translate(320,28) rotate(15) scale(0.7)'><path class='b' d='M0 -12 l3 9 9 0 -7 5 3 9 -8 -6 -8 6 3 -9 -7 -5 9 0z'/></g><g transform='translate(180,55) rotate(12)'><path class='a' d='M0 -8 C0 -14 8 -17 12 -10 C16 -17 24 -14 24 -8 C24 4 12 14 12 14 C12 14 0 4 0 -8'/></g><g transform='translate(95,120) rotate(-5) scale(1.1)'><path class='b' d='M0 10 Q-8 10 -8 3 Q-8 -4 0 -4 Q0 -12 10 -12 Q22 -12 22 -2 Q30 -2 30 5 Q30 12 22 12 Z'/></g><g transform='translate(355,95) rotate(8)'><path class='c' d='M0 0 L0 18 M0 0 L18 -4 L18 14'/><ellipse class='c' cx='-4' cy='20' rx='6' ry='4'/><ellipse class='c' cx='14' cy='16' rx='6' ry='4'/></g><g transform='translate(250,110) rotate(-12) scale(0.9)'><rect class='b' x='0' y='0' width='26' height='18' rx='2'/><path class='b' d='M0 2 L13 11 L26 2'/></g><g transform='translate(28,195) rotate(6)'><circle class='a' cx='0' cy='0' r='11'/><path class='a' d='M-5 11 L5 11 M-4 14 L4 14'/><path class='c' d='M-3 -2 L0 -6 L3 -2'/></g><g transform='translate(155,175) rotate(-3) scale(0.85)'><path class='b' d='M0 0 L0 28 Q14 22 28 28 L28 0 Q14 6 0 0'/><path class='b' d='M28 0 L28 28 Q42 22 56 28 L56 0 Q42 6 28 0'/></g><g transform='translate(340,185) rotate(-20) scale(1.2)'><path class='a' d='M0 8 L20 0 L5 6 L8 14 L5 6 L-12 12 Z'/></g><g transform='translate(70,280) rotate(5)'><rect class='b' x='0' y='5' width='30' height='22' rx='4'/><circle class='b' cx='15' cy='16' r='7'/><rect class='b' x='8' y='0' width='14' height='6' rx='2'/></g><g transform='translate(230,250) rotate(-8) scale(1.1)'><rect class='a' x='0' y='6' width='22' height='18' rx='2'/><rect class='a' x='-3' y='0' width='28' height='7' rx='2'/><path class='a' d='M11 0 L11 24 M-3 13 L25 13'/></g><g transform='translate(365,280) rotate(10)'><ellipse class='b' cx='0' cy='0' rx='10' ry='14'/><path class='b' d='M0 14 Q-3 20 0 28 Q2 24 -1 20'/></g><g transform='translate(145,310) rotate(-6)'><path class='c' d='M0 0 L4 28 L24 28 L28 0 Z'/><path class='c' d='M28 6 Q40 6 40 16 Q40 24 28 24'/><path class='c' d='M8 8 Q10 4 12 8'/></g><g transform='translate(310,340) rotate(5) scale(0.9)'><path class='a' d='M0 8 L8 0 L24 0 L32 8 L16 28 Z'/><path class='a' d='M8 0 L12 8 L0 8 M24 0 L20 8 L32 8 M12 8 L16 28 L20 8'/></g><g transform='translate(55,365) rotate(25) scale(1.15)'><path class='a' d='M8 0 Q12 -14 16 0 L14 6 L18 12 L12 9 L6 12 L10 6 Z'/><circle class='c' cx='12' cy='-2' r='2'/></g><g transform='translate(200,375) rotate(-4)'><path class='b' d='M0 12 Q0 -8 24 -8 Q48 -8 48 12'/><path class='c' d='M6 12 Q6 -2 24 -2 Q42 -2 42 12'/><path class='c' d='M12 12 Q12 4 24 4 Q36 4 36 12'/></g><g transform='translate(380,375) rotate(-10)'><circle class='a' cx='0' cy='0' r='8'/><path class='c' d='M0 -14 L0 -10 M0 10 L0 14 M-14 0 L-10 0 M10 0 L14 0 M-10 -10 L-7 -7 M7 7 L10 10 M-10 10 L-7 7 M7 -7 L10 -10'/></g></svg>`
-
-const PATTERN_DARK_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'><defs><style>.a{fill:none;stroke:#fff;stroke-width:1.2;opacity:0.055}.b{fill:none;stroke:#fff;stroke-width:1;opacity:0.045}.c{fill:none;stroke:#fff;stroke-width:0.8;opacity:0.05}</style></defs><g transform='translate(45,35) rotate(-8)'><circle class='a' cx='0' cy='0' r='16'/><circle class='a' cx='-5' cy='-4' r='2.5'/><circle class='a' cx='5' cy='-4' r='2.5'/><path class='a' d='M-8 4 Q0 12 8 4'/></g><g transform='translate(320,28) rotate(15) scale(0.7)'><path class='b' d='M0 -12 l3 9 9 0 -7 5 3 9 -8 -6 -8 6 3 -9 -7 -5 9 0z'/></g><g transform='translate(180,55) rotate(12)'><path class='a' d='M0 -8 C0 -14 8 -17 12 -10 C16 -17 24 -14 24 -8 C24 4 12 14 12 14 C12 14 0 4 0 -8'/></g><g transform='translate(95,120) rotate(-5) scale(1.1)'><path class='b' d='M0 10 Q-8 10 -8 3 Q-8 -4 0 -4 Q0 -12 10 -12 Q22 -12 22 -2 Q30 -2 30 5 Q30 12 22 12 Z'/></g><g transform='translate(355,95) rotate(8)'><path class='c' d='M0 0 L0 18 M0 0 L18 -4 L18 14'/><ellipse class='c' cx='-4' cy='20' rx='6' ry='4'/><ellipse class='c' cx='14' cy='16' rx='6' ry='4'/></g><g transform='translate(250,110) rotate(-12) scale(0.9)'><rect class='b' x='0' y='0' width='26' height='18' rx='2'/><path class='b' d='M0 2 L13 11 L26 2'/></g><g transform='translate(28,195) rotate(6)'><circle class='a' cx='0' cy='0' r='11'/><path class='a' d='M-5 11 L5 11 M-4 14 L4 14'/><path class='c' d='M-3 -2 L0 -6 L3 -2'/></g><g transform='translate(155,175) rotate(-3) scale(0.85)'><path class='b' d='M0 0 L0 28 Q14 22 28 28 L28 0 Q14 6 0 0'/><path class='b' d='M28 0 L28 28 Q42 22 56 28 L56 0 Q42 6 28 0'/></g><g transform='translate(340,185) rotate(-20) scale(1.2)'><path class='a' d='M0 8 L20 0 L5 6 L8 14 L5 6 L-12 12 Z'/></g><g transform='translate(70,280) rotate(5)'><rect class='b' x='0' y='5' width='30' height='22' rx='4'/><circle class='b' cx='15' cy='16' r='7'/><rect class='b' x='8' y='0' width='14' height='6' rx='2'/></g><g transform='translate(230,250) rotate(-8) scale(1.1)'><rect class='a' x='0' y='6' width='22' height='18' rx='2'/><rect class='a' x='-3' y='0' width='28' height='7' rx='2'/><path class='a' d='M11 0 L11 24 M-3 13 L25 13'/></g><g transform='translate(365,280) rotate(10)'><ellipse class='b' cx='0' cy='0' rx='10' ry='14'/><path class='b' d='M0 14 Q-3 20 0 28 Q2 24 -1 20'/></g><g transform='translate(145,310) rotate(-6)'><path class='c' d='M0 0 L4 28 L24 28 L28 0 Z'/><path class='c' d='M28 6 Q40 6 40 16 Q40 24 28 24'/><path class='c' d='M8 8 Q10 4 12 8'/></g><g transform='translate(310,340) rotate(5) scale(0.9)'><path class='a' d='M0 8 L8 0 L24 0 L32 8 L16 28 Z'/><path class='a' d='M8 0 L12 8 L0 8 M24 0 L20 8 L32 8 M12 8 L16 28 L20 8'/></g><g transform='translate(55,365) rotate(25) scale(1.15)'><path class='a' d='M8 0 Q12 -14 16 0 L14 6 L18 12 L12 9 L6 12 L10 6 Z'/><circle class='c' cx='12' cy='-2' r='2'/></g><g transform='translate(200,375) rotate(-4)'><path class='b' d='M0 12 Q0 -8 24 -8 Q48 -8 48 12'/><path class='c' d='M6 12 Q6 -2 24 -2 Q42 -2 42 12'/><path class='c' d='M12 12 Q12 4 24 4 Q36 4 36 12'/></g><g transform='translate(380,375) rotate(-10)'><circle class='a' cx='0' cy='0' r='8'/><path class='c' d='M0 -14 L0 -10 M0 10 L0 14 M-14 0 L-10 0 M10 0 L14 0 M-10 -10 L-7 -7 M7 7 L10 10 M-10 10 L-7 7 M7 -7 L10 -10'/></g></svg>`
-
-// 绘制 SVG 图案背景到 canvas
-const drawPatternBackground = async (ctx: CanvasRenderingContext2D, width: number, height: number, bgColor: string, isDark: boolean) => {
-  // 先填充背景色
-  ctx.fillStyle = bgColor
-  ctx.fillRect(0, 0, width, height)
-
-  // 加载 SVG 图案
-  const svgString = isDark ? PATTERN_DARK_SVG : PATTERN_LIGHT_SVG
-  const blob = new Blob([svgString], { type: 'image/svg+xml' })
-  const url = URL.createObjectURL(blob)
-
-  return new Promise<void>((resolve) => {
-    const img = new window.Image()
-    img.onload = () => {
-      // 平铺绘制图案
-      const pattern = ctx.createPattern(img, 'repeat')
-      if (pattern) {
-        ctx.fillStyle = pattern
-        ctx.fillRect(0, 0, width, height)
-      }
-      URL.revokeObjectURL(url)
-      resolve()
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      resolve()
-    }
-    img.src = url
-  })
-}
 
 interface TopContact {
   username: string

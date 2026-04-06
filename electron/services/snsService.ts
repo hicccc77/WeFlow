@@ -537,6 +537,32 @@ class SnsService {
         return raw.trim()
     }
 
+    private async collectSnsUsernamesFromTimeline(maxRounds: number = 2000): Promise<string[]> {
+        const pageSize = 500
+        const uniqueUsers = new Set<string>()
+        let offset = 0
+
+        for (let round = 0; round < maxRounds; round++) {
+            const result = await wcdbService.getSnsTimeline(pageSize, offset, undefined, undefined, 0, 0)
+            if (!result.success || !Array.isArray(result.timeline)) {
+                throw new Error(result.error || '获取朋友圈发布者失败')
+            }
+
+            const rows = result.timeline
+            if (rows.length === 0) break
+
+            for (const row of rows) {
+                const username = this.pickTimelineUsername(row)
+                if (username) uniqueUsers.add(username)
+            }
+
+            if (rows.length < pageSize) break
+            offset += rows.length
+        }
+
+        return Array.from(uniqueUsers)
+    }
+
     private async getExportStatsFromTimeline(myWxid?: string): Promise<{ totalPosts: number; totalFriends: number; myPosts: number | null }> {
         const pageSize = 500
         const uniqueUsers = new Set<string>()
@@ -794,7 +820,22 @@ class SnsService {
         if (!result.success) {
             return { success: false, error: result.error || '获取朋友圈联系人失败' }
         }
-        return { success: true, usernames: result.usernames || [] }
+        const directUsernames = Array.isArray(result.usernames) ? result.usernames : []
+        if (directUsernames.length > 0) {
+            return { success: true, usernames: directUsernames }
+        }
+
+        // 回退：通过 timeline 分页拉取收集用户名，兼容底层接口暂时返回空数组的场景。
+        try {
+            const timelineUsers = await this.collectSnsUsernamesFromTimeline()
+            if (timelineUsers.length > 0) {
+                return { success: true, usernames: timelineUsers }
+            }
+        } catch {
+            // 忽略回退错误，保持与原行为一致返回空数组
+        }
+
+        return { success: true, usernames: directUsernames }
     }
 
     private async getExportStatsFromTableCount(myWxid?: string): Promise<{ totalPosts: number; totalFriends: number; myPosts: number | null }> {
@@ -1021,14 +1062,14 @@ class SnsService {
     }
 
     /**
-     * 补全 DLL 返回的评论中缺失的 refNickname
-     * DLL 返回的 refCommentId 是被回复评论的 cmtid
+     * 补全数据服务返回的评论中缺失的 refNickname
+     *数据服务返回的 refCommentId 是被回复评论的 cmtid
      * 评论按 cmtid 从小到大排列，cmtid 从 1 开始递增
      */
     private fixCommentRefs(comments: any[]): any[] {
         if (!comments || comments.length === 0) return []
 
-        // DLL 现在返回完整的评论数据（含 emojis、refNickname）
+        //数据服务现在返回完整的评论数据（含 emojis、refNickname）
         // 此处做最终的格式化和兜底补全
         const idToNickname = new Map<string, string>()
         comments.forEach((c, idx) => {
@@ -1099,14 +1140,14 @@ class SnsService {
                 } : undefined
             }))
 
-            // DLL 已返回完整评论数据（含 emojis、refNickname）
-            // 如果 DLL 评论缺少表情包信息，回退到从 rawXml 重新解析
+            //数据服务已返回完整评论数据（含 emojis、refNickname）
+            // 如果数据服务评论缺少表情包信息，回退到从 rawXml 重新解析
             const dllComments: any[] = post.comments || []
             const hasEmojisInDll = dllComments.some((c: any) => c.emojis && c.emojis.length > 0)
 
             let finalComments: any[]
             if (dllComments.length > 0 && (hasEmojisInDll || !rawXml)) {
-                // DLL 数据完整，直接使用
+                //数据服务数据完整，直接使用
                 finalComments = this.fixCommentRefs(dllComments)
             } else if (rawXml) {
                 // 回退：从 rawXml 重新解析（兼容旧版 DLL）
@@ -1199,7 +1240,7 @@ class SnsService {
         return { success: false, error: result.error }
     }
 
-    async downloadImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; error?: string }> {
+    async downloadImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; error?: string }> {
         return this.fetchAndDecryptImage(url, key)
     }
 

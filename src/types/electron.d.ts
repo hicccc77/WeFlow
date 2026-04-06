@@ -56,6 +56,14 @@ export interface ElectronAPI {
   app: {
     getDownloadsPath: () => Promise<string>
     getVersion: () => Promise<string>
+    getLaunchAtStartupStatus: () => Promise<{ enabled: boolean; supported: boolean; reason?: string }>
+    setLaunchAtStartup: (enabled: boolean) => Promise<{
+      success: boolean
+      enabled: boolean
+      supported: boolean
+      reason?: string
+      error?: string
+    }>
     checkForUpdates: () => Promise<{ hasUpdate: boolean; version?: string; releaseNotes?: string }>
     downloadAndInstall: () => Promise<void>
     ignoreUpdate: (version: string) => Promise<{ success: boolean }>
@@ -218,6 +226,21 @@ export interface ElectronAPI {
     getContactAvatar: (username: string) => Promise<{ avatarUrl?: string; displayName?: string } | null>
     updateMessage: (sessionId: string, localId: number, createTime: number, newContent: string) => Promise<{ success: boolean; error?: string }>
     deleteMessage: (sessionId: string, localId: number, createTime: number, dbPathHint?: string) => Promise<{ success: boolean; error?: string }>
+    checkAntiRevokeTriggers: (sessionIds: string[]) => Promise<{
+      success: boolean
+      rows?: Array<{ sessionId: string; success: boolean; installed?: boolean; error?: string }>
+      error?: string
+    }>
+    installAntiRevokeTriggers: (sessionIds: string[]) => Promise<{
+      success: boolean
+      rows?: Array<{ sessionId: string; success: boolean; alreadyInstalled?: boolean; error?: string }>
+      error?: string
+    }>
+    uninstallAntiRevokeTriggers: (sessionIds: string[]) => Promise<{
+      success: boolean
+      rows?: Array<{ sessionId: string; success: boolean; error?: string }>
+      error?: string
+    }>
     resolveTransferDisplayNames: (chatroomId: string, payerUsername: string, receiverUsername: string) => Promise<{ payerName: string; receiverName: string }>
     getContacts: (options?: { lite?: boolean }) => Promise<{
       success: boolean
@@ -325,6 +348,11 @@ export interface ElectronAPI {
     onVoiceTranscriptPartial: (callback: (payload: { sessionId?: string; msgId: string; createTime?: number; text: string }) => void) => () => void
     getMessage: (sessionId: string, localId: number) => Promise<{ success: boolean; message?: Message; error?: string }>
     onWcdbChange: (callback: (event: any, data: { type: string; json: string }) => void) => () => void
+  }
+  biz: {
+    listAccounts: (account?: string) => Promise<any[]>
+    listMessages: (username: string, account?: string, limit?: number, offset?: number) => Promise<any[]>
+    listPayRecords: (account?: string, limit?: number, offset?: number) => Promise<any[]>
   }
 
   image: {
@@ -868,7 +896,7 @@ export interface ElectronAPI {
 
 export interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
-  contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji'
+  contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji' | 'file'
   dateRange?: { start: number; end: number } | null
   senderUsername?: string
   fileNameSuffix?: string
@@ -878,6 +906,8 @@ export interface ExportOptions {
   exportVoices?: boolean
   exportVideos?: boolean
   exportEmojis?: boolean
+  exportFiles?: boolean
+  maxFileSizeMb?: number
   exportVoiceAsText?: boolean
   excelCompactColumns?: boolean
   txtColumns?: string[]

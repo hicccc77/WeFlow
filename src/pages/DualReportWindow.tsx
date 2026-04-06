@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, Download, Image, SlidersHorizontal, X } from 'lucide-react'
+import html2canvas from 'html2canvas'
 import ReportHeatmap from '../components/ReportHeatmap'
 import ReportWordCloud from '../components/ReportWordCloud'
+import { useThemeStore } from '../stores/themeStore'
+import { drawPatternBackground } from '../utils/reportExport'
 import './AnnualReportWindow.scss'
 import './DualReportWindow.scss'
 
@@ -66,6 +70,12 @@ interface DualReportData {
   streak?: { days: number; startDate: string; endDate: string }
 }
 
+interface SectionInfo {
+  id: string
+  name: string
+  ref: React.RefObject<HTMLElement | null>
+}
+
 function DualReportWindow() {
   const [reportData, setReportData] = useState<DualReportData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -75,6 +85,29 @@ function DualReportWindow() {
   const [myEmojiUrl, setMyEmojiUrl] = useState<string | null>(null)
   const [friendEmojiUrl, setFriendEmojiUrl] = useState<string | null>(null)
   const [activeWordCloudTab, setActiveWordCloudTab] = useState<'shared' | 'my' | 'friend'>('shared')
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState('')
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set())
+  const [fabOpen, setFabOpen] = useState(false)
+  const [exportMode, setExportMode] = useState<'separate' | 'long'>('separate')
+
+  const { themeMode } = useThemeStore()
+
+  const sectionRefs = {
+    cover: useRef<HTMLElement>(null),
+    firstChat: useRef<HTMLElement>(null),
+    yearFirstChat: useRef<HTMLElement>(null),
+    heatmap: useRef<HTMLElement>(null),
+    initiative: useRef<HTMLElement>(null),
+    response: useRef<HTMLElement>(null),
+    streak: useRef<HTMLElement>(null),
+    wordCloud: useRef<HTMLElement>(null),
+    stats: useRef<HTMLElement>(null),
+    ending: useRef<HTMLElement>(null)
+  }
+
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '')
@@ -150,6 +183,351 @@ function DualReportWindow() {
     }
     void loadEmojis()
   }, [reportData])
+
+  const formatFileYearLabel = (year: number) => (year === 0 ? '历史以来' : String(year))
+
+  const sanitizeFileNameSegment = (value: string) => {
+    const sanitized = value.replace(/[\\/:*?"<>|]/g, '_').trim()
+    return sanitized || '好友'
+  }
+
+  const getAvailableSections = (): SectionInfo[] => {
+    if (!reportData) return []
+
+    const sections: SectionInfo[] = [
+      { id: 'cover', name: '封面', ref: sectionRefs.cover },
+      { id: 'firstChat', name: '首次聊天', ref: sectionRefs.firstChat }
+    ]
+
+    if (reportData.yearFirstChat && (!reportData.firstChat || reportData.yearFirstChat.createTime !== reportData.firstChat.createTime)) {
+      sections.push({ id: 'yearFirstChat', name: '第一段对话', ref: sectionRefs.yearFirstChat })
+    }
+    if (reportData.heatmap) {
+      sections.push({ id: 'heatmap', name: '作息规律', ref: sectionRefs.heatmap })
+    }
+    if (reportData.initiative) {
+      sections.push({ id: 'initiative', name: '主动性', ref: sectionRefs.initiative })
+    }
+    if (reportData.response) {
+      sections.push({ id: 'response', name: '回应速度', ref: sectionRefs.response })
+    }
+    if (reportData.streak) {
+      sections.push({ id: 'streak', name: '最长连续聊天', ref: sectionRefs.streak })
+    }
+
+    sections.push({ id: 'wordCloud', name: '常用语', ref: sectionRefs.wordCloud })
+    sections.push({ id: 'stats', name: '年度统计', ref: sectionRefs.stats })
+    sections.push({ id: 'ending', name: '尾声', ref: sectionRefs.ending })
+
+    return sections
+  }
+
+  const exportSection = async (section: SectionInfo): Promise<{ name: string; data: string } | null> => {
+    const element = section.ref.current
+    if (!element) {
+      return null
+    }
+
+    const OUTPUT_WIDTH = 1920
+    const OUTPUT_HEIGHT = 1080
+    let wordCloudInner: HTMLElement | null = null
+    let wordTags: NodeListOf<HTMLElement> | null = null
+    let wordCloudOriginalStyle = ''
+    const wordTagOriginalStyles: string[] = []
+    const originalStyle = element.style.cssText
+
+    try {
+      const selection = window.getSelection()
+      if (selection && selection.rangeCount > 0) selection.removeAllRanges()
+      const activeEl = document.activeElement as HTMLElement | null
+      activeEl?.blur?.()
+      document.body.classList.add('exporting-snapshot')
+      document.documentElement.classList.add('exporting-snapshot')
+
+      element.style.minHeight = 'auto'
+      element.style.padding = '40px 20px'
+      element.style.background = 'transparent'
+      element.style.backgroundColor = 'transparent'
+      element.style.boxShadow = 'none'
+
+      wordCloudInner = element.querySelector('.word-cloud-inner') as HTMLElement | null
+      wordTags = element.querySelectorAll('.word-tag') as NodeListOf<HTMLElement>
+
+      if (wordCloudInner) {
+        wordCloudOriginalStyle = wordCloudInner.style.cssText
+        wordCloudInner.style.transform = 'none'
+      }
+
+      wordTags.forEach((tag, index) => {
+        wordTagOriginalStyles[index] = tag.style.cssText
+        tag.style.opacity = String(tag.style.getPropertyValue('--final-opacity') || '1')
+        tag.style.animation = 'none'
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const computedStyle = getComputedStyle(document.documentElement)
+      const bgColor = computedStyle.getPropertyValue('--bg-primary').trim() || '#F9F8F6'
+
+      const canvas = await html2canvas(element, {
+        backgroundColor: 'transparent',
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        onclone: (clonedDoc) => {
+          clonedDoc.body.classList.add('exporting-snapshot')
+          clonedDoc.documentElement.classList.add('exporting-snapshot')
+          clonedDoc.getSelection?.()?.removeAllRanges()
+        }
+      })
+
+      const outputCanvas = document.createElement('canvas')
+      outputCanvas.width = OUTPUT_WIDTH
+      outputCanvas.height = OUTPUT_HEIGHT
+      const ctx = outputCanvas.getContext('2d')
+      if (!ctx) {
+        return null
+      }
+
+      const isDark = themeMode === 'dark'
+      await drawPatternBackground(ctx, OUTPUT_WIDTH, OUTPUT_HEIGHT, bgColor, isDark)
+
+      const PADDING = 80
+      const contentWidth = OUTPUT_WIDTH - PADDING * 2
+      const contentHeight = OUTPUT_HEIGHT - PADDING * 2
+      const srcRatio = canvas.width / canvas.height
+      const dstRatio = contentWidth / contentHeight
+
+      let drawWidth: number
+      let drawHeight: number
+      let drawX: number
+      let drawY: number
+
+      if (srcRatio > dstRatio) {
+        drawWidth = contentWidth
+        drawHeight = contentWidth / srcRatio
+        drawX = PADDING
+        drawY = PADDING + (contentHeight - drawHeight) / 2
+      } else {
+        drawHeight = contentHeight
+        drawWidth = contentHeight * srcRatio
+        drawX = PADDING + (contentWidth - drawWidth) / 2
+        drawY = PADDING
+      }
+
+      ctx.drawImage(canvas, drawX, drawY, drawWidth, drawHeight)
+      return { name: section.name, data: outputCanvas.toDataURL('image/png') }
+    } catch {
+      return null
+    } finally {
+      element.style.cssText = originalStyle
+      if (wordCloudInner) {
+        wordCloudInner.style.cssText = wordCloudOriginalStyle
+      }
+      wordTags?.forEach((tag, index) => {
+        tag.style.cssText = wordTagOriginalStyles[index]
+      })
+      document.body.classList.remove('exporting-snapshot')
+      document.documentElement.classList.remove('exporting-snapshot')
+    }
+  }
+
+  const exportFullReport = async (filterIds?: Set<string>) => {
+    if (!containerRef.current || !reportData) {
+      return
+    }
+
+    setIsExporting(true)
+    setExportProgress('正在生成长图...')
+
+    let wordCloudInner: HTMLElement | null = null
+    let wordTags: NodeListOf<HTMLElement> | null = null
+    let wordCloudOriginalStyle = ''
+    const wordTagOriginalStyles: string[] = []
+    const container = containerRef.current
+    const sections = Array.from(container.querySelectorAll('.section')) as HTMLElement[]
+    const originalStyles = sections.map((section) => section.style.cssText)
+
+    try {
+      const selection = window.getSelection()
+      if (selection && selection.rangeCount > 0) selection.removeAllRanges()
+      const activeEl = document.activeElement as HTMLElement | null
+      activeEl?.blur?.()
+      document.body.classList.add('exporting-snapshot')
+      document.documentElement.classList.add('exporting-snapshot')
+
+      sections.forEach((section) => {
+        section.style.minHeight = 'auto'
+        section.style.padding = '40px 0'
+      })
+
+      if (filterIds) {
+        getAvailableSections().forEach((section) => {
+          if (!filterIds.has(section.id) && section.ref.current) {
+            section.ref.current.style.display = 'none'
+          }
+        })
+      }
+
+      wordCloudInner = container.querySelector('.word-cloud-inner') as HTMLElement | null
+      wordTags = container.querySelectorAll('.word-tag') as NodeListOf<HTMLElement>
+
+      if (wordCloudInner) {
+        wordCloudOriginalStyle = wordCloudInner.style.cssText
+        wordCloudInner.style.transform = 'none'
+      }
+
+      wordTags.forEach((tag, index) => {
+        wordTagOriginalStyles[index] = tag.style.cssText
+        tag.style.opacity = String(tag.style.getPropertyValue('--final-opacity') || '1')
+        tag.style.animation = 'none'
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      const computedStyle = getComputedStyle(document.documentElement)
+      const bgColor = computedStyle.getPropertyValue('--bg-primary').trim() || '#F9F8F6'
+
+      const canvas = await html2canvas(container, {
+        backgroundColor: 'transparent',
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        onclone: (clonedDoc) => {
+          clonedDoc.body.classList.add('exporting-snapshot')
+          clonedDoc.documentElement.classList.add('exporting-snapshot')
+          clonedDoc.getSelection?.()?.removeAllRanges()
+        }
+      })
+
+      const outputCanvas = document.createElement('canvas')
+      outputCanvas.width = canvas.width
+      outputCanvas.height = canvas.height
+      const ctx = outputCanvas.getContext('2d')
+      if (!ctx) {
+        throw new Error('无法创建导出画布')
+      }
+
+      const isDark = themeMode === 'dark'
+      await drawPatternBackground(ctx, canvas.width, canvas.height, bgColor, isDark)
+      ctx.drawImage(canvas, 0, 0)
+
+      const yearFilePrefix = formatFileYearLabel(reportData.year)
+      const friendFileSegment = sanitizeFileNameSegment(reportData.friendName || reportData.friendUsername)
+      const link = document.createElement('a')
+      link.download = `${yearFilePrefix}双人年度报告_${friendFileSegment}${filterIds ? '_自定义' : ''}.png`
+      link.href = outputCanvas.toDataURL('image/png')
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (e) {
+      alert('导出失败: ' + String(e))
+    } finally {
+      sections.forEach((section, index) => {
+        section.style.cssText = originalStyles[index]
+      })
+      if (wordCloudInner) {
+        wordCloudInner.style.cssText = wordCloudOriginalStyle
+      }
+      wordTags?.forEach((tag, index) => {
+        tag.style.cssText = wordTagOriginalStyles[index]
+      })
+      document.body.classList.remove('exporting-snapshot')
+      document.documentElement.classList.remove('exporting-snapshot')
+      setIsExporting(false)
+      setExportProgress('')
+    }
+  }
+
+  const exportSelectedSections = async () => {
+    if (!reportData) return
+
+    const sections = getAvailableSections().filter((section) => selectedSections.has(section.id))
+    if (sections.length === 0) {
+      alert('请至少选择一个板块')
+      return
+    }
+
+    if (exportMode === 'long') {
+      setShowExportModal(false)
+      await exportFullReport(selectedSections)
+      setSelectedSections(new Set())
+      return
+    }
+
+    setIsExporting(true)
+    setShowExportModal(false)
+
+    const exportedImages: Array<{ name: string; data: string }> = []
+
+    for (let index = 0; index < sections.length; index++) {
+      const section = sections[index]
+      setExportProgress(`正在导出: ${section.name} (${index + 1}/${sections.length})`)
+
+      const result = await exportSection(section)
+      if (result) {
+        exportedImages.push(result)
+      }
+    }
+
+    if (exportedImages.length === 0) {
+      alert('导出失败')
+      setIsExporting(false)
+      setExportProgress('')
+      return
+    }
+
+    const dirResult = await window.electronAPI.dialog.openDirectory({
+      title: '选择导出文件夹',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (dirResult.canceled || !dirResult.filePaths?.[0]) {
+      setIsExporting(false)
+      setExportProgress('')
+      return
+    }
+
+    setExportProgress('正在写入文件...')
+    const yearFilePrefix = formatFileYearLabel(reportData.year)
+    const friendFileSegment = sanitizeFileNameSegment(reportData.friendName || reportData.friendUsername)
+    const exportResult = await window.electronAPI.annualReport.exportImages({
+      baseDir: dirResult.filePaths[0],
+      folderName: `${yearFilePrefix}双人年度报告_${friendFileSegment}_分模块`,
+      images: exportedImages.map((image) => ({
+        name: `${yearFilePrefix}双人年度报告_${friendFileSegment}_${image.name}.png`,
+        dataUrl: image.data
+      }))
+    })
+
+    if (!exportResult.success) {
+      alert('导出失败: ' + (exportResult.error || '未知错误'))
+    }
+
+    setIsExporting(false)
+    setExportProgress('')
+    setSelectedSections(new Set())
+  }
+
+  const toggleSection = (id: string) => {
+    const next = new Set(selectedSections)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+    setSelectedSections(next)
+  }
+
+  const toggleAll = () => {
+    const sections = getAvailableSections()
+    if (selectedSections.size === sections.length) {
+      setSelectedSections(new Set())
+      return
+    }
+    setSelectedSections(new Set(sections.map((section) => section.id)))
+  }
 
   if (isLoading) {
     return (
@@ -305,7 +683,7 @@ function DualReportWindow() {
       if (emojiUrl) {
         return (
           <div className="report-emoji-container">
-            <img src={emojiUrl} alt="表情" className="report-emoji-img" onError={(e) => {
+            <img src={emojiUrl} alt="表情" className="report-emoji-img" crossOrigin="anonymous" onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
               (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
             }} />
@@ -356,7 +734,7 @@ function DualReportWindow() {
     if (avatarUrl) {
       return (
         <div className="scene-avatar with-image">
-          <img src={avatarUrl} alt={isSentByMe ? 'me-avatar' : 'friend-avatar'} />
+          <img src={avatarUrl} alt={isSentByMe ? 'me-avatar' : 'friend-avatar'} crossOrigin="anonymous" />
         </div>
       )
     }
@@ -419,9 +797,99 @@ function DualReportWindow() {
         <div className="deco-circle c5" />
       </div>
 
+      <div className={`fab-container ${fabOpen ? 'open' : ''}`}>
+        <button
+          className="fab-item"
+          onClick={() => {
+            setFabOpen(false)
+            setExportMode('separate')
+            setShowExportModal(true)
+          }}
+          title="分模块导出"
+        >
+          <Image size={18} />
+        </button>
+        <button
+          className="fab-item"
+          onClick={() => {
+            setFabOpen(false)
+            setExportMode('long')
+            setShowExportModal(true)
+          }}
+          title="自定义导出长图"
+        >
+          <SlidersHorizontal size={18} />
+        </button>
+        <button
+          className="fab-item"
+          onClick={() => {
+            setFabOpen(false)
+            void exportFullReport()
+          }}
+          title="导出长图"
+        >
+          <Download size={18} />
+        </button>
+        <button className="fab-main" onClick={() => setFabOpen(!fabOpen)}>
+          {fabOpen ? <X size={22} /> : <Download size={22} />}
+        </button>
+      </div>
+
+      {isExporting && (
+        <div className="export-overlay">
+          <div className="export-progress-modal">
+            <div className="export-spinner">
+              <div className="spinner-ring"></div>
+              <Download size={24} className="spinner-icon" />
+            </div>
+            <p className="export-title">正在导出</p>
+            <p className="export-status">{exportProgress}</p>
+          </div>
+        </div>
+      )}
+
+      {showExportModal && (
+        <div className="export-overlay" onClick={() => setShowExportModal(false)}>
+          <div className="export-modal section-selector" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{exportMode === 'long' ? '自定义导出长图' : '选择要导出的板块'}</h3>
+              <button className="close-btn" onClick={() => setShowExportModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="section-grid">
+              {getAvailableSections().map((section) => (
+                <div
+                  key={section.id}
+                  className={`section-card ${selectedSections.has(section.id) ? 'selected' : ''}`}
+                  onClick={() => toggleSection(section.id)}
+                >
+                  <div className="card-check">
+                    {selectedSections.has(section.id) && <Check size={14} />}
+                  </div>
+                  <span>{section.name}</span>
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="select-all-btn" onClick={toggleAll}>
+                {selectedSections.size === getAvailableSections().length ? '取消全选' : '全选'}
+              </button>
+              <button
+                className="confirm-btn"
+                onClick={() => void exportSelectedSections()}
+                disabled={selectedSections.size === 0}
+              >
+                {exportMode === 'long' ? '生成长图' : '导出'} {selectedSections.size > 0 ? `(${selectedSections.size})` : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="report-scroll-view">
-        <div className="report-container">
-          <section className="section">
+        <div className="report-container" ref={containerRef}>
+          <section className="section" ref={sectionRefs.cover}>
             <div className="label-text">WEFLOW · DUAL REPORT</div>
             <h1 className="hero-title dual-cover-title">{yearTitle}<br />双人聊天报告</h1>
             <hr className="divider" />
@@ -433,7 +901,7 @@ function DualReportWindow() {
             <p className="hero-desc">每一次对话都值得被珍藏</p>
           </section>
 
-          <section className="section">
+          <section className="section" ref={sectionRefs.firstChat}>
             <div className="label-text">首次聊天</div>
             <h2 className="hero-title">故事的开始</h2>
             {firstChat ? (
@@ -457,7 +925,7 @@ function DualReportWindow() {
           </section>
 
           {yearFirstChat && (!firstChat || yearFirstChat.createTime !== firstChat.createTime) ? (
-            <section className="section">
+            <section className="section" ref={sectionRefs.yearFirstChat}>
               <div className="label-text">第一段对话</div>
               <h2 className="hero-title">
                 {reportData.year === 0 ? '你们的第一段对话' : `${reportData.year}年的第一段对话`}
@@ -473,7 +941,7 @@ function DualReportWindow() {
           ) : null}
 
           {reportData.heatmap && (
-            <section className="section">
+            <section className="section" ref={sectionRefs.heatmap}>
               <div className="label-text">聊天习惯</div>
               <h2 className="hero-title">作息规律</h2>
               {mostActive && (
@@ -486,14 +954,14 @@ function DualReportWindow() {
           )}
 
           {reportData.initiative && (
-            <section className="section">
+            <section className="section" ref={sectionRefs.initiative}>
               <div className="label-text">主动性</div>
               <h2 className="hero-title">情感的天平</h2>
               <div className="initiative-container">
                 <div className="initiative-bar-wrapper">
                   <div className="initiative-side">
                     <div className="avatar-placeholder">
-                      {reportData.selfAvatarUrl ? <img src={reportData.selfAvatarUrl} alt="me-avatar" /> : '我'}
+                      {reportData.selfAvatarUrl ? <img src={reportData.selfAvatarUrl} alt="me-avatar" crossOrigin="anonymous" /> : '我'}
                     </div>
                     <div className="count">{reportData.initiative.initiated}次</div>
                     <div className="percent">{initiatedPercent.toFixed(1)}%</div>
@@ -507,7 +975,7 @@ function DualReportWindow() {
                   </div>
                   <div className="initiative-side">
                     <div className="avatar-placeholder">
-                      {reportData.friendAvatarUrl ? <img src={reportData.friendAvatarUrl} alt="friend-avatar" /> : reportData.friendName.substring(0, 1)}
+                      {reportData.friendAvatarUrl ? <img src={reportData.friendAvatarUrl} alt="friend-avatar" crossOrigin="anonymous" /> : reportData.friendName.substring(0, 1)}
                     </div>
                     <div className="count">{reportData.initiative.received}次</div>
                     <div className="percent">{receivedPercent.toFixed(1)}%</div>
@@ -521,7 +989,7 @@ function DualReportWindow() {
           )}
 
           {reportData.response && (
-            <section className="section">
+            <section className="section" ref={sectionRefs.response}>
               <div className="label-text">回应速度</div>
               <h2 className="hero-title">你说，我在</h2>
               <div className="response-pulse-container">
@@ -558,7 +1026,7 @@ function DualReportWindow() {
           )}
 
           {reportData.streak && (
-            <section className="section">
+            <section className="section" ref={sectionRefs.streak}>
               <div className="label-text">聊天火花</div>
               <h2 className="hero-title">最长连续聊天</h2>
               <div className="streak-spark-visual premium">
@@ -596,7 +1064,7 @@ function DualReportWindow() {
             </section>
           )}
 
-          <section className="section word-cloud-section">
+          <section className="section word-cloud-section" ref={sectionRefs.wordCloud}>
             <div className="label-text">常用语</div>
             <h2 className="hero-title">{yearTitle}常用语</h2>
 
@@ -640,7 +1108,7 @@ function DualReportWindow() {
             </div>
           </section>
 
-          <section className="section">
+          <section className="section" ref={sectionRefs.stats}>
             <div className="label-text">年度统计</div>
             <h2 className="hero-title">{yearTitle}数据概览</h2>
             <div className="dual-stat-grid">
@@ -664,7 +1132,7 @@ function DualReportWindow() {
               <div className="emoji-card">
                 <div className="emoji-title">我常用的表情</div>
                 {myEmojiUrl ? (
-                  <img src={myEmojiUrl} alt="my-emoji" onError={(e) => {
+                  <img src={myEmojiUrl} alt="my-emoji" crossOrigin="anonymous" onError={(e) => {
                     (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
                     (e.target as HTMLImageElement).style.display = 'none';
                   }} />
@@ -677,7 +1145,7 @@ function DualReportWindow() {
               <div className="emoji-card">
                 <div className="emoji-title">{reportData.friendName}常用的表情</div>
                 {friendEmojiUrl ? (
-                  <img src={friendEmojiUrl} alt="friend-emoji" onError={(e) => {
+                  <img src={friendEmojiUrl} alt="friend-emoji" crossOrigin="anonymous" onError={(e) => {
                     (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
                     (e.target as HTMLImageElement).style.display = 'none';
                   }} />
@@ -690,7 +1158,7 @@ function DualReportWindow() {
             </div>
           </section>
 
-          <section className="section">
+          <section className="section" ref={sectionRefs.ending}>
             <div className="label-text">尾声</div>
             <h2 className="hero-title">谢谢你一直在</h2>
             <p className="hero-desc">愿我们继续把故事写下去</p>

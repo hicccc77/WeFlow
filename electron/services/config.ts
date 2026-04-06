@@ -27,6 +27,7 @@ interface ConfigSchema {
   themeId: string
   language: string
   logEnabled: boolean
+  launchAtStartup?: boolean
   llmModelPath: string
   whisperModelName: string
   whisperModelDir: string
@@ -45,6 +46,7 @@ interface ConfigSchema {
 
   // 更新相关
   ignoredUpdateVersion: string
+  updateChannel: 'auto' | 'stable' | 'preview' | 'dev'
 
   // 通知
   notificationEnabled: boolean
@@ -59,6 +61,7 @@ interface ConfigSchema {
   windowCloseBehavior: 'ask' | 'tray' | 'quit'
   quoteLayout: 'quote-top' | 'quote-bottom'
   wordCloudExcludeWords: string[]
+  exportWriteLayout: 'A' | 'B' | 'C'
 }
 
 // 需要 safeStorage 加密的字段（普通模式）
@@ -119,6 +122,7 @@ export class ConfigService {
       authUseHello: false,
       authHelloSecret: '',
       ignoredUpdateVersion: '',
+      updateChannel: 'auto',
       notificationEnabled: true,
       notificationPosition: 'top-right',
       notificationFilterMode: 'all',
@@ -126,11 +130,12 @@ export class ConfigService {
       httpApiToken: '',
       httpApiEnabled: false,
       httpApiPort: 5031,
-      httpApiHost: '127.0.0.1',
+      httpApiHost: '0.0.0.0',
       messagePushEnabled: false,
       windowCloseBehavior: 'ask',
       quoteLayout: 'quote-top',
-      wordCloudExcludeWords: []
+      wordCloudExcludeWords: [],
+      exportWriteLayout: 'A'
     }
 
     const storeOptions: any = {

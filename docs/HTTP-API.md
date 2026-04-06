@@ -433,7 +433,123 @@ curl "http://127.0.0.1:5031/api/v1/group-members?chatroomId=xxx@chatroom&include
 
 ---
 
-## 7. 访问导出媒体
+## 7. 朋友圈接口
+
+### 7.1 获取朋友圈时间线
+
+```http
+GET /api/v1/sns/timeline
+```
+
+参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `limit` | number | 否 | 返回数量，默认 20，范围 `1~200` |
+| `offset` | number | 否 | 偏移量，默认 0 |
+| `usernames` | string | 否 | 发布者过滤，逗号分隔，如 `wxid_a,wxid_b` |
+| `keyword` | string | 否 | 关键词过滤（正文） |
+| `start` | string | 否 | 开始时间，支持 `YYYYMMDD` 或秒/毫秒时间戳 |
+| `end` | string | 否 | 结束时间，支持 `YYYYMMDD` 或秒/毫秒时间戳 |
+| `media` | number | 否 | 是否返回可直接访问的媒体地址，默认 `1` |
+| `replace` | number | 否 | `media=1` 时，是否用解析地址覆盖 `media.url/thumb`，默认 `1` |
+| `inline` | number | 否 | `media=1` 时，是否内联返回 `data:` URL，默认 `0` |
+
+示例：
+
+```bash
+curl "http://127.0.0.1:5031/api/v1/sns/timeline?limit=5"
+curl "http://127.0.0.1:5031/api/v1/sns/timeline?usernames=wxid_a,wxid_b&keyword=旅行"
+curl "http://127.0.0.1:5031/api/v1/sns/timeline?limit=3&media=1&replace=1"
+curl "http://127.0.0.1:5031/api/v1/sns/timeline?limit=3&media=1&inline=1"
+```
+
+媒体字段说明（`media=1`）：
+
+- `media[].url/thumb`：你应该优先直接使用的字段。
+- `replace=1`（默认）时，`media[].url/thumb` 会直接被替换成可访问地址，等价于 `resolvedUrl/resolvedThumbUrl`。
+- `replace=0` 时，`media[].url/thumb` 仍保留微信原始地址；这时再结合下面的 `raw/proxy/resolved` 字段自己决定用哪一个。
+- `media[].rawUrl/rawThumb`：原始朋友圈地址
+- `media[].proxyUrl/proxyThumbUrl`：可直接访问的代理地址
+- `media[].resolvedUrl/resolvedThumbUrl`：最终可用地址（`inline=1` 时可能是 `data:` URL）
+- `media[].token/key/encIdx`：微信源数据里的访问/解密参数。通常不需要你自己处理；如果你手动调用 `/api/v1/sns/media/proxy`，把当前条目的 `url` 和 `key` 原样传回即可。
+- `media[].livePhoto`：实况图的视频部分。外层 `media[].url/thumb` 仍是封面图，`livePhoto` 内部会再提供一组自己的 `url/thumb/raw*/proxy*/resolved*` 字段。
+- `media=0` 时，不会补充 `raw*/proxy*/resolved*`，接口只返回原始 `url/thumb` 以及源字段（如 `key/token/encIdx`）。
+
+### 7.2 获取朋友圈发布者
+
+```http
+GET /api/v1/sns/usernames
+```
+
+### 7.3 获取朋友圈导出统计
+
+```http
+GET /api/v1/sns/export/stats
+```
+
+参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `fast` | number | 否 | `1` 使用快速统计（优先缓存） |
+
+### 7.4 朋友圈媒体代理
+
+```http
+GET /api/v1/sns/media/proxy
+```
+
+参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `url` | string | 是 | 媒体原始 URL |
+| `key` | string/number | 否 | 解密 key（部分资源需要） |
+
+### 7.5 导出朋友圈
+
+```http
+POST /api/v1/sns/export
+Content-Type: application/json
+```
+
+Body 示例：
+
+```json
+{
+  "outputDir": "C:\\Users\\Alice\\Desktop\\sns-export",
+  "format": "json",
+  "usernames": "wxid_a,wxid_b",
+  "keyword": "旅行",
+  "exportMedia": true,
+  "exportImages": true,
+  "exportLivePhotos": true,
+  "exportVideos": true,
+  "start": "20250101",
+  "end": "20251231"
+}
+```
+
+`format` 支持：`json`、`html`、`arkmejson`（兼容写法：`arkme-json`）。
+
+### 7.6 朋友圈防删开关
+
+```http
+GET  /api/v1/sns/block-delete/status
+POST /api/v1/sns/block-delete/install
+POST /api/v1/sns/block-delete/uninstall
+```
+
+### 7.7 删除单条朋友圈
+
+```http
+DELETE /api/v1/sns/post/{postId}
+```
+
+---
+
+## 8. 访问导出媒体
 
 > 当使用 POST 时，请将参数放在 JSON Body 中（Content-Type: application/json）
 
@@ -476,7 +592,7 @@ curl "http://127.0.0.1:5031/api/v1/media/xxx@chatroom/emojis/emoji_300.gif"
 
 ---
 
-## 8. 使用示例
+## 9. 使用示例
 
 ### PowerShell
 
@@ -525,7 +641,7 @@ members = requests.get(
 
 ---
 
-## 9. 注意事项
+## 10. 注意事项
 
 1. API 仅监听本机 `127.0.0.1`，不对外网开放。
 2. 使用前需要先在 WeFlow 中完成数据库连接。

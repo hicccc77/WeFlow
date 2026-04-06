@@ -28,6 +28,20 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.jump-date-popover .current-month.clickable {
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .current-month.clickable:hover {
+  color: var(--primary);
+  background: var(--bg-hover);
 }
 
 .jump-date-popover .nav-btn {
@@ -81,6 +95,37 @@
   grid-template-columns: repeat(7, 1fr);
   grid-template-rows: repeat(6, 36px);
   gap: 4px;
+}
+
+.jump-date-popover .month-grid,
+.jump-date-popover .year-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  min-height: 256px;
+}
+
+.jump-date-popover .month-cell,
+.jump-date-popover .year-cell {
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .month-cell:hover,
+.jump-date-popover .year-cell:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.jump-date-popover .month-cell.active,
+.jump-date-popover .year-cell.active {
+  background: var(--primary);
+  color: #fff;
 }
 
 .jump-date-popover .day-cell {

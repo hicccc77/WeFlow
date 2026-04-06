@@ -75,6 +75,8 @@
             font-size: 15px;
             font-weight: 600;
             color: var(--text-primary);
+            border: none;
+            background: transparent;
 
             &.clickable {
                 cursor: pointer;
@@ -152,6 +154,33 @@
             gap: 6px;
 
             .month-btn {
+                padding: 10px 0;
+                border: none;
+                background: transparent;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 13px;
+                color: var(--text-secondary);
+                transition: all 0.15s;
+
+                &:hover {
+                    background: var(--bg-hover);
+                    color: var(--text-primary);
+                }
+
+                &.active {
+                    background: var(--primary);
+                    color: #fff;
+                }
+            }
+        }
+
+        .year-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+
+            .year-btn {
                 padding: 10px 0;
                 border: none;
                 background: transparent;

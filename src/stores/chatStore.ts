@@ -1,6 +1,46 @@
 import { create } from 'zustand'
 import type { ChatSession, Message, Contact } from '../types/models'
 
+const messageAliasIndex = new Set<string>()
+
+function buildPrimaryMessageKey(message: Message): string {
+  if (message.messageKey) return String(message.messageKey)
+  return `fallback:${message.serverId || 0}:${message.createTime}:${message.sortSeq || 0}:${message.localId || 0}:${message.senderUsername || ''}:${message.localType || 0}`
+}
+
+function buildMessageAliasKeys(message: Message): string[] {
+  const keys = [buildPrimaryMessageKey(message)]
+  const localId = Math.max(0, Number(message.localId || 0))
+  const serverId = Math.max(0, Number(message.serverId || 0))
+  const createTime = Math.max(0, Number(message.createTime || 0))
+  const localType = Math.floor(Number(message.localType || 0))
+  const sender = String(message.senderUsername || '')
+  const isSend = Number(message.isSend ?? -1)
+
+  if (localId > 0) {
+    keys.push(`lid:${localId}`)
+  }
+  if (serverId > 0) {
+    keys.push(`sid:${serverId}`)
+  }
+  if (localType === 3) {
+    const imageIdentity = String(message.imageMd5 || message.imageDatName || '').trim()
+    if (imageIdentity) {
+      keys.push(`img:${createTime}:${sender}:${isSend}:${imageIdentity}`)
+    }
+  }
+
+  return keys
+}
+
+function rebuildMessageAliasIndex(messages: Message[]): void {
+  messageAliasIndex.clear()
+  for (const message of messages) {
+    const aliasKeys = buildMessageAliasKeys(message)
+    aliasKeys.forEach((key) => messageAliasIndex.add(key))
+  }
+}
+
 export interface ChatState {
   // 连接状态
   isConnected: boolean
@@ -69,59 +109,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessions: (sessions) => set({ sessions, filteredSessions: sessions }),
   setFilteredSessions: (sessions) => set({ filteredSessions: sessions }),
 
-  setCurrentSession: (sessionId, options) => set((state) => ({
-    currentSessionId: sessionId,
-    messages: options?.preserveMessages ? state.messages : [],
-    hasMoreMessages: true,
-    hasMoreLater: false
-  })),
+  setCurrentSession: (sessionId, options) => set((state) => {
+    const nextMessages = options?.preserveMessages ? state.messages : []
+    rebuildMessageAliasIndex(nextMessages)
+    return {
+      currentSessionId: sessionId,
+      messages: nextMessages,
+      hasMoreMessages: true,
+      hasMoreLater: false
+    }
+  }),
 
   setLoadingSessions: (loading) => set({ isLoadingSessions: loading }),
 
-  setMessages: (messages) => set({ messages }),
+  setMessages: (messages) => set(() => {
+    rebuildMessageAliasIndex(messages || [])
+    return { messages }
+  }),
 
   appendMessages: (newMessages, prepend = false) => set((state) => {
-    const buildPrimaryKey = (m: Message): string => {
-      if (m.messageKey) return String(m.messageKey)
-      return `fallback:${m.serverId || 0}:${m.createTime}:${m.sortSeq || 0}:${m.localId || 0}:${m.senderUsername || ''}:${m.localType || 0}`
-    }
-    const buildAliasKeys = (m: Message): string[] => {
-      const keys = [buildPrimaryKey(m)]
-      const localId = Math.max(0, Number(m.localId || 0))
-      const serverId = Math.max(0, Number(m.serverId || 0))
-      const createTime = Math.max(0, Number(m.createTime || 0))
-      const localType = Math.floor(Number(m.localType || 0))
-      const sender = String(m.senderUsername || '')
-      const isSend = Number(m.isSend ?? -1)
-
-      if (localId > 0) {
-        keys.push(`lid:${localId}`)
-      }
-      if (serverId > 0) {
-        keys.push(`sid:${serverId}`)
-      }
-      if (localType === 3) {
-        const imageIdentity = String(m.imageMd5 || m.imageDatName || '').trim()
-        if (imageIdentity) {
-          keys.push(`img:${createTime}:${sender}:${isSend}:${imageIdentity}`)
-        }
-      }
-      return keys
-    }
-
     const currentMessages = state.messages || []
-    const existingAliases = new Set<string>()
-    currentMessages.forEach((msg) => {
-      buildAliasKeys(msg).forEach((key) => existingAliases.add(key))
-    })
+    if (messageAliasIndex.size === 0 && currentMessages.length > 0) {
+      rebuildMessageAliasIndex(currentMessages)
+    }
 
     const filtered: Message[] = []
     newMessages.forEach((msg) => {
-      const aliasKeys = buildAliasKeys(msg)
-      const exists = aliasKeys.some((key) => existingAliases.has(key))
+      const aliasKeys = buildMessageAliasKeys(msg)
+      const exists = aliasKeys.some((key) => messageAliasIndex.has(key))
       if (exists) return
       filtered.push(msg)
-      aliasKeys.forEach((key) => existingAliases.add(key))
+      aliasKeys.forEach((key) => messageAliasIndex.add(key))
     })
 
     if (filtered.length === 0) return state
@@ -150,20 +168,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setSearchKeyword: (keyword) => set({ searchKeyword: keyword }),
 
-  reset: () => set({
-    isConnected: false,
-    isConnecting: false,
-    connectionError: null,
-    sessions: [],
-    filteredSessions: [],
-    currentSessionId: null,
-    isLoadingSessions: false,
-    messages: [],
-    isLoadingMessages: false,
-    isLoadingMore: false,
-    hasMoreMessages: true,
-    hasMoreLater: false,
-    contacts: new Map(),
-    searchKeyword: ''
+  reset: () => set(() => {
+    messageAliasIndex.clear()
+    return {
+      isConnected: false,
+      isConnecting: false,
+      connectionError: null,
+      sessions: [],
+      filteredSessions: [],
+      currentSessionId: null,
+      isLoadingSessions: false,
+      messages: [],
+      isLoadingMessages: false,
+      isLoadingMore: false,
+      hasMoreMessages: true,
+      hasMoreLater: false,
+      contacts: new Map(),
+      searchKeyword: ''
+    }
   })
 }))

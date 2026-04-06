@@ -2,8 +2,10 @@ name: Security Scan
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # 每天 UTC 02:00（北京时间 10:00）
-  workflow_dispatch:     # 支持手动触发
+    - cron: '0 2 * * *'  # 每天 UTC 02:00
+  workflow_dispatch:     # 手动触发
+  pull_request:          # PR 时触发
+    branches: [ main, dev ]
 
 permissions:
   contents: read
@@ -31,18 +33,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
+          cache: 'npm' # 使用 npm 缓存加速
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: npm ci --ignore-scripts
 
       # 1. npm audit - 检查依赖漏洞
       - name: Dependency vulnerability audit
-        run: pnpm audit --audit-level=moderate
+        run: npm audit --audit-level=moderate
         continue-on-error: true
 
       # 2. CodeQL 静态分析
@@ -67,7 +65,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
-  # 动态获取所有分支并扫描（排除已在 matrix 中的）
+  # 动态获取所有分支并扫描
   scan-all-branches:
     name: Scan additional branches
     runs-on: ubuntu-latest
@@ -77,19 +75,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: List all branches
-        id: branches
-        run: |
-          git branch -r | grep -v HEAD | sed 's|origin/||' | tr -d ' ' | while read branch; do
-            echo "Branch: $branch"
-          done
-
-      - name: Run pnpm audit on all branches
+      - name: Run npm audit on all branches
         run: |
           git branch -r | grep -v HEAD | sed 's|origin/||' | tr -d ' ' | while read branch; do
             echo "===== Auditing branch: $branch ====="
             git checkout "$branch" 2>/dev/null || continue
-            pnpm install --frozen-lockfile --silent 2>/dev/null || npm install --silent 2>/dev/null || true
-            pnpm audit --audit-level=moderate 2>/dev/null || true
+            # 尝试安装并审计
+            npm ci --ignore-scripts --silent 2>/dev/null || npm install --ignore-scripts --silent 2>/dev/null || true
+            npm audit --audit-level=moderate 2>/dev/null || true
           done
         continue-on-error: true
