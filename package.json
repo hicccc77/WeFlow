@@ -73,7 +73,13 @@
       "ajv": ">=8.18.0",
       "ajv-keywords@3>ajv": "^6.12.6",
       "@develar/schema-utils>ajv": "^6.12.6"
-    }
+    },
+    "patchedDependencies": {
+      "sudo-prompt@9.2.1": "patches/sudo-prompt@9.2.1.patch"
+    },
+    "onlyBuiltDependencies": [
+      "koffi"
+    ]
   },
   "build": {
     "appId": "com.WeFlow.app",
