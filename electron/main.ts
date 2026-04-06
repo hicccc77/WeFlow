@@ -27,7 +27,7 @@ import { windowsHelloService } from './services/windowsHelloService'
 import { exportCardDiagnosticsService } from './services/exportCardDiagnosticsService'
 import { cloudControlService } from './services/cloudControlService'
 
-import { destroyNotificationWindow, registerNotificationHandlers, showNotification } from './windows/notificationWindow'
+import { destroyNotificationWindow, registerNotificationHandlers, showNotification, setNotificationNavigateHandler } from './windows/notificationWindow'
 import { httpService } from './services/httpService'
 import { messagePushService } from './services/messagePushService'
 import { bizService } from './services/bizService'
@@ -734,6 +734,14 @@ function createWindow(options: { autoShow?: boolean } = {}) {
 
   // Handle notification click navigation
   ipcMain.on('notification-clicked', (_, sessionId) => {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.send('navigate-to-session', sessionId)
+  })
+
+  // 设置用于D-Bus通知的Linux通知导航处理程序
+  setNotificationNavigateHandler((sessionId: string) => {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()

@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@vscode/sudo-prompt": "^9.3.2",
+    "dbus-native": "^0.4.0",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.2",
     "electron-store": "^11.0.2",
