@@ -1642,6 +1642,202 @@
     }
 }
 
+.sns-cache-migration-dialog {
+    background: var(--bg-secondary);
+    border-radius: var(--sns-border-radius-lg);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    width: 540px;
+    max-width: 92vw;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    position: relative;
+    animation: slide-up-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sns-cache-migration-close {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+
+    &:hover:not(:disabled) {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+}
+
+.sns-cache-migration-header {
+    padding: 18px 20px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.sns-cache-migration-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.sns-cache-migration-subtitle {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.sns-cache-migration-body {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sns-cache-migration-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+
+    strong {
+        font-size: 16px;
+        color: var(--text-primary);
+    }
+}
+
+.sns-cache-migration-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sns-cache-migration-progress-bar {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+}
+
+.sns-cache-migration-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #34d399, #10b981);
+    transition: width 0.2s ease;
+}
+
+.sns-cache-migration-progress-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.sns-cache-migration-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.sns-cache-migration-item {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    padding: 8px 10px;
+}
+
+.sns-cache-migration-item-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.sns-cache-migration-item-detail {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-break: break-all;
+    line-height: 1.45;
+}
+
+.sns-cache-migration-error,
+.sns-cache-migration-success {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.sns-cache-migration-error {
+    background: rgba(244, 67, 54, 0.1);
+    color: var(--color-error, #f44336);
+}
+
+.sns-cache-migration-success {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--color-success, #4caf50);
+}
+
+.sns-cache-migration-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 0 20px 18px;
+}
+
+.sns-cache-migration-btn {
+    min-width: 110px;
+    height: 38px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &.primary {
+        background: var(--primary, #576b95);
+        color: #fff;
+    }
+
+    &.secondary {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        border-color: var(--border-color);
+    }
+
+    &:hover:not(:disabled) {
+        filter: brightness(1.05);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
 .author-timeline-dialog {
     background: var(--sns-card-bg);
     border-radius: var(--sns-border-radius-lg);

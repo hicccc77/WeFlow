@@ -66,6 +66,33 @@ type OverviewStatsStatus = 'loading' | 'ready' | 'error'
 type SnsExportScope = { kind: 'all' } | { kind: 'selected'; usernames: string[] }
 
 const SIDEBAR_USER_PROFILE_CACHE_KEY = 'sidebar_user_profile_cache_v1'
+const SNS_CACHE_MIGRATION_PROMPT_SESSION_KEY = 'sns_cache_migration_prompted_v1'
+
+interface SnsCacheMigrationItem {
+    label: string
+    sourceDir: string
+    targetDir: string
+    fileCount: number
+}
+
+interface SnsCacheMigrationStatus {
+    totalFiles: number
+    legacyBaseDir?: string
+    currentBaseDir?: string
+    items: SnsCacheMigrationItem[]
+}
+
+interface SnsCacheMigrationProgress {
+    status: 'running' | 'done' | 'error'
+    phase: 'copying' | 'cleanup' | 'done' | 'error'
+    current: number
+    total: number
+    copied: number
+    skipped: number
+    remaining: number
+    message?: string
+    currentItemLabel?: string
+}
 
 const readSidebarUserProfileCache = (): SidebarUserProfile | null => {
     try {
@@ -162,6 +189,12 @@ export default function SnsPage() {
     const [triggerInstalled, setTriggerInstalled] = useState<boolean | null>(null)
     const [triggerLoading, setTriggerLoading] = useState(false)
     const [triggerMessage, setTriggerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+    const [showCacheMigrationDialog, setShowCacheMigrationDialog] = useState(false)
+    const [cacheMigrationStatus, setCacheMigrationStatus] = useState<SnsCacheMigrationStatus | null>(null)
+    const [cacheMigrationProgress, setCacheMigrationProgress] = useState<SnsCacheMigrationProgress | null>(null)
+    const [cacheMigrationRunning, setCacheMigrationRunning] = useState(false)
+    const [cacheMigrationDone, setCacheMigrationDone] = useState(false)
+    const [cacheMigrationError, setCacheMigrationError] = useState<string | null>(null)
 
     const postsContainerRef = useRef<HTMLDivElement>(null)
     const jumpCalendarWrapRef = useRef<HTMLDivElement | null>(null)
@@ -185,6 +218,7 @@ export default function SnsPage() {
     const contactsCountBatchTimerRef = useRef<number | null>(null)
     const jumpDateCountsCacheRef = useRef<Map<string, Record<string, number>>>(new Map())
     const jumpDateRequestSeqRef = useRef(0)
+    const checkedCacheMigrationRef = useRef(false)
 
     // Sync posts ref
     useEffect(() => {
@@ -594,6 +628,133 @@ export default function SnsPage() {
             setOverviewStatsStatus('error')
         }
     }, [persistSnsPageCache])
+
+    const markCacheMigrationPrompted = useCallback(() => {
+        try {
+            window.sessionStorage.setItem(SNS_CACHE_MIGRATION_PROMPT_SESSION_KEY, '1')
+        } catch {
+            // ignore session storage failures
+        }
+    }, [])
+
+    const hasCacheMigrationPrompted = useCallback(() => {
+        try {
+            return window.sessionStorage.getItem(SNS_CACHE_MIGRATION_PROMPT_SESSION_KEY) === '1'
+        } catch {
+            return false
+        }
+    }, [])
+
+    const checkCacheMigrationStatus = useCallback(async () => {
+        if (checkedCacheMigrationRef.current) return
+        checkedCacheMigrationRef.current = true
+        if (hasCacheMigrationPrompted()) return
+        try {
+            const result = await window.electronAPI.sns.getCacheMigrationStatus()
+            if (!result?.success || !result.needed) return
+            const totalFiles = Math.max(0, Number(result.totalFiles || 0))
+            const items = Array.isArray(result.items)
+                ? result.items.map((item) => ({
+                    label: String(item.label || '').trim(),
+                    sourceDir: String(item.sourceDir || '').trim(),
+                    targetDir: String(item.targetDir || '').trim(),
+                    fileCount: Math.max(0, Number(item.fileCount || 0))
+                })).filter((item) => item.label && item.sourceDir && item.targetDir && item.fileCount > 0)
+                : []
+            if (totalFiles <= 0 || items.length === 0) return
+            setCacheMigrationStatus({
+                totalFiles,
+                legacyBaseDir: result.legacyBaseDir,
+                currentBaseDir: result.currentBaseDir,
+                items
+            })
+            setCacheMigrationProgress(null)
+            setCacheMigrationDone(false)
+            setCacheMigrationError(null)
+            setShowCacheMigrationDialog(true)
+            markCacheMigrationPrompted()
+        } catch (error) {
+            console.error('Failed to check SNS cache migration status:', error)
+        }
+    }, [hasCacheMigrationPrompted, markCacheMigrationPrompted])
+
+    const startCacheMigration = useCallback(async () => {
+        const total = Math.max(0, cacheMigrationStatus?.totalFiles || 0)
+        setCacheMigrationError(null)
+        setCacheMigrationDone(false)
+        setCacheMigrationRunning(true)
+        setCacheMigrationProgress({
+            status: 'running',
+            phase: 'copying',
+            current: 0,
+            total,
+            copied: 0,
+            skipped: 0,
+            remaining: total,
+            message: '准备迁移...'
+        })
+
+        const removeProgress = window.electronAPI.sns.onCacheMigrationProgress((payload) => {
+            if (!payload) return
+            setCacheMigrationProgress({
+                status: payload.status,
+                phase: payload.phase,
+                current: Math.max(0, Number(payload.current || 0)),
+                total: Math.max(0, Number(payload.total || 0)),
+                copied: Math.max(0, Number(payload.copied || 0)),
+                skipped: Math.max(0, Number(payload.skipped || 0)),
+                remaining: Math.max(0, Number(payload.remaining || 0)),
+                message: payload.message,
+                currentItemLabel: payload.currentItemLabel
+            })
+            if (payload.status === 'done') {
+                setCacheMigrationDone(true)
+                setCacheMigrationError(null)
+            } else if (payload.status === 'error') {
+                setCacheMigrationError(payload.message || '迁移失败')
+            }
+        })
+
+        try {
+            const result = await window.electronAPI.sns.startCacheMigration()
+            if (!result?.success) {
+                setCacheMigrationError(result?.error || '迁移失败')
+            } else {
+                const totalFiles = Math.max(0, Number(result.totalFiles || 0))
+                if (totalFiles === 0) {
+                    setCacheMigrationDone(true)
+                    setCacheMigrationProgress({
+                        status: 'done',
+                        phase: 'done',
+                        current: 0,
+                        total: 0,
+                        copied: 0,
+                        skipped: 0,
+                        remaining: 0,
+                        message: result.message || '无需迁移'
+                    })
+                } else {
+                    // 兜底：若 done 事件因时序原因未到达，仍以返回结果收敛到完成态。
+                    setCacheMigrationDone(true)
+                    setCacheMigrationProgress((prev) => prev || {
+                        status: 'done',
+                        phase: 'done',
+                        current: totalFiles,
+                        total: totalFiles,
+                        copied: Math.max(0, Number(result.copied || 0)),
+                        skipped: Math.max(0, Number(result.skipped || 0)),
+                        remaining: 0,
+                        message: '迁移完成'
+                    })
+                }
+            }
+        } catch (error) {
+            setCacheMigrationError(String((error as Error)?.message || error || '迁移失败'))
+        } finally {
+            removeProgress()
+            setCacheMigrationRunning(false)
+        }
+    }, [cacheMigrationStatus?.totalFiles])
 
     const renderOverviewRangeText = () => {
         if (overviewStatsStatus === 'error') {
@@ -1256,7 +1417,8 @@ export default function SnsPage() {
         void hydrateSnsPageCache()
         loadContacts()
         loadOverviewStats()
-    }, [hydrateSnsPageCache, loadContacts, loadOverviewStats])
+        void checkCacheMigrationStatus()
+    }, [checkCacheMigrationStatus, hydrateSnsPageCache, loadContacts, loadOverviewStats])
 
     useEffect(() => {
         const syncCurrentUserProfile = async () => {
@@ -1654,6 +1816,117 @@ export default function SnsPage() {
                             <pre className="json-code">
                                 {JSON.stringify(debugPost, null, 2)}
                             </pre>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCacheMigrationDialog && cacheMigrationStatus && (
+                <div
+                    className="modal-overlay"
+                    onClick={() => {
+                        if (cacheMigrationRunning) return
+                        setShowCacheMigrationDialog(false)
+                    }}
+                >
+                    <div className="sns-cache-migration-dialog" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="close-btn sns-cache-migration-close"
+                            onClick={() => !cacheMigrationRunning && setShowCacheMigrationDialog(false)}
+                            disabled={cacheMigrationRunning}
+                        >
+                            <X size={18} />
+                        </button>
+
+                        <div className="sns-cache-migration-header">
+                            <div className="sns-cache-migration-title">发现旧版朋友圈缓存</div>
+                            <div className="sns-cache-migration-subtitle">
+                                建议迁移到当前缓存目录，避免目录分散和重复占用空间
+                            </div>
+                        </div>
+
+                        <div className="sns-cache-migration-body">
+                            <div className="sns-cache-migration-meta">
+                                <span>待处理文件</span>
+                                <strong>{cacheMigrationStatus.totalFiles}</strong>
+                            </div>
+
+                            {cacheMigrationProgress && (
+                                <div className="sns-cache-migration-progress">
+                                    <div className="sns-cache-migration-progress-bar">
+                                        <div
+                                            className="sns-cache-migration-progress-fill"
+                                            style={{
+                                                width: cacheMigrationProgress.total > 0
+                                                    ? `${Math.min(100, Math.round((cacheMigrationProgress.current / cacheMigrationProgress.total) * 100))}%`
+                                                    : '100%'
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="sns-cache-migration-progress-text">
+                                        <span>{cacheMigrationProgress.message || '迁移中...'}</span>
+                                        <span>
+                                            已迁移 {cacheMigrationProgress.copied}，剩余 {cacheMigrationProgress.remaining}，跳过重复 {cacheMigrationProgress.skipped}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!cacheMigrationProgress && (
+                                <div className="sns-cache-migration-items">
+                                    {cacheMigrationStatus.items.map((item, idx) => (
+                                        <div className="sns-cache-migration-item" key={`${item.label}-${idx}`}>
+                                            <div className="sns-cache-migration-item-title">{item.label}</div>
+                                            <div className="sns-cache-migration-item-detail">
+                                                {item.fileCount} 个文件 · {item.sourceDir} → {item.targetDir}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {cacheMigrationError && (
+                                <div className="sns-cache-migration-error">
+                                    <AlertCircle size={14} />
+                                    <span>{cacheMigrationError}</span>
+                                </div>
+                            )}
+
+                            {cacheMigrationDone && !cacheMigrationError && (
+                                <div className="sns-cache-migration-success">
+                                    <CheckCircle size={14} />
+                                    <span>迁移完成，旧目录已清理。</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="sns-cache-migration-actions">
+                            {!cacheMigrationDone ? (
+                                <>
+                                    <button
+                                        className="sns-cache-migration-btn secondary"
+                                        onClick={() => setShowCacheMigrationDialog(false)}
+                                        disabled={cacheMigrationRunning}
+                                    >
+                                        稍后再说
+                                    </button>
+                                    <button
+                                        className="sns-cache-migration-btn primary"
+                                        onClick={() => { void startCacheMigration() }}
+                                        disabled={cacheMigrationRunning}
+                                    >
+                                        {cacheMigrationRunning ? '迁移中...' : '开始迁移'}
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    className="sns-cache-migration-btn primary"
+                                    onClick={() => setShowCacheMigrationDialog(false)}
+                                    disabled={cacheMigrationRunning}
+                                >
+                                    完成
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

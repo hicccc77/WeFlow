@@ -226,6 +226,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllImageMessages: (sessionId: string) => ipcRenderer.invoke('chat:getAllImageMessages', sessionId),
     getMessageDates: (sessionId: string) => ipcRenderer.invoke('chat:getMessageDates', sessionId),
     getMessageDateCounts: (sessionId: string) => ipcRenderer.invoke('chat:getMessageDateCounts', sessionId),
+    getResourceMessages: (options?: {
+      sessionId?: string
+      types?: Array<'image' | 'video' | 'voice' | 'file'>
+      beginTimestamp?: number
+      endTimestamp?: number
+      limit?: number
+      offset?: number
+    }) => ipcRenderer.invoke('chat:getResourceMessages', options),
+    getMediaStream: (options?: {
+      sessionId?: string
+      mediaType?: 'image' | 'video' | 'all'
+      beginTimestamp?: number
+      endTimestamp?: number
+      limit?: number
+      offset?: number
+    }) => ipcRenderer.invoke('chat:getMediaStream', options),
     resolveVoiceCache: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:resolveVoiceCache', sessionId, msgId),
     getVoiceTranscript: (sessionId: string, msgId: string, createTime?: number) => ipcRenderer.invoke('chat:getVoiceTranscript', sessionId, msgId, createTime),
     onVoiceTranscriptPartial: (callback: (payload: { sessionId?: string; msgId: string; createTime?: number; text: string }) => void) => {
@@ -250,10 +266,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   image: {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) =>
       ipcRenderer.invoke('image:decrypt', payload),
-    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) =>
+    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) =>
       ipcRenderer.invoke('image:resolveCache', payload),
-    preload: (payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>) =>
-      ipcRenderer.invoke('image:preload', payloads),
+    resolveCacheBatch: (
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { disableUpdateCheck?: boolean }
+    ) => ipcRenderer.invoke('image:resolveCacheBatch', payloads, options),
+    preload: (
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { allowDecrypt?: boolean }
+    ) => ipcRenderer.invoke('image:preload', payloads, options),
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => {
       const listener = (_: unknown, payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => callback(payload)
       ipcRenderer.on('image:updateAvailable', listener)
@@ -263,12 +285,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: unknown, payload: { cacheKey: string; imageMd5?: string; imageDatName?: string; localPath: string }) => callback(payload)
       ipcRenderer.on('image:cacheResolved', listener)
       return () => ipcRenderer.removeListener('image:cacheResolved', listener)
+    },
+    onDecryptProgress: (callback: (payload: {
+      cacheKey: string
+      imageMd5?: string
+      imageDatName?: string
+      stage: 'queued' | 'locating' | 'decrypting' | 'writing' | 'done' | 'failed'
+      progress: number
+      status: 'running' | 'done' | 'error'
+      message?: string
+    }) => void) => {
+      const listener = (_: unknown, payload: {
+        cacheKey: string
+        imageMd5?: string
+        imageDatName?: string
+        stage: 'queued' | 'locating' | 'decrypting' | 'writing' | 'done' | 'failed'
+        progress: number
+        status: 'running' | 'done' | 'error'
+        message?: string
+      }) => callback(payload)
+      ipcRenderer.on('image:decryptProgress', listener)
+      return () => ipcRenderer.removeListener('image:decryptProgress', listener)
     }
   },
 
   // 视频
   video: {
-    getVideoInfo: (videoMd5: string) => ipcRenderer.invoke('video:getVideoInfo', videoMd5),
+    getVideoInfo: (videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => ipcRenderer.invoke('video:getVideoInfo', videoMd5, options),
     parseVideoMd5: (content: string) => ipcRenderer.invoke('video:parseVideoMd5', content)
   },
 
@@ -418,7 +461,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uninstallBlockDeleteTrigger: () => ipcRenderer.invoke('sns:uninstallBlockDeleteTrigger'),
     checkBlockDeleteTrigger: () => ipcRenderer.invoke('sns:checkBlockDeleteTrigger'),
     deleteSnsPost: (postId: string) => ipcRenderer.invoke('sns:deleteSnsPost', postId),
-    downloadEmoji: (params: { url: string; encryptUrl?: string; aesKey?: string }) => ipcRenderer.invoke('sns:downloadEmoji', params)
+    downloadEmoji: (params: { url: string; encryptUrl?: string; aesKey?: string }) => ipcRenderer.invoke('sns:downloadEmoji', params),
+    getCacheMigrationStatus: () => ipcRenderer.invoke('sns:getCacheMigrationStatus'),
+    startCacheMigration: () => ipcRenderer.invoke('sns:startCacheMigration'),
+    onCacheMigrationProgress: (callback: (payload: any) => void) => {
+      const listener = (_event: unknown, payload: any) => callback(payload)
+      ipcRenderer.on('sns:cacheMigrationProgress', listener)
+      return () => ipcRenderer.removeListener('sns:cacheMigrationProgress', listener)
+    }
   },
 
   biz: {

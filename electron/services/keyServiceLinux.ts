@@ -17,9 +17,9 @@ export class KeyServiceLinux {
 
   constructor() {
     try {
-      this.sudo = require('sudo-prompt');
+      this.sudo = require('@vscode/sudo-prompt');
     } catch (e) {
-      console.error('Failed to load sudo-prompt', e);
+      console.error('Failed to load @vscode/sudo-prompt', e);
     }
   }
 

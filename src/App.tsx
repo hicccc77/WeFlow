@@ -22,6 +22,7 @@ import ImageWindow from './pages/ImageWindow'
 import SnsPage from './pages/SnsPage'
 import BizPage from './pages/BizPage'
 import ContactsPage from './pages/ContactsPage'
+import ResourcesPage from './pages/ResourcesPage'
 import ChatHistoryPage from './pages/ChatHistoryPage'
 import NotificationWindow from './pages/NotificationWindow'
 
@@ -743,6 +744,7 @@ function App() {
               <Route path="/sns" element={<SnsPage />} />
               <Route path="/biz" element={<BizPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
+              <Route path="/resources" element={<ResourcesPage />} />
               <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
               <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
             </Routes>

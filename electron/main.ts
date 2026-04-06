@@ -4,7 +4,7 @@ import { Worker } from 'worker_threads'
 import { randomUUID } from 'crypto'
 import { join, dirname } from 'path'
 import { autoUpdater } from 'electron-updater'
-import { readFile, writeFile, mkdir, rm, readdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, rm, readdir, copyFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { ConfigService } from './services/config'
 import { dbPathService } from './services/dbPathService'
@@ -1371,6 +1371,225 @@ const removeMatchedEntriesInDir = async (
   }
 }
 
+const normalizeFsPathForCompare = (value: string): string => {
+  const normalized = String(value || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+type SnsCacheMigrationCandidate = {
+  label: string
+  sourceDir: string
+  targetDir: string
+  fileCount: number
+}
+
+type SnsCacheMigrationPlan = {
+  legacyBaseDir: string
+  currentBaseDir: string
+  candidates: SnsCacheMigrationCandidate[]
+  totalFiles: number
+}
+
+type SnsCacheMigrationProgressPayload = {
+  status: 'running' | 'done' | 'error'
+  phase: 'copying' | 'cleanup' | 'done' | 'error'
+  current: number
+  total: number
+  copied: number
+  skipped: number
+  remaining: number
+  message?: string
+  currentItemLabel?: string
+}
+
+let snsCacheMigrationInProgress = false
+
+const countFilesInDir = async (dirPath: string): Promise<number> => {
+  if (!dirPath || !existsSync(dirPath)) return 0
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true })
+    let count = 0
+    for (const entry of entries) {
+      const fullPath = join(dirPath, entry.name)
+      if (entry.isDirectory()) {
+        count += await countFilesInDir(fullPath)
+        continue
+      }
+      if (entry.isFile()) count += 1
+    }
+    return count
+  } catch {
+    return 0
+  }
+}
+
+const migrateDirectoryPreserveNewFiles = async (
+  sourceDir: string,
+  targetDir: string,
+  onFileProcessed?: (payload: { copied: boolean }) => void
+): Promise<{ copied: number; skipped: number; processed: number }> => {
+  let copied = 0
+  let skipped = 0
+  let processed = 0
+
+  if (!existsSync(sourceDir)) return { copied, skipped, processed }
+  await mkdir(targetDir, { recursive: true })
+
+  const entries = await readdir(sourceDir, { withFileTypes: true })
+  for (const entry of entries) {
+    const sourcePath = join(sourceDir, entry.name)
+    const targetPath = join(targetDir, entry.name)
+
+    if (entry.isDirectory()) {
+      const nested = await migrateDirectoryPreserveNewFiles(sourcePath, targetPath, onFileProcessed)
+      copied += nested.copied
+      skipped += nested.skipped
+      processed += nested.processed
+      continue
+    }
+
+    if (!entry.isFile()) continue
+
+    if (existsSync(targetPath)) {
+      skipped += 1
+      processed += 1
+      onFileProcessed?.({ copied: false })
+      continue
+    }
+
+    await mkdir(dirname(targetPath), { recursive: true })
+    await copyFile(sourcePath, targetPath)
+    copied += 1
+    processed += 1
+    onFileProcessed?.({ copied: true })
+  }
+
+  return { copied, skipped, processed }
+}
+
+const collectLegacySnsCacheMigrationPlan = async (): Promise<SnsCacheMigrationPlan | null> => {
+  if (!configService) return null
+
+  const legacyBaseDir = configService.getCacheBasePath()
+  const configuredCachePath = String(configService.get('cachePath') || '').trim()
+  const currentBaseDir = configuredCachePath || join(app.getPath('documents'), 'WeFlow')
+
+  if (!legacyBaseDir || !currentBaseDir) return null
+
+  const candidates = [
+    {
+      label: '朋友圈媒体缓存',
+      sourceDir: join(legacyBaseDir, 'sns_cache'),
+      targetDir: join(currentBaseDir, 'sns_cache')
+    },
+    {
+      label: '朋友圈表情缓存（合并到 Emojis）',
+      sourceDir: join(legacyBaseDir, 'sns_emoji_cache'),
+      targetDir: join(currentBaseDir, 'Emojis')
+    },
+    {
+      label: '朋友圈表情缓存（当前目录残留）',
+      sourceDir: join(currentBaseDir, 'sns_emoji_cache'),
+      targetDir: join(currentBaseDir, 'Emojis')
+    }
+  ]
+
+  const pendingKeys = new Set<string>()
+  const pending: SnsCacheMigrationCandidate[] = []
+  for (const item of candidates) {
+    const sourceKey = normalizeFsPathForCompare(item.sourceDir)
+    const targetKey = normalizeFsPathForCompare(item.targetDir)
+    if (!sourceKey || sourceKey === targetKey) continue
+    const dedupeKey = `${sourceKey}=>${targetKey}`
+    if (pendingKeys.has(dedupeKey)) continue
+    const fileCount = await countFilesInDir(item.sourceDir)
+    if (fileCount <= 0) continue
+    pendingKeys.add(dedupeKey)
+    pending.push({ ...item, fileCount })
+  }
+  if (pending.length === 0) return null
+
+  const totalFiles = pending.reduce((sum, item) => sum + item.fileCount, 0)
+  return {
+    legacyBaseDir,
+    currentBaseDir,
+    candidates: pending,
+    totalFiles
+  }
+}
+
+const runLegacySnsCacheMigration = async (
+  plan: SnsCacheMigrationPlan,
+  onProgress: (payload: SnsCacheMigrationProgressPayload) => void
+): Promise<{ copied: number; skipped: number; totalFiles: number }> => {
+  let processed = 0
+  let copied = 0
+  let skipped = 0
+  const total = plan.totalFiles
+
+  const emitProgress = (patch?: Partial<SnsCacheMigrationProgressPayload>) => {
+    onProgress({
+      status: 'running',
+      phase: 'copying',
+      current: processed,
+      total,
+      copied,
+      skipped,
+      remaining: Math.max(0, total - processed),
+      ...patch
+    })
+  }
+
+  emitProgress({ message: '准备迁移缓存...' })
+
+  for (const item of plan.candidates) {
+    emitProgress({ currentItemLabel: item.label, message: `正在迁移：${item.label}` })
+    const result = await migrateDirectoryPreserveNewFiles(item.sourceDir, item.targetDir, ({ copied: copiedThisFile }) => {
+      processed += 1
+      if (copiedThisFile) copied += 1
+      else skipped += 1
+      emitProgress({ currentItemLabel: item.label })
+    })
+    // 兜底对齐计数，防止回调未触发造成偏差
+    const expectedProcessed = copied + skipped
+    if (processed !== expectedProcessed) {
+      processed = expectedProcessed
+      copied = Math.max(copied, result.copied)
+      skipped = Math.max(skipped, result.skipped)
+      emitProgress({ currentItemLabel: item.label })
+    }
+  }
+
+  emitProgress({ phase: 'cleanup', message: '正在清理旧目录...' })
+  for (const item of plan.candidates) {
+    await rm(item.sourceDir, { recursive: true, force: true })
+  }
+
+  if (existsSync(plan.legacyBaseDir)) {
+    try {
+      const remaining = await readdir(plan.legacyBaseDir)
+      if (remaining.length === 0) {
+        await rm(plan.legacyBaseDir, { recursive: true, force: true })
+      }
+    } catch {
+      // 忽略旧目录清理失败，不影响迁移结果
+    }
+  }
+
+  onProgress({
+    status: 'done',
+    phase: 'done',
+    current: processed,
+    total,
+    copied,
+    skipped,
+    remaining: Math.max(0, total - processed),
+    message: '迁移完成'
+  })
+
+  return { copied, skipped, totalFiles: total }
+}
+
 // 注册 IPC 处理器
 function registerIpcHandlers() {
   registerNotificationHandlers()
@@ -1764,9 +1983,9 @@ function registerIpcHandlers() {
   })
 
   // 视频相关
-  ipcMain.handle('video:getVideoInfo', async (_, videoMd5: string) => {
+  ipcMain.handle('video:getVideoInfo', async (_, videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => {
     try {
-      const result = await videoService.getVideoInfo(videoMd5)
+      const result = await videoService.getVideoInfo(videoMd5, options)
       return { success: true, ...result }
     } catch (e) {
       return { success: false, error: String(e), exists: false }
@@ -2088,6 +2307,28 @@ function registerIpcHandlers() {
   ipcMain.handle('chat:getMessageDateCounts', async (_, sessionId: string) => {
     return chatService.getMessageDateCounts(sessionId)
   })
+
+  ipcMain.handle('chat:getResourceMessages', async (_, options?: {
+    sessionId?: string
+    types?: Array<'image' | 'video' | 'voice' | 'file'>
+    beginTimestamp?: number
+    endTimestamp?: number
+    limit?: number
+    offset?: number
+  }) => {
+    return chatService.getResourceMessages(options)
+  })
+
+  ipcMain.handle('chat:getMediaStream', async (_, options?: {
+    sessionId?: string
+    mediaType?: 'image' | 'video' | 'all'
+    beginTimestamp?: number
+    endTimestamp?: number
+    limit?: number
+    offset?: number
+  }) => {
+    return wcdbService.getMediaStream(options)
+  })
   ipcMain.handle('chat:resolveVoiceCache', async (_, sessionId: string, msgId: string) => {
     return chatService.resolveVoiceCache(sessionId, msgId)
   })
@@ -2222,17 +2463,121 @@ function registerIpcHandlers() {
     return snsService.downloadSnsEmoji(params.url, params.encryptUrl, params.aesKey)
   })
 
+  ipcMain.handle('sns:getCacheMigrationStatus', async () => {
+    try {
+      const plan = await collectLegacySnsCacheMigrationPlan()
+      if (!plan) {
+        return {
+          success: true,
+          needed: false,
+          inProgress: snsCacheMigrationInProgress,
+          totalFiles: 0,
+          items: []
+        }
+      }
+      return {
+        success: true,
+        needed: true,
+        inProgress: snsCacheMigrationInProgress,
+        totalFiles: plan.totalFiles,
+        legacyBaseDir: plan.legacyBaseDir,
+        currentBaseDir: plan.currentBaseDir,
+        items: plan.candidates
+      }
+    } catch (error) {
+      return { success: false, needed: false, error: String((error as Error)?.message || error || '') }
+    }
+  })
+
+  ipcMain.handle('sns:startCacheMigration', async (event) => {
+    if (snsCacheMigrationInProgress) {
+      return { success: false, error: '迁移任务正在进行中' }
+    }
+
+    const sender = event.sender
+    let lastProgress: SnsCacheMigrationProgressPayload = {
+      status: 'running',
+      phase: 'copying',
+      current: 0,
+      total: 0,
+      copied: 0,
+      skipped: 0,
+      remaining: 0
+    }
+    const emitProgress = (payload: SnsCacheMigrationProgressPayload) => {
+      lastProgress = payload
+      if (!sender.isDestroyed()) {
+        sender.send('sns:cacheMigrationProgress', payload)
+      }
+    }
+
+    try {
+      const plan = await collectLegacySnsCacheMigrationPlan()
+      if (!plan) {
+        emitProgress({
+          status: 'done',
+          phase: 'done',
+          current: 0,
+          total: 0,
+          copied: 0,
+          skipped: 0,
+          remaining: 0,
+          message: '无需迁移'
+        })
+        return { success: true, copied: 0, skipped: 0, totalFiles: 0, message: '无需迁移' }
+      }
+
+      snsCacheMigrationInProgress = true
+      const result = await runLegacySnsCacheMigration(plan, emitProgress)
+      return { success: true, ...result }
+    } catch (error) {
+      const message = String((error as Error)?.message || error || '')
+      emitProgress({
+        ...lastProgress,
+        status: 'error',
+        phase: 'error',
+        message
+      })
+      return { success: false, error: message }
+    } finally {
+      snsCacheMigrationInProgress = false
+    }
+  })
+
   // 私聊克隆
 
 
   ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => {
     return imageDecryptService.decryptImage(payload)
   })
-  ipcMain.handle('image:resolveCache', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => {
+  ipcMain.handle('image:resolveCache', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) => {
     return imageDecryptService.resolveCachedImage(payload)
   })
-  ipcMain.handle('image:preload', async (_, payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>) => {
-    imagePreloadService.enqueue(payloads || [])
+  ipcMain.handle(
+    'image:resolveCacheBatch',
+    async (
+      _,
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { disableUpdateCheck?: boolean }
+    ) => {
+      const list = Array.isArray(payloads) ? payloads : []
+      const rows = await Promise.all(list.map(async (payload) => {
+        return imageDecryptService.resolveCachedImage({
+          ...payload,
+          disableUpdateCheck: options?.disableUpdateCheck === true
+        })
+      }))
+      return { success: true, rows }
+    }
+  )
+  ipcMain.handle(
+    'image:preload',
+    async (
+      _,
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { allowDecrypt?: boolean }
+    ) => {
+    imagePreloadService.enqueue(payloads || [], options)
     return true
   })
 

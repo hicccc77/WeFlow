@@ -142,6 +142,14 @@ export interface Message {
   _db_path?: string // 内部字段：记录消息所属数据库路径
 }
 
+type ResourceMessageType = 'image' | 'video' | 'voice' | 'file'
+
+interface ResourceMessageItem extends Message {
+  sessionId: string
+  sessionDisplayName?: string
+  resourceType: ResourceMessageType
+}
+
 export interface Contact {
   username: string
   alias: string
@@ -7540,6 +7548,152 @@ class ChatService {
       return { success: true, images: allImages }
     } catch (e) {
       console.error('[ChatService] 获取全部图片消息失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  private resolveResourceType(message: Message): ResourceMessageType | null {
+    if (message.localType === 3) return 'image'
+    if (message.localType === 43) return 'video'
+    if (message.localType === 34) return 'voice'
+    if (
+      message.localType === 49 ||
+      message.localType === 34359738417 ||
+      message.localType === 103079215153 ||
+      message.localType === 25769803825
+    ) {
+      if (message.appMsgKind === 'file' || message.xmlType === '6') return 'file'
+      if (message.localType !== 49) return 'file'
+    }
+    return null
+  }
+
+  async getResourceMessages(options?: {
+    sessionId?: string
+    types?: ResourceMessageType[]
+    beginTimestamp?: number
+    endTimestamp?: number
+    limit?: number
+    offset?: number
+  }): Promise<{
+    success: boolean
+    items?: ResourceMessageItem[]
+    total?: number
+    hasMore?: boolean
+    error?: string
+  }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
+      }
+
+      const requestedTypes = Array.isArray(options?.types)
+        ? options.types.filter((type): type is ResourceMessageType => ['image', 'video', 'voice', 'file'].includes(type))
+        : []
+      const typeSet = new Set<ResourceMessageType>(requestedTypes.length > 0 ? requestedTypes : ['image', 'video', 'voice', 'file'])
+
+      const beginTimestamp = Number(options?.beginTimestamp || 0)
+      const endTimestamp = Number(options?.endTimestamp || 0)
+      const offset = Math.max(0, Number(options?.offset || 0))
+      const limitRaw = Number(options?.limit || 0)
+      const limit = Number.isFinite(limitRaw) ? Math.min(2000, Math.max(1, Math.floor(limitRaw || 300))) : 300
+
+      const sessionsResult = await this.getSessions()
+      if (!sessionsResult.success || !Array.isArray(sessionsResult.sessions)) {
+        return { success: false, error: sessionsResult.error || '获取会话失败' }
+      }
+
+      const sessionNameMap = new Map<string, string>()
+      sessionsResult.sessions.forEach((session) => {
+        sessionNameMap.set(session.username, session.displayName || session.username)
+      })
+
+      const requestedSessionId = String(options?.sessionId || '').trim()
+      const sortedSessions = [...sessionsResult.sessions].sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0))
+      const targetSessionIds = requestedSessionId
+        ? [requestedSessionId]
+        : sortedSessions.map((session) => session.username)
+
+      const localTypes: number[] = []
+      if (typeSet.has('image')) localTypes.push(3)
+      if (typeSet.has('video')) localTypes.push(43)
+      if (typeSet.has('voice')) localTypes.push(34)
+      if (typeSet.has('file')) {
+        localTypes.push(49, 34359738417, 103079215153, 25769803825)
+      }
+      const uniqueLocalTypes = Array.from(new Set(localTypes))
+
+      const allItems: ResourceMessageItem[] = []
+      const dedup = new Set<string>()
+      const targetCount = offset + limit
+      const candidateBuffer = Math.max(180, limit)
+      const perTypeFetch = requestedSessionId
+        ? Math.min(2000, Math.max(200, targetCount * 2))
+        : (beginTimestamp > 0 || endTimestamp > 0 ? 140 : 90)
+      const maxSessionScan = requestedSessionId
+        ? 1
+        : (beginTimestamp > 0 || endTimestamp > 0 ? 240 : 80)
+      const scanSessionIds = targetSessionIds.slice(0, maxSessionScan)
+
+      let maybeHasMore = targetSessionIds.length > scanSessionIds.length
+      let stopEarly = false
+
+      for (const sessionId of scanSessionIds) {
+        const batchRows = await Promise.all(
+          uniqueLocalTypes.map((localType) =>
+            wcdbService.getMessagesByType(sessionId, localType, false, perTypeFetch, 0)
+          )
+        )
+        for (const result of batchRows) {
+          if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
+          if (result.rows.length >= perTypeFetch) maybeHasMore = true
+
+          const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[])
+          for (const message of mapped) {
+            const resourceType = this.resolveResourceType(message)
+            if (!resourceType || !typeSet.has(resourceType)) continue
+            if (beginTimestamp > 0 && message.createTime < beginTimestamp) continue
+            if (endTimestamp > 0 && message.createTime > endTimestamp) continue
+
+            const dedupKey = `${sessionId}:${message.localId}:${message.serverId}:${message.createTime}:${message.localType}`
+            if (dedup.has(dedupKey)) continue
+            dedup.add(dedupKey)
+
+            allItems.push({
+              ...message,
+              sessionId,
+              sessionDisplayName: sessionNameMap.get(sessionId) || sessionId,
+              resourceType
+            })
+          }
+        }
+
+        if (allItems.length >= targetCount + candidateBuffer) {
+          stopEarly = true
+          maybeHasMore = true
+          break
+        }
+      }
+
+      allItems.sort((a, b) => {
+        const timeDiff = (b.createTime || 0) - (a.createTime || 0)
+        if (timeDiff !== 0) return timeDiff
+        return (b.localId || 0) - (a.localId || 0)
+      })
+
+      const total = allItems.length
+      const start = Math.min(offset, total)
+      const end = Math.min(start + limit, total)
+
+      return {
+        success: true,
+        items: allItems.slice(start, end),
+        total,
+        hasMore: end < total || maybeHasMore || stopEarly
+      }
+    } catch (e) {
+      console.error('[ChatService] 获取资源消息失败:', e)
       return { success: false, error: String(e) }
     }
   }

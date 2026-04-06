@@ -1,6 +1,7 @@
 import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
 import { ContactCacheService } from './contactCacheService'
+import { app } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { basename, join } from 'path'
@@ -801,12 +802,23 @@ class SnsService {
     }
 
     private getSnsCacheDir(): string {
-        const cachePath = this.configService.getCacheBasePath()
-        const snsCacheDir = join(cachePath, 'sns_cache')
+        const configuredCachePath = String(this.configService.get('cachePath') || '').trim()
+        const baseDir = configuredCachePath || join(app.getPath('documents'), 'WeFlow')
+        const snsCacheDir = join(baseDir, 'sns_cache')
         if (!existsSync(snsCacheDir)) {
             mkdirSync(snsCacheDir, { recursive: true })
         }
         return snsCacheDir
+    }
+
+    private getEmojiCacheDir(): string {
+        const configuredCachePath = String(this.configService.get('cachePath') || '').trim()
+        const baseDir = configuredCachePath || join(app.getPath('documents'), 'WeFlow')
+        const emojiDir = join(baseDir, 'Emojis')
+        if (!existsSync(emojiDir)) {
+            mkdirSync(emojiDir, { recursive: true })
+        }
+        return emojiDir
     }
 
     private getCacheFilePath(url: string): string {
@@ -1832,7 +1844,7 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
         const isVideo = isVideoUrl(url)
         const cachePath = this.getCacheFilePath(url)
 
-        // 1. 尝试从磁盘缓存读取
+        // 1. 优先尝试从当前缓存目录读取
         if (existsSync(cachePath)) {
             try {
                 // 对于视频，不读取整个文件到内存，只确认存在即可
@@ -2293,9 +2305,7 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
 
         const fs = require('fs')
         const cacheKey = crypto.createHash('md5').update(url || encryptUrl!).digest('hex')
-        const cachePath = this.configService.getCacheBasePath()
-        const emojiDir = join(cachePath, 'sns_emoji_cache')
-        if (!existsSync(emojiDir)) mkdirSync(emojiDir, { recursive: true })
+        const emojiDir = this.getEmojiCacheDir()
 
         // 检查本地缓存
         for (const ext of ['.gif', '.png', '.webp', '.jpg', '.jpeg']) {

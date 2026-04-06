@@ -1,6 +1,7 @@
 import { join, dirname, basename } from 'path'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
+import * as fzstd from 'fzstd'
 
 //数据服务初始化错误信息，用于帮助用户诊断问题
 let lastDllInitError: string | null = null
@@ -80,6 +81,7 @@ export class WcdbCore {
   private wcdbGetSessionMessageDateCounts: any = null
   private wcdbGetSessionMessageDateCountsBatch: any = null
   private wcdbGetMessagesByType: any = null
+  private wcdbScanMediaStream: any = null
   private wcdbGetHeadImageBuffers: any = null
   private wcdbSearchMessages: any = null
   private wcdbGetSnsTimeline: any = null
@@ -1014,6 +1016,11 @@ export class WcdbCore {
         this.wcdbGetMessagesByType = null
       }
       try {
+        this.wcdbScanMediaStream = this.lib.func('int32 wcdb_scan_media_stream(int64 handle, const char* sessionIdsJson, int32 mediaType, int32 beginTimestamp, int32 endTimestamp, int32 limit, int32 offset, _Out_ void** outJson, _Out_ int32* outHasMore)')
+      } catch {
+        this.wcdbScanMediaStream = null
+      }
+      try {
         this.wcdbGetHeadImageBuffers = this.lib.func('int32 wcdb_get_head_image_buffers(int64 handle, const char* usernamesJson, _Out_ void** outJson)')
       } catch {
         this.wcdbGetHeadImageBuffers = null
@@ -1916,6 +1923,397 @@ export class WcdbCore {
       if (!jsonStr) return { success: false, error: '解析按类型消息失败' }
       const rows = JSON.parse(jsonStr)
       return { success: true, rows: Array.isArray(rows) ? rows : [] }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getMediaStream(options?: {
+    sessionId?: string
+    mediaType?: 'image' | 'video' | 'all'
+    beginTimestamp?: number
+    endTimestamp?: number
+    limit?: number
+    offset?: number
+  }): Promise<{
+    success: boolean
+    items?: Array<{
+      sessionId: string
+      sessionDisplayName?: string
+      mediaType: 'image' | 'video'
+      localId: number
+      serverId?: string
+      createTime: number
+      localType: number
+      senderUsername?: string
+      isSend?: number | null
+      imageMd5?: string
+      imageDatName?: string
+      videoMd5?: string
+      content?: string
+    }>
+    hasMore?: boolean
+    nextOffset?: number
+    error?: string
+  }> {
+    if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
+    if (!this.wcdbScanMediaStream) return { success: false, error: '当前数据服务版本不支持媒体流扫描，请先更新 wcdb 数据服务' }
+    try {
+      const toInt = (value: unknown): number => {
+        const n = Number(value || 0)
+        if (!Number.isFinite(n)) return 0
+        return Math.floor(n)
+      }
+      const pickString = (row: Record<string, any>, keys: string[]): string => {
+        for (const key of keys) {
+          const value = row[key]
+          if (value === null || value === undefined) continue
+          const text = String(value).trim()
+          if (text) return text
+        }
+        return ''
+      }
+      const extractXmlValue = (xml: string, tag: string): string => {
+        if (!xml) return ''
+        const regex = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i')
+        const match = regex.exec(xml)
+        if (!match) return ''
+        return String(match[1] || '').replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
+      }
+      const looksLikeHex = (text: string): boolean => {
+        if (!text || text.length < 2 || text.length % 2 !== 0) return false
+        return /^[0-9a-fA-F]+$/.test(text)
+      }
+      const looksLikeBase64 = (text: string): boolean => {
+        if (!text || text.length < 16 || text.length % 4 !== 0) return false
+        return /^[A-Za-z0-9+/]+={0,2}$/.test(text)
+      }
+      const decodeBinaryContent = (data: Buffer, fallbackValue?: string): string => {
+        if (!data || data.length === 0) return ''
+        try {
+          if (data.length >= 4) {
+            const magicLE = data.readUInt32LE(0)
+            const magicBE = data.readUInt32BE(0)
+            if (magicLE === 0xFD2FB528 || magicBE === 0xFD2FB528) {
+              try {
+                const decompressed = fzstd.decompress(data)
+                return Buffer.from(decompressed).toString('utf-8')
+              } catch {
+                // ignore
+              }
+            }
+          }
+          const decoded = data.toString('utf-8')
+          const replacementCount = (decoded.match(/\uFFFD/g) || []).length
+          if (replacementCount < decoded.length * 0.2) {
+            return decoded.replace(/\uFFFD/g, '')
+          }
+          if (fallbackValue && replacementCount > 0) return fallbackValue
+          return data.toString('latin1')
+        } catch {
+          return fallbackValue || ''
+        }
+      }
+      const decodeMaybeCompressed = (raw: unknown): string => {
+        if (raw === null || raw === undefined) return ''
+        if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
+          return decodeBinaryContent(Buffer.from(raw as any), String(raw))
+        }
+        const text = String(raw).trim()
+        if (!text) return ''
+
+        if (text.length > 16 && looksLikeHex(text)) {
+          try {
+            const bytes = Buffer.from(text, 'hex')
+            if (bytes.length > 0) return decodeBinaryContent(bytes, text)
+          } catch {
+            // ignore
+          }
+        }
+        if (text.length > 16 && looksLikeBase64(text)) {
+          try {
+            const bytes = Buffer.from(text, 'base64')
+            if (bytes.length > 0) return decodeBinaryContent(bytes, text)
+          } catch {
+            // ignore
+          }
+        }
+        return text
+      }
+      const decodeMessageContent = (messageContent: unknown, compressContent: unknown): string => {
+        const compressedDecoded = decodeMaybeCompressed(compressContent)
+        if (compressedDecoded) return compressedDecoded
+        return decodeMaybeCompressed(messageContent)
+      }
+      const extractImageMd5 = (xml: string): string => {
+        const byTag = extractXmlValue(xml, 'md5') || extractXmlValue(xml, 'imgmd5')
+        if (byTag) return byTag
+        const byAttr = /(?:md5|imgmd5)\s*=\s*['"]?([a-fA-F0-9]{16,64})['"]?/i.exec(xml)
+        return byAttr?.[1] || ''
+      }
+      const normalizeDatBase = (value: string): string => {
+        const input = String(value || '').trim()
+        if (!input) return ''
+        const fileBase = input.replace(/^.*[\\/]/, '').replace(/\.(?:t\.)?dat$/i, '')
+        const md5Like = /([0-9a-fA-F]{16,64})/.exec(fileBase)
+        return String(md5Like?.[1] || fileBase || '').trim().toLowerCase()
+      }
+      const decodePackedToPrintable = (raw: string): string => {
+        const text = String(raw || '').trim()
+        if (!text) return ''
+        let buf: Buffer | null = null
+        if (/^[a-fA-F0-9]+$/.test(text) && text.length % 2 === 0) {
+          try {
+            buf = Buffer.from(text, 'hex')
+          } catch {
+            buf = null
+          }
+        }
+        if (!buf) {
+          try {
+            const base64 = Buffer.from(text, 'base64')
+            if (base64.length > 0) buf = base64
+          } catch {
+            buf = null
+          }
+        }
+        if (!buf || buf.length === 0) return ''
+        const printable: number[] = []
+        for (const byte of buf) {
+          if (byte >= 0x20 && byte <= 0x7e) printable.push(byte)
+          else printable.push(0x20)
+        }
+        return Buffer.from(printable).toString('utf-8')
+      }
+      const extractHexMd5 = (text: string): string => {
+        const input = String(text || '')
+        if (!input) return ''
+        const match = /([a-fA-F0-9]{32})/.exec(input)
+        return String(match?.[1] || '').toLowerCase()
+      }
+      const extractImageDatName = (row: Record<string, any>, content: string): string => {
+        const direct = pickString(row, [
+          'image_path',
+          'imagePath',
+          'image_dat_name',
+          'imageDatName',
+          'img_path',
+          'imgPath',
+          'img_name',
+          'imgName'
+        ])
+        const normalizedDirect = normalizeDatBase(direct)
+        if (normalizedDirect) return normalizedDirect
+
+        const xmlCandidate = extractXmlValue(content, 'imgname') || extractXmlValue(content, 'cdnmidimgurl')
+        const normalizedXml = normalizeDatBase(xmlCandidate)
+        if (normalizedXml) return normalizedXml
+
+        const packedRaw = pickString(row, [
+          'packed_info_data',
+          'packedInfoData',
+          'packed_info_blob',
+          'packedInfoBlob',
+          'packed_info',
+          'packedInfo',
+          'BytesExtra',
+          'bytes_extra',
+          'WCDB_CT_packed_info',
+          'reserved0',
+          'Reserved0',
+          'WCDB_CT_Reserved0'
+        ])
+        const packedText = decodePackedToPrintable(packedRaw)
+        if (packedText) {
+          const datLike = /([0-9a-fA-F]{8,})(?:\.t)?\.dat/i.exec(packedText)
+          if (datLike?.[1]) return String(datLike[1]).toLowerCase()
+          const md5Like = /([0-9a-fA-F]{16,64})/.exec(packedText)
+          if (md5Like?.[1]) return String(md5Like[1]).toLowerCase()
+        }
+
+        return ''
+      }
+      const extractPackedPayload = (row: Record<string, any>): string => {
+        const packedRaw = pickString(row, [
+          'packed_info_data',
+          'packedInfoData',
+          'packed_info_blob',
+          'packedInfoBlob',
+          'packed_info',
+          'packedInfo',
+          'BytesExtra',
+          'bytes_extra',
+          'WCDB_CT_packed_info',
+          'reserved0',
+          'Reserved0',
+          'WCDB_CT_Reserved0'
+        ])
+        return decodePackedToPrintable(packedRaw)
+      }
+      const extractVideoMd5 = (xml: string): string => {
+        const byTag =
+          extractXmlValue(xml, 'rawmd5') ||
+          extractXmlValue(xml, 'videomd5') ||
+          extractXmlValue(xml, 'newmd5') ||
+          extractXmlValue(xml, 'md5')
+        if (byTag) return byTag
+        const byAttr = /(?:rawmd5|videomd5|newmd5|md5)\s*=\s*['"]?([a-fA-F0-9]{16,64})['"]?/i.exec(xml)
+        return byAttr?.[1] || ''
+      }
+
+      const requestedSessionId = String(options?.sessionId || '').trim()
+      const mediaType = String(options?.mediaType || 'all').trim() as 'image' | 'video' | 'all'
+      const beginTimestamp = Math.max(0, toInt(options?.beginTimestamp))
+      const endTimestamp = Math.max(0, toInt(options?.endTimestamp))
+      const offset = Math.max(0, toInt(options?.offset))
+      const limit = Math.min(1200, Math.max(40, toInt(options?.limit) || 240))
+
+      const sessionsRes = await this.getSessions()
+      if (!sessionsRes.success || !Array.isArray(sessionsRes.sessions)) {
+        return { success: false, error: sessionsRes.error || '读取会话失败' }
+      }
+
+      const sessions = (sessionsRes.sessions || [])
+        .map((row: any) => ({
+          sessionId: String(
+            row.username ||
+            row.user_name ||
+            row.userName ||
+            row.usrName ||
+            row.UsrName ||
+            row.talker ||
+            ''
+          ).trim(),
+          displayName: String(row.displayName || row.display_name || row.remark || '').trim(),
+          sortTimestamp: toInt(
+            row.sort_timestamp ||
+            row.sortTimestamp ||
+            row.last_timestamp ||
+            row.lastTimestamp ||
+            0
+          )
+        }))
+        .filter((row) => Boolean(row.sessionId))
+        .sort((a, b) => b.sortTimestamp - a.sortTimestamp)
+
+      const sessionRows = requestedSessionId
+        ? sessions.filter((row) => row.sessionId === requestedSessionId)
+        : sessions
+      if (sessionRows.length === 0) {
+        return { success: true, items: [], hasMore: false, nextOffset: offset }
+      }
+      const sessionNameMap = new Map(sessionRows.map((row) => [row.sessionId, row.displayName || row.sessionId]))
+
+      const outPtr = [null as any]
+      const outHasMore = [0]
+      const mediaTypeCode = mediaType === 'image' ? 1 : mediaType === 'video' ? 2 : 0
+      const result = this.wcdbScanMediaStream(
+        this.handle,
+        JSON.stringify(sessionRows.map((row) => row.sessionId)),
+        mediaTypeCode,
+        beginTimestamp,
+        endTimestamp,
+        limit,
+        offset,
+        outPtr,
+        outHasMore
+      )
+      if (result !== 0 || !outPtr[0]) {
+        return { success: false, error: `扫描媒体流失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) return { success: false, error: '解析媒体流失败' }
+      const rows = JSON.parse(jsonStr)
+      const list = Array.isArray(rows) ? rows as Array<Record<string, any>> : []
+
+      let items = list.map((row) => {
+        const sessionId = pickString(row, ['session_id', 'sessionId']) || requestedSessionId
+        const localType = toInt(row.local_type ?? row.localType)
+        const rawMessageContent = pickString(row, [
+          'message_content',
+          'messageContent',
+          'message_content_text',
+          'messageText',
+          'StrContent',
+          'str_content',
+          'msg_content',
+          'msgContent',
+          'strContent',
+          'content',
+          'rawContent',
+          'WCDB_CT_message_content'
+        ])
+        const rawCompressContent = pickString(row, [
+          'compress_content',
+          'compressContent',
+          'msg_compress_content',
+          'msgCompressContent',
+          'WCDB_CT_compress_content'
+        ])
+        const useRawMessageContent = Boolean(
+          rawMessageContent &&
+          (rawMessageContent.includes('<') || rawMessageContent.includes('md5') || rawMessageContent.includes('videomsg'))
+        )
+        const content = useRawMessageContent
+          ? rawMessageContent
+          : decodeMessageContent(rawMessageContent, rawCompressContent)
+        const packedPayload = extractPackedPayload(row)
+        const imageMd5ByColumn = pickString(row, ['image_md5', 'imageMd5'])
+        const imageMd5 = localType === 3
+          ? (imageMd5ByColumn || extractImageMd5(content) || extractHexMd5(packedPayload) || undefined)
+          : undefined
+        const imageDatName = localType === 3 ? (extractImageDatName(row, content) || undefined) : undefined
+        const videoMd5ByColumn = pickString(row, ['video_md5', 'videoMd5', 'raw_md5', 'rawMd5'])
+        const videoMd5 = localType === 43
+          ? (videoMd5ByColumn || extractVideoMd5(content) || extractHexMd5(packedPayload) || undefined)
+          : undefined
+        return {
+          sessionId,
+          sessionDisplayName: sessionNameMap.get(sessionId) || sessionId,
+          mediaType: localType === 43 ? 'video' as const : 'image' as const,
+          localId: toInt(row.local_id ?? row.localId),
+          serverId: pickString(row, ['server_id', 'serverId']) || undefined,
+          createTime: toInt(row.create_time ?? row.createTime),
+          localType,
+          senderUsername: pickString(row, ['sender_username', 'senderUsername']) || undefined,
+          isSend: row.is_send === null || row.is_send === undefined ? null : toInt(row.is_send),
+          imageMd5,
+          imageDatName,
+          videoMd5,
+          content: content || undefined
+        }
+      })
+
+      const unresolvedSessionIds = Array.from(
+        new Set(
+          items
+            .map((item) => item.sessionId)
+            .filter((sessionId) => {
+              const name = String(sessionNameMap.get(sessionId) || '').trim()
+              return !name || name === sessionId
+            })
+        )
+      )
+      if (unresolvedSessionIds.length > 0) {
+        const displayNameRes = await this.getDisplayNames(unresolvedSessionIds)
+        if (displayNameRes.success && displayNameRes.map) {
+          unresolvedSessionIds.forEach((sessionId) => {
+            const display = String(displayNameRes.map?.[sessionId] || '').trim()
+            if (display) sessionNameMap.set(sessionId, display)
+          })
+          items = items.map((item) => ({
+            ...item,
+            sessionDisplayName: sessionNameMap.get(item.sessionId) || item.sessionId
+          }))
+        }
+      }
+
+      return {
+        success: true,
+        items,
+        hasMore: Number(outHasMore[0]) > 0,
+        nextOffset: offset + items.length
+      }
     } catch (e) {
       return { success: false, error: String(e) }
     }

@@ -268,6 +268,37 @@ export class WcdbService {
     return this.callWorker('getMessagesByType', { sessionId, localType, ascending, limit, offset })
   }
 
+  async getMediaStream(options?: {
+    sessionId?: string
+    mediaType?: 'image' | 'video' | 'all'
+    beginTimestamp?: number
+    endTimestamp?: number
+    limit?: number
+    offset?: number
+  }): Promise<{
+    success: boolean
+    items?: Array<{
+      sessionId: string
+      sessionDisplayName?: string
+      mediaType: 'image' | 'video'
+      localId: number
+      serverId?: string
+      createTime: number
+      localType: number
+      senderUsername?: string
+      isSend?: number | null
+      imageMd5?: string
+      imageDatName?: string
+      videoMd5?: string
+      content?: string
+    }>
+    hasMore?: boolean
+    nextOffset?: number
+    error?: string
+  }> {
+    return this.callWorker('getMediaStream', { options })
+  }
+
   /**
    * 获取联系人昵称
    */

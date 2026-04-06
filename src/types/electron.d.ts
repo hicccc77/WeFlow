@@ -343,6 +343,52 @@ export interface ElectronAPI {
     }>
     getMessageDates: (sessionId: string) => Promise<{ success: boolean; dates?: string[]; error?: string }>
     getMessageDateCounts: (sessionId: string) => Promise<{ success: boolean; counts?: Record<string, number>; error?: string }>
+    getResourceMessages: (options?: {
+      sessionId?: string
+      types?: Array<'image' | 'video' | 'voice' | 'file'>
+      beginTimestamp?: number
+      endTimestamp?: number
+      limit?: number
+      offset?: number
+    }) => Promise<{
+      success: boolean
+      items?: Array<Message & {
+        sessionId: string
+        sessionDisplayName?: string
+        resourceType: 'image' | 'video' | 'voice' | 'file'
+      }>
+      total?: number
+      hasMore?: boolean
+      error?: string
+    }>
+    getMediaStream: (options?: {
+      sessionId?: string
+      mediaType?: 'image' | 'video' | 'all'
+      beginTimestamp?: number
+      endTimestamp?: number
+      limit?: number
+      offset?: number
+    }) => Promise<{
+      success: boolean
+      items?: Array<{
+        sessionId: string
+        sessionDisplayName?: string
+        mediaType: 'image' | 'video'
+        localId: number
+        serverId?: string
+        createTime: number
+        localType: number
+        senderUsername?: string
+        isSend?: number | null
+        imageMd5?: string
+        imageDatName?: string
+        videoMd5?: string
+        content?: string
+      }>
+      hasMore?: boolean
+      nextOffset?: number
+      error?: string
+    }>
     resolveVoiceCache: (sessionId: string, msgId: string) => Promise<{ success: boolean; hasCache: boolean; data?: string }>
     getVoiceTranscript: (sessionId: string, msgId: string, createTime?: number) => Promise<{ success: boolean; transcript?: string; error?: string }>
     onVoiceTranscriptPartial: (callback: (payload: { sessionId?: string; msgId: string; createTime?: number; text: string }) => void) => () => void
@@ -357,13 +403,33 @@ export interface ElectronAPI {
 
   image: {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => Promise<{ success: boolean; localPath?: string; liveVideoPath?: string; error?: string }>
-    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string }) => Promise<{ success: boolean; localPath?: string; hasUpdate?: boolean; liveVideoPath?: string; error?: string }>
-    preload: (payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>) => Promise<boolean>
+    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) => Promise<{ success: boolean; localPath?: string; hasUpdate?: boolean; liveVideoPath?: string; error?: string }>
+    resolveCacheBatch: (
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { disableUpdateCheck?: boolean }
+    ) => Promise<{
+      success: boolean
+      rows?: Array<{ success: boolean; localPath?: string; hasUpdate?: boolean; error?: string }>
+      error?: string
+    }>
+    preload: (
+      payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
+      options?: { allowDecrypt?: boolean }
+    ) => Promise<boolean>
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => () => void
     onCacheResolved: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string; localPath: string }) => void) => () => void
+    onDecryptProgress: (callback: (payload: {
+      cacheKey: string
+      imageMd5?: string
+      imageDatName?: string
+      stage: 'queued' | 'locating' | 'decrypting' | 'writing' | 'done' | 'failed'
+      progress: number
+      status: 'running' | 'done' | 'error'
+      message?: string
+    }) => void) => () => void
   }
   video: {
-    getVideoInfo: (videoMd5: string) => Promise<{
+    getVideoInfo: (videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => Promise<{
       success: boolean
       exists: boolean
       videoUrl?: string
@@ -881,6 +947,28 @@ export interface ElectronAPI {
     checkBlockDeleteTrigger: () => Promise<{ success: boolean; installed?: boolean; error?: string }>
     deleteSnsPost: (postId: string) => Promise<{ success: boolean; error?: string }>
     downloadEmoji: (params: { url: string; encryptUrl?: string; aesKey?: string }) => Promise<{ success: boolean; localPath?: string; error?: string }>
+    getCacheMigrationStatus: () => Promise<{
+      success: boolean
+      needed: boolean
+      inProgress?: boolean
+      totalFiles?: number
+      legacyBaseDir?: string
+      currentBaseDir?: string
+      items?: Array<{ label: string; sourceDir: string; targetDir: string; fileCount: number }>
+      error?: string
+    }>
+    startCacheMigration: () => Promise<{ success: boolean; copied?: number; skipped?: number; totalFiles?: number; message?: string; error?: string }>
+    onCacheMigrationProgress: (callback: (payload: {
+      status: 'running' | 'done' | 'error'
+      phase: 'copying' | 'cleanup' | 'done' | 'error'
+      current: number
+      total: number
+      copied: number
+      skipped: number
+      remaining: number
+      message?: string
+      currentItemLabel?: string
+    }) => void) => () => void
   }
   cloud: {
     init: () => Promise<void>

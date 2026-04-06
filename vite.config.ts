@@ -41,7 +41,7 @@ export default defineConfig({
                 'shelljs',
                 'exceljs',
                 'node-llama-cpp',
-                'sudo-prompt'
+                '@vscode/sudo-prompt'
               ]
             }
           }

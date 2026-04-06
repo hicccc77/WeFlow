@@ -16,6 +16,7 @@ const isLinux = navigator.userAgent.toLowerCase().includes('linux')
 const isWindows = !isMac && !isLinux
 
 const dbDirName = isMac ? '2.0b4.0.9 目录' : 'xwechat_files 目录'
+const DB_PATH_CHINESE_ERROR = '路径包含中文字符，迁移至全英文目录后再试'
 const dbPathPlaceholder = isMac
     ? '例如: ~/Library/Containers/com.tencent.xinWeChat/Data/Library/Application Support/com.tencent.xinWeChat/2.0b4.0.9'
     : isLinux
@@ -221,9 +222,22 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     if (!path) return null
     // 检测中文字符和其他可能有问题的特殊字符
     if (/[\u4e00-\u9fa5]/.test(path)) {
-      return '路径包含中文字符，请迁移至全英文目录'
+      return DB_PATH_CHINESE_ERROR
     }
     return null
+  }
+  const dbPathValidationError = validatePath(dbPath)
+
+  const handleDbPathChange = (value: string) => {
+    setDbPath(value)
+    const validationError = validatePath(value)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    if (error === DB_PATH_CHINESE_ERROR) {
+      setError('')
+    }
   }
 
   const handleSelectPath = async () => {
@@ -236,10 +250,10 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
       if (!result.canceled && result.filePaths.length > 0) {
         const selectedPath = result.filePaths[0]
         const validationError = validatePath(selectedPath)
+        setDbPath(selectedPath)
         if (validationError) {
           setError(validationError)
         } else {
-          setDbPath(selectedPath)
           setError('')
         }
       }
@@ -256,10 +270,10 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
       const result = await window.electronAPI.dbPath.autoDetect()
       if (result.success && result.path) {
         const validationError = validatePath(result.path)
+        setDbPath(result.path)
         if (validationError) {
           setError(validationError)
         } else {
-          setDbPath(result.path)
           setError('')
         }
       } else {
@@ -426,7 +440,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
   const canGoNext = () => {
     if (currentStep.id === 'intro') return true
-    if (currentStep.id === 'db') return Boolean(dbPath)
+    if (currentStep.id === 'db') return Boolean(dbPath) && !dbPathValidationError
     if (currentStep.id === 'cache') return true
     if (currentStep.id === 'key') return decryptKey.length === 64 && Boolean(wxid)
     if (currentStep.id === 'image') return true
@@ -442,6 +456,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   const handleNext = () => {
     if (!canGoNext()) {
       if (currentStep.id === 'db' && !dbPath) setError('请先选择数据库目录')
+      else if (currentStep.id === 'db' && dbPathValidationError) setError(dbPathValidationError)
       if (currentStep.id === 'key') {
         if (decryptKey.length !== 64) setError('密钥长度必须为 64 个字符')
         else if (!wxid) setError('未能自动识别 wxid，请尝试重新获取或检查目录')
@@ -664,7 +679,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                     className="field-input"
                     placeholder={dbPathPlaceholder}
                     value={dbPath}
-                    onChange={(e) => setDbPath(e.target.value)}
+                    onChange={(e) => handleDbPathChange(e.target.value)}
                   />
                 </div>
                 <div className="action-row">
