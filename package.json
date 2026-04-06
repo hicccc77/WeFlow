@@ -55,7 +55,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
-    "sass": "^1.98.0",
+    "sass": "^1.99.0",
     "sharp": "^0.34.5",
     "typescript": "^6.0.2",
     "vite": "^7.3.2",
