@@ -35,7 +35,7 @@
     "html2canvas": "^1.4.1",
     "jieba-wasm": "^2.2.0",
     "jszip": "^3.10.1",
-    "koffi": "^2.9.0",
+    "koffi": "^2.15.5",
     "lucide-react": "^1.7.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
