@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Search, MessageSquare, AlertCircle, Loader2, RefreshCw, X, ChevronDown, ChevronLeft, Info, Calendar, Database, Hash, Play, Pause, Image as ImageIcon, Mic, CheckCircle, Copy, Check, CheckSquare, Download, BarChart3, Edit2, Trash2, BellOff, Users, FolderClosed, UserCheck, Crown, Aperture, Newspaper } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { useShallow } from 'zustand/react/shallow'
@@ -1142,6 +1142,7 @@ function ChatPage(props: ChatPageProps) {
   const normalizedStandaloneInitialContactType = useMemo(() => String(standaloneInitialContactType || '').trim().toLowerCase(), [standaloneInitialContactType])
   const shouldHideStandaloneDetailButton = standaloneSessionWindow && normalizedStandaloneSource === 'export'
   const navigate = useNavigate()
+  const location = useLocation()
 
   const {
     isConnected,
@@ -5349,6 +5350,19 @@ function ChatPage(props: ChatPageProps) {
     standaloneInitialLoadRequested,
     selectSessionById
   ])
+
+  // 监听URL参数中的sessionId，用于通知点击导航
+  useEffect(() => {
+    if (standaloneSessionWindow) return // standalone模式由上面的useEffect处理
+    const params = new URLSearchParams(location.search)
+    const urlSessionId = params.get('sessionId')
+    if (!urlSessionId) return
+    if (!isConnected || isConnecting) return
+    if (currentSessionId === urlSessionId) return
+    selectSessionById(urlSessionId)
+    // 选中后清除URL参数，避免影响后续用户手动切换会话
+    navigate('/chat', { replace: true })
+  }, [standaloneSessionWindow, location.search, isConnected, isConnecting, currentSessionId, selectSessionById, navigate])
 
   useEffect(() => {
     if (!standaloneSessionWindow || !normalizedInitialSessionId) return

@@ -339,6 +339,21 @@ function App() {
     }
   }, [setUpdateInfo, setDownloadProgress, setShowUpdateDialog, isNotificationWindow])
 
+  // 监听通知点击导航事件
+  useEffect(() => {
+    if (isNotificationWindow) return
+
+    const removeListener = window.electronAPI?.notification?.onNavigateToSession?.((sessionId: string) => {
+      if (!sessionId) return
+      // 导航到聊天页面，通过URL参数让ChatPage接收sessionId
+      navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`, { replace: true })
+    })
+
+    return () => {
+      removeListener?.()
+    }
+  }, [navigate, isNotificationWindow])
+
   // 解锁后显示暂存的更新弹窗
   useEffect(() => {
     if (!isLocked && updateInfo?.hasUpdate && !showUpdateDialog && !isDownloading) {

@@ -27,6 +27,14 @@ export function destroyNotificationWindow() {
   }
   lastNotificationData = null;
 
+  // Linux:关闭通知服务并清理缓存（fire-and-forget，不阻塞退出）
+  if (isLinux && linuxNotificationService) {
+    linuxNotificationService.shutdownLinuxNotificationService().catch((error) => {
+      console.warn("[NotificationWindow] Failed to shutdown Linux notification service:", error);
+    });
+    linuxNotificationService = null;
+  }
+
   if (!notificationWindow || notificationWindow.isDestroyed()) {
     notificationWindow = null;
     return;

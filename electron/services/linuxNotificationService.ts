@@ -1,8 +1,5 @@
-import https from "https";
-import http, { IncomingMessage } from "http";
-import { promises as fs } from "fs";
-import { join } from "path";
-import { app, Notification } from "electron";
+import { Notification } from "electron";
+import { avatarFileCache, AvatarFileCacheService } from "./avatarFileCacheService";
 
 export interface LinuxNotificationData {
   sessionId?: string;
@@ -19,11 +16,6 @@ let notificationCounter = 1;
 const activeNotifications: Map<number, Notification> = new Map();
 const closeTimers: Map<number, NodeJS.Timeout> = new Map();
 
-// 头像缓存：url->localFilePath
-const avatarCache: Map<string, string> = new Map();
-// 缓存目录
-let avatarCacheDir: string | null = null;
-
 function nextNotificationId(): number {
   const id = notificationCounter;
   notificationCounter += 1;
@@ -36,91 +28,6 @@ function clearNotificationState(notificationId: number): void {
   if (timer) {
     clearTimeout(timer);
     closeTimers.delete(notificationId);
-  }
-}
-
-// 确保缓存目录存在
-async function ensureCacheDir(): Promise<string> {
-  if (!avatarCacheDir) {
-    avatarCacheDir = join(app.getPath("temp"), "weflow-avatars");
-    try {
-      await fs.mkdir(avatarCacheDir, { recursive: true });
-    } catch (error) {
-      console.error(
-        "[LinuxNotification] Failed to create avatar cache dir:",
-        error,
-      );
-    }
-  }
-  return avatarCacheDir;
-}
-
-// 下载头像到本地临时文件
-async function downloadAvatarToLocal(url: string): Promise<string | null> {
-  // 检查缓存
-  if (avatarCache.has(url)) {
-    return avatarCache.get(url) || null;
-  }
-
-  try {
-    const cacheDir = await ensureCacheDir();
-    // 生成唯一文件名
-    const fileName = `avatar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.png`;
-    const localPath = join(cacheDir, fileName);
-
-    await new Promise<void>((resolve, reject) => {
-      // 微信 CDN 需要特殊的请求头才能下载图片
-      const options = {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090719) XWEB/8351",
-          Referer: "https://servicewechat.com/",
-          Accept:
-            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Accept-Language": "zh-CN,zh;q=0.9",
-          Connection: "keep-alive",
-        },
-      };
-
-      const callback = (res: IncomingMessage) => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`HTTP ${res.statusCode}`));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", async () => {
-          try {
-            const buffer = Buffer.concat(chunks);
-            await fs.writeFile(localPath, buffer);
-            avatarCache.set(url, localPath);
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        });
-        res.on("error", reject);
-      };
-
-      const req = url.startsWith("https")
-        ? https.get(url, options, callback)
-        : http.get(url, options, callback);
-
-      req.on("error", reject);
-      req.setTimeout(10000, () => {
-        req.destroy();
-        reject(new Error("Download timeout"));
-      });
-    });
-
-    console.log(
-      `[LinuxNotification] Avatar downloaded: ${url} -> ${localPath}`,
-    );
-    return localPath;
-  } catch (error) {
-    console.error("[LinuxNotification] Failed to download avatar:", error);
-    return null;
   }
 }
 
@@ -149,7 +56,7 @@ export async function showLinuxNotification(
   try {
     let iconPath: string | undefined;
     if (data.avatarUrl) {
-      iconPath = (await downloadAvatarToLocal(data.avatarUrl)) || undefined;
+      iconPath = (await avatarFileCache.getAvatarPath(data.avatarUrl)) || undefined;
     }
 
     const notification = new Notification({
@@ -247,4 +154,21 @@ export async function initLinuxNotificationService(): Promise<void> {
 
   const caps = await getCapabilities();
   console.log("[LinuxNotification] Service initialized with native API:", caps);
+}
+
+export async function shutdownLinuxNotificationService(): Promise<void> {
+  // 清理所有活动的通知
+  for (const [id, notification] of activeNotifications) {
+    try {
+      notification.close();
+    } catch {}
+    clearNotificationState(id);
+  }
+
+  // 清理头像文件缓存
+  try {
+    await avatarFileCache.clearCache();
+  } catch {}
+
+  console.log("[LinuxNotification] Service shutdown complete");
 }

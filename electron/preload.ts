@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShow: (callback: (event: any, data: any) => void) => {
       ipcRenderer.on('notification:show', callback)
       return () => ipcRenderer.removeAllListeners('notification:show')
+    }, // 监听原本发送出来的navigate-to-session事件，跳转到具体的会话
+    onNavigateToSession: (callback: (sessionId: string) => void) => {
+      const listener = (_: any, sessionId: string) => callback(sessionId)
+      ipcRenderer.on('navigate-to-session', listener)
+      return () => ipcRenderer.removeListener('navigate-to-session', listener)
     }
   },
 

@@ -78,6 +78,7 @@ export interface ElectronAPI {
     ready: () => void
     resize: (width: number, height: number) => void
     onShow: (callback: (event: any, data: any) => void) => () => void
+    onNavigateToSession: (callback: (sessionId: string) => void) => () => void
   }
   log: {
     getPath: () => Promise<string>
