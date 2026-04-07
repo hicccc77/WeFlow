@@ -676,41 +676,53 @@ export class ImageDecryptService {
       return null
     }
 
-    // 如果要求高清图但 hardlink 没找到，也不要搜索了（搜索太慢）
-    if (!allowThumbnail) {
-      return null
-    }
+    const searchNames = Array.from(
+      new Set([imageDatName, imageMd5].map((item) => String(item || '').trim()).filter(Boolean))
+    )
+    if (searchNames.length === 0) return null
 
-    if (!imageDatName) return null
     if (!skipResolvedCache) {
-      const cached = this.resolvedCache.get(imageDatName)
-      if (cached && existsSync(cached)) {
-        const preferred = this.getPreferredDatVariantPath(cached, allowThumbnail)
-        if (allowThumbnail || !this.isThumbnailPath(preferred)) return preferred
-        // 缓存的是缩略图，尝试找高清图
-        const hdPath = this.findHdVariantInSameDir(preferred)
-        if (hdPath) return hdPath
+      for (const searchName of searchNames) {
+        const cached = this.resolvedCache.get(searchName)
+        if (cached && existsSync(cached)) {
+          const preferred = this.getPreferredDatVariantPath(cached, allowThumbnail)
+          if (allowThumbnail || !this.isThumbnailPath(preferred)) return preferred
+          // 缓存的是缩略图，尝试找高清图
+          const hdPath = this.findHdVariantInSameDir(preferred)
+          if (hdPath) return hdPath
+        }
       }
     }
 
-    const datPath = await this.searchDatFile(accountDir, imageDatName, allowThumbnail)
-    if (datPath) {
-      this.logInfo('[ImageDecrypt] searchDatFile hit', { imageDatName, path: datPath })
-      this.resolvedCache.set(imageDatName, datPath)
-      this.cacheDatPath(accountDir, imageDatName, datPath)
-      return datPath
-    }
-    const normalized = this.normalizeDatBase(imageDatName)
-    if (normalized !== imageDatName.toLowerCase()) {
-      const normalizedPath = await this.searchDatFile(accountDir, normalized, allowThumbnail)
-      if (normalizedPath) {
-        this.logInfo('[ImageDecrypt] searchDatFile hit (normalized)', { imageDatName, normalized, path: normalizedPath })
-        this.resolvedCache.set(imageDatName, normalizedPath)
-        this.cacheDatPath(accountDir, imageDatName, normalizedPath)
-        return normalizedPath
+    for (const searchName of searchNames) {
+      const datPath = await this.searchDatFile(accountDir, searchName, allowThumbnail)
+      if (datPath) {
+        this.logInfo('[ImageDecrypt] searchDatFile hit', { imageDatName, searchName, path: datPath })
+        if (imageDatName) this.resolvedCache.set(imageDatName, datPath)
+        if (imageMd5) this.resolvedCache.set(imageMd5, datPath)
+        this.cacheDatPath(accountDir, searchName, datPath)
+        if (imageDatName && imageDatName !== searchName) this.cacheDatPath(accountDir, imageDatName, datPath)
+        if (imageMd5 && imageMd5 !== searchName) this.cacheDatPath(accountDir, imageMd5, datPath)
+        return datPath
       }
     }
-    this.logInfo('[ImageDecrypt] resolveDatPath miss', { imageDatName, normalized })
+
+    for (const searchName of searchNames) {
+      const normalized = this.normalizeDatBase(searchName)
+      if (normalized !== searchName.toLowerCase()) {
+        const normalizedPath = await this.searchDatFile(accountDir, normalized, allowThumbnail)
+        if (normalizedPath) {
+          this.logInfo('[ImageDecrypt] searchDatFile hit (normalized)', { imageDatName, searchName, normalized, path: normalizedPath })
+          if (imageDatName) this.resolvedCache.set(imageDatName, normalizedPath)
+          if (imageMd5) this.resolvedCache.set(imageMd5, normalizedPath)
+          this.cacheDatPath(accountDir, searchName, normalizedPath)
+          if (imageDatName && imageDatName !== searchName) this.cacheDatPath(accountDir, imageDatName, normalizedPath)
+          if (imageMd5 && imageMd5 !== searchName) this.cacheDatPath(accountDir, imageMd5, normalizedPath)
+          return normalizedPath
+        }
+      }
+    }
+    this.logInfo('[ImageDecrypt] resolveDatPath miss', { imageDatName, imageMd5, searchNames })
     return null
   }
 
@@ -1045,7 +1057,7 @@ export class ImageDecryptService {
 
   private stripDatVariantSuffix(base: string): string {
     const lower = base.toLowerCase()
-    const suffixes = ['_thumb', '.thumb', '_hd', '.hd', '_h', '.h', '_t', '.t', '_c', '.c']
+    const suffixes = ['_thumb', '.thumb', '_hd', '.hd', '_h', '.h', '_b', '.b', '_w', '.w', '_t', '.t', '_c', '.c']
     for (const suffix of suffixes) {
       if (lower.endsWith(suffix)) {
         return lower.slice(0, -suffix.length)
@@ -1061,8 +1073,10 @@ export class ImageDecryptService {
     const lower = name.toLowerCase()
     const baseLower = lower.endsWith('.dat') || lower.endsWith('.jpg') ? lower.slice(0, -4) : lower
     if (baseLower.endsWith('_h') || baseLower.endsWith('.h')) return 600
+    if (baseLower.endsWith('_hd') || baseLower.endsWith('.hd')) return 550
+    if (baseLower.endsWith('_b') || baseLower.endsWith('.b')) return 520
+    if (baseLower.endsWith('_w') || baseLower.endsWith('.w')) return 510
     if (!this.hasXVariant(baseLower)) return 500
-    if (baseLower.endsWith('_hd') || baseLower.endsWith('.hd')) return 450
     if (baseLower.endsWith('_c') || baseLower.endsWith('.c')) return 400
     if (this.isThumbnailDat(lower)) return 100
     return 350
@@ -1073,9 +1087,13 @@ export class ImageDecryptService {
     const names = [
       `${baseName}_h.dat`,
       `${baseName}.h.dat`,
-      `${baseName}.dat`,
       `${baseName}_hd.dat`,
       `${baseName}.hd.dat`,
+      `${baseName}_b.dat`,
+      `${baseName}.b.dat`,
+      `${baseName}_w.dat`,
+      `${baseName}.w.dat`,
+      `${baseName}.dat`,
       `${baseName}_c.dat`,
       `${baseName}.c.dat`
     ]

@@ -20,7 +20,7 @@ function looksLikeMd5(value: string): boolean {
 
 function stripDatVariantSuffix(base: string): string {
   const lower = base.toLowerCase()
-  const suffixes = ['_thumb', '.thumb', '_hd', '.hd', '_h', '.h', '_t', '.t', '_c', '.c']
+  const suffixes = ['_thumb', '.thumb', '_hd', '.hd', '_h', '.h', '_b', '.b', '_w', '.w', '_t', '.t', '_c', '.c']
   for (const suffix of suffixes) {
     if (lower.endsWith(suffix)) {
       return lower.slice(0, -suffix.length)
@@ -71,8 +71,10 @@ function scoreDatName(fileName: string): number {
   const lower = fileName.toLowerCase()
   const baseLower = lower.endsWith('.dat') ? lower.slice(0, -4) : lower
   if (baseLower.endsWith('_h') || baseLower.endsWith('.h')) return 600
+  if (baseLower.endsWith('_hd') || baseLower.endsWith('.hd')) return 550
+  if (baseLower.endsWith('_b') || baseLower.endsWith('.b')) return 520
+  if (baseLower.endsWith('_w') || baseLower.endsWith('.w')) return 510
   if (!hasXVariant(baseLower)) return 500
-  if (baseLower.endsWith('_hd') || baseLower.endsWith('.hd')) return 450
   if (baseLower.endsWith('_c') || baseLower.endsWith('.c')) return 400
   if (isThumbnailDat(lower)) return 100
   return 350

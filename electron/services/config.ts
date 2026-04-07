@@ -69,10 +69,34 @@ interface ConfigSchema {
   quoteLayout: 'quote-top' | 'quote-bottom'
   wordCloudExcludeWords: string[]
   exportWriteLayout: 'A' | 'B' | 'C'
+
+  // AI 见解
+  aiInsightEnabled: boolean
+  aiInsightApiBaseUrl: string
+  aiInsightApiKey: string
+  aiInsightApiModel: string
+  aiInsightSilenceDays: number
+  aiInsightAllowContext: boolean
+  aiInsightWhitelistEnabled: boolean
+  aiInsightWhitelist: string[]
+  /** 活跃分析冷却时间（分钟），0 表示无冷却 */
+  aiInsightCooldownMinutes: number
+  /** 沉默联系人扫描间隔（小时） */
+  aiInsightScanIntervalHours: number
+  /** 发送上下文时的最大消息条数 */
+  aiInsightContextCount: number
+  /** 自定义 system prompt，空字符串表示使用内置默认值 */
+  aiInsightSystemPrompt: string
+  /** 是否启用 Telegram 推送 */
+  aiInsightTelegramEnabled: boolean
+  /** Telegram Bot Token */
+  aiInsightTelegramToken: string
+  /** Telegram 接收 Chat ID，逗号分隔，支持多个 */
+  aiInsightTelegramChatIds: string
 }
 
 // 需要 safeStorage 加密的字段（普通模式）
-const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken'])
+const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken', 'aiInsightApiKey'])
 const ENCRYPTED_BOOL_KEYS: Set<string> = new Set(['authEnabled', 'authUseHello'])
 const ENCRYPTED_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 
@@ -142,7 +166,22 @@ export class ConfigService {
       windowCloseBehavior: 'ask',
       quoteLayout: 'quote-top',
       wordCloudExcludeWords: [],
-      exportWriteLayout: 'A'
+      exportWriteLayout: 'A',
+      aiInsightEnabled: false,
+      aiInsightApiBaseUrl: '',
+      aiInsightApiKey: '',
+      aiInsightApiModel: 'gpt-4o-mini',
+      aiInsightSilenceDays: 3,
+      aiInsightAllowContext: false,
+      aiInsightWhitelistEnabled: false,
+      aiInsightWhitelist: [],
+      aiInsightCooldownMinutes: 120,
+      aiInsightScanIntervalHours: 4,
+      aiInsightContextCount: 40,
+      aiInsightSystemPrompt: '',
+      aiInsightTelegramEnabled: false,
+      aiInsightTelegramToken: '',
+      aiInsightTelegramChatIds: ''
     }
 
     const storeOptions: any = {
@@ -690,7 +729,7 @@ export class ConfigService {
   // === 工具方法 ===
 
   /**
-   * 获取当前 wxid 对应的图片密钥，优先从 wxidConfigs 中取，找不到则回退到全局配置
+   * 获取当前 wxid 对应的图片密钥，优先从 wxidConfigs 中取，找不到则回退到全局��置
    */
   getImageKeysForCurrentWxid(): { xorKey: unknown; aesKey: string } {
     const wxid = this.get('myWxid')

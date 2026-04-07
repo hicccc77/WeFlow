@@ -1,5 +1,8 @@
 name: Security Scan
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   schedule:
     - cron: '0 2 * * *'  # 每天 UTC 02:00
@@ -24,15 +27,15 @@ jobs:
 
     steps:
       - name: Checkout ${{ matrix.branch }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ matrix.branch }}
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm' # 使用 npm 缓存加速
 
       - name: Install dependencies
@@ -71,9 +74,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
 
       - name: Run npm audit on all branches
         run: |

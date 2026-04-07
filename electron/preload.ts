@@ -503,5 +503,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (port?: number, host?: string) => ipcRenderer.invoke('http:start', port, host),
     stop: () => ipcRenderer.invoke('http:stop'),
     status: () => ipcRenderer.invoke('http:status')
+  },
+
+  // AI 见解
+  insight: {
+    testConnection: () => ipcRenderer.invoke('insight:testConnection'),
+    getTodayStats: () => ipcRenderer.invoke('insight:getTodayStats'),
+    triggerTest: () => ipcRenderer.invoke('insight:triggerTest')
   }
 })

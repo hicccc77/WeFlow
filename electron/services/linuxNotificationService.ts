@@ -1,6 +1,7 @@
 import { Notification } from "electron";
 import { avatarFileCache, AvatarFileCacheService } from "./avatarFileCacheService";
 
+
 export interface LinuxNotificationData {
   sessionId?: string;
   title: string;

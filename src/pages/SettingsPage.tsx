@@ -10,12 +10,13 @@ import {
   Eye, EyeOff, FolderSearch, FolderOpen, Search, Copy,
   RotateCcw, Trash2, Plug, Check, Sun, Moon, Monitor,
   Palette, Database, HardDrive, Info, RefreshCw, ChevronDown, Download, Mic,
-  ShieldCheck, Fingerprint, Lock, KeyRound, Bell, Globe, BarChart2, X, UserRound
+  ShieldCheck, Fingerprint, Lock, KeyRound, Bell, Globe, BarChart2, X, UserRound,
+  Sparkles, Loader2, CheckCircle2, XCircle
 } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import './SettingsPage.scss'
 
-type SettingsTab = 'appearance' | 'notification' | 'antiRevoke' | 'database' | 'models' | 'cache' | 'api' | 'updates' | 'security' | 'about' | 'analytics'
+type SettingsTab = 'appearance' | 'notification' | 'antiRevoke' | 'database' | 'models' | 'cache' | 'api' | 'updates' | 'security' | 'about' | 'analytics' | 'insight'
 
 const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'appearance', label: '外观', icon: Palette },
@@ -26,6 +27,7 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'cache', label: '缓存', icon: HardDrive },
   { id: 'api', label: 'API 服务', icon: Globe },
   { id: 'analytics', label: '分析', icon: BarChart2 },
+  { id: 'insight', label: 'AI 见解', icon: Sparkles },
   { id: 'security', label: '安全', icon: ShieldCheck },
   { id: 'updates', label: '版本更新', icon: RefreshCw },
   { id: 'about', label: '关于', icon: Info }
@@ -123,7 +125,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
     setHttpApiToken(token)
     await configService.setHttpApiToken(token)
-    showMessage('已生成并保存新的 Access Token', true)
+    showMessage('已生成��保存新的 Access Token', true)
   }
 
   const clearApiToken = async () => {
@@ -212,6 +214,29 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [antiRevokeSummary, setAntiRevokeSummary] = useState<{ action: 'refresh' | 'install' | 'uninstall'; success: number; failed: number } | null>(null)
 
   const isClearingCache = isClearingAnalyticsCache || isClearingImageCache || isClearingAllCache
+
+  // AI 见解 state
+  const [aiInsightEnabled, setAiInsightEnabled] = useState(false)
+  const [aiInsightApiBaseUrl, setAiInsightApiBaseUrl] = useState('')
+  const [aiInsightApiKey, setAiInsightApiKey] = useState('')
+  const [aiInsightApiModel, setAiInsightApiModel] = useState('gpt-4o-mini')
+  const [aiInsightSilenceDays, setAiInsightSilenceDays] = useState(3)
+  const [aiInsightAllowContext, setAiInsightAllowContext] = useState(false)
+  const [isTestingInsight, setIsTestingInsight] = useState(false)
+  const [insightTestResult, setInsightTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [showInsightApiKey, setShowInsightApiKey] = useState(false)
+  const [isTriggeringInsightTest, setIsTriggeringInsightTest] = useState(false)
+  const [insightTriggerResult, setInsightTriggerResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [aiInsightWhitelistEnabled, setAiInsightWhitelistEnabled] = useState(false)
+  const [aiInsightWhitelist, setAiInsightWhitelist] = useState<Set<string>>(new Set())
+  const [insightWhitelistSearch, setInsightWhitelistSearch] = useState('')
+  const [aiInsightCooldownMinutes, setAiInsightCooldownMinutes] = useState(120)
+  const [aiInsightScanIntervalHours, setAiInsightScanIntervalHours] = useState(4)
+  const [aiInsightContextCount, setAiInsightContextCount] = useState(40)
+  const [aiInsightSystemPrompt, setAiInsightSystemPrompt] = useState('')
+  const [aiInsightTelegramEnabled, setAiInsightTelegramEnabled] = useState(false)
+  const [aiInsightTelegramToken, setAiInsightTelegramToken] = useState('')
+  const [aiInsightTelegramChatIds, setAiInsightTelegramChatIds] = useState('')
 
   const [isWayland, setIsWayland] = useState(false)
   useEffect(() => {
@@ -438,6 +463,37 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
       if (savedWhisperModelDir) setWhisperModelDir(savedWhisperModelDir)
 
+      // 加载 AI 见解配置
+      const savedAiInsightEnabled = await configService.getAiInsightEnabled()
+      const savedAiInsightApiBaseUrl = await configService.getAiInsightApiBaseUrl()
+      const savedAiInsightApiKey = await configService.getAiInsightApiKey()
+      const savedAiInsightApiModel = await configService.getAiInsightApiModel()
+      const savedAiInsightSilenceDays = await configService.getAiInsightSilenceDays()
+  const savedAiInsightAllowContext = await configService.getAiInsightAllowContext()
+  const savedAiInsightWhitelistEnabled = await configService.getAiInsightWhitelistEnabled()
+  const savedAiInsightWhitelist = await configService.getAiInsightWhitelist()
+  const savedAiInsightCooldownMinutes = await configService.getAiInsightCooldownMinutes()
+  const savedAiInsightScanIntervalHours = await configService.getAiInsightScanIntervalHours()
+  const savedAiInsightContextCount = await configService.getAiInsightContextCount()
+  const savedAiInsightSystemPrompt = await configService.getAiInsightSystemPrompt()
+  const savedAiInsightTelegramEnabled = await configService.getAiInsightTelegramEnabled()
+  const savedAiInsightTelegramToken = await configService.getAiInsightTelegramToken()
+  const savedAiInsightTelegramChatIds = await configService.getAiInsightTelegramChatIds()
+  setAiInsightEnabled(savedAiInsightEnabled)
+  setAiInsightApiBaseUrl(savedAiInsightApiBaseUrl)
+  setAiInsightApiKey(savedAiInsightApiKey)
+  setAiInsightApiModel(savedAiInsightApiModel)
+  setAiInsightSilenceDays(savedAiInsightSilenceDays)
+  setAiInsightAllowContext(savedAiInsightAllowContext)
+  setAiInsightWhitelistEnabled(savedAiInsightWhitelistEnabled)
+  setAiInsightWhitelist(new Set(savedAiInsightWhitelist))
+  setAiInsightCooldownMinutes(savedAiInsightCooldownMinutes)
+  setAiInsightScanIntervalHours(savedAiInsightScanIntervalHours)
+  setAiInsightContextCount(savedAiInsightContextCount)
+  setAiInsightSystemPrompt(savedAiInsightSystemPrompt)
+  setAiInsightTelegramEnabled(savedAiInsightTelegramEnabled)
+  setAiInsightTelegramToken(savedAiInsightTelegramToken)
+  setAiInsightTelegramChatIds(savedAiInsightTelegramChatIds)
 
     } catch (e: any) {
       console.error('加载配置失败:', e)
@@ -579,7 +635,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       showMessage(`已切换到${channelLabel}更新渠道，正在检查更新`, true)
       await handleCheckUpdate()
     } catch (e: any) {
-      showMessage(`切换更新渠道失败: ${e}`, false)
+      showMessage(`切换更新渠道��败: ${e}`, false)
     }
   }
 
@@ -820,16 +876,19 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   }
 
   useEffect(() => {
-    if (activeTab !== 'antiRevoke') return
+    if (activeTab !== 'antiRevoke' && activeTab !== 'insight') return
     let canceled = false
     ;(async () => {
       try {
+        // 两个 Tab 都需要会话列表；antiRevoke 还需要额外检查防撤回状态
         const sessionIds = await ensureAntiRevokeSessionsLoaded()
         if (canceled) return
-        await handleRefreshAntiRevokeStatus(sessionIds)
+        if (activeTab === 'antiRevoke') {
+          await handleRefreshAntiRevokeStatus(sessionIds)
+        }
       } catch (e: any) {
         if (!canceled) {
-          showMessage(`加载防撤回会话失败: ${e?.message || String(e)}`, false)
+          showMessage(`加载会话失败: ${e?.message || String(e)}`, false)
         }
       }
     })()
@@ -1171,7 +1230,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       if (result.success && result.aesKey) {
         if (typeof result.xorKey === 'number') setImageXorKey(`0x${result.xorKey.toString(16).toUpperCase().padStart(2, '0')}`)
         setImageAesKey(result.aesKey)
-        setImageKeyStatus('已获取图片密钥')
+        setImageKeyStatus('已获取图片��钥')
         showMessage('已自动获取图片密钥', true)
         const newXorKey = typeof result.xorKey === 'number' ? result.xorKey : 0
         const newAesKey = result.aesKey
@@ -1613,7 +1672,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       <div className="tab-content">
         <div className="form-group">
           <label>新消息通知</label>
-          <span className="form-hint">开启后，收到新消息时将显示桌面弹窗通知</span>
+          <span className="form-hint">开启后，收���新消息时将显示桌面弹窗通知</span>
           <div className="log-toggle-line">
             <span className="log-status">{notificationEnabled ? '已开启' : '已关闭'}</span>
             <label className="switch" htmlFor="notification-enabled-toggle">
@@ -2451,6 +2510,627 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     showMessage(enabled ? '已开启主动推送' : '已关闭主动推送', true)
   }
 
+  const handleTestInsightConnection = async () => {
+    setIsTestingInsight(true)
+    setInsightTestResult(null)
+    try {
+      const result = await (window.electronAPI as any).insight.testConnection()
+      setInsightTestResult(result)
+    } catch (e: any) {
+      setInsightTestResult({ success: false, message: `调用失败：${e?.message || String(e)}` })
+    } finally {
+      setIsTestingInsight(false)
+    }
+  }
+
+  const renderInsightTab = () => (
+    <div className="tab-content">
+      {/* 总开关 */}
+      <div className="form-group">
+        <label>AI 见解</label>
+        <span className="form-hint">
+          开启后，AI 会在后台默默分析聊天数据，在合适的时机通过右下角弹窗送出一针见血的见解——例如提醒你久未联系的朋友，或对你刚刚的对话提出回复建议。默认关闭，所有分析均在本地发起请求，不经过任何第三方中间服务。
+        </span>
+        <div className="log-toggle-line">
+          <span className="log-status">{aiInsightEnabled ? '已开启' : '已关闭'}</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={aiInsightEnabled}
+              onChange={async (e) => {
+                const val = e.target.checked
+                setAiInsightEnabled(val)
+                await configService.setAiInsightEnabled(val)
+                showMessage(val ? 'AI 见解已开启' : 'AI 见解已关闭', true)
+              }}
+            />
+            <span className="switch-slider" />
+          </label>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      {/* API 配置 */}
+      <div className="form-group">
+        <label>API 地址</label>
+        <span className="form-hint">
+          填写 OpenAI 兼容接口的 <strong>Base URL</strong>，末尾<strong>不要加斜杠</strong>。
+          程序会自动拼接 <code>/chat/completions</code>。
+          <br />
+          示例：<code>https://api.ohmygpt.com/v1</code> 或 <code>https://api.openai.com/v1</code>
+        </span>
+        <input
+          type="text"
+          className="field-input"
+          value={aiInsightApiBaseUrl}
+          placeholder="https://api.ohmygpt.com/v1"
+          onChange={(e) => {
+            const val = e.target.value
+            setAiInsightApiBaseUrl(val)
+            scheduleConfigSave('aiInsightApiBaseUrl', () => configService.setAiInsightApiBaseUrl(val))
+          }}
+          style={{ fontFamily: 'monospace' }}
+        />
+      </div>
+
+      <div className="form-group">
+        <label>API Key</label>
+        <span className="form-hint">
+          你的 API Key，保存后经过系统加密存储，不会明文写入磁盘。
+        </span>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <input
+            type={showInsightApiKey ? 'text' : 'password'}
+            className="field-input"
+            value={aiInsightApiKey}
+            placeholder="sk-..."
+            onChange={(e) => {
+              const val = e.target.value
+              setAiInsightApiKey(val)
+              scheduleConfigSave('aiInsightApiKey', () => configService.setAiInsightApiKey(val))
+            }}
+            style={{ flex: 1, fontFamily: 'monospace' }}
+          />
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowInsightApiKey(!showInsightApiKey)}
+            title={showInsightApiKey ? '隐藏' : '显示'}
+          >
+            {showInsightApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+          {aiInsightApiKey && (
+            <button
+              className="btn btn-danger"
+              onClick={async () => {
+                setAiInsightApiKey('')
+                await configService.setAiInsightApiKey('')
+              }}
+              title="清除 Key"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>模型名称</label>
+        <span className="form-hint">
+          填写你的 API 提供商支持的模型名，建议使用综合能力较强的模型以获得有洞察力的见解。
+          <br />
+          常用示例：<code>gpt-4o-mini</code>、<code>gpt-4o</code>、<code>deepseek-chat</code>、<code>claude-3-5-haiku-20241022</code>
+        </span>
+        <input
+          type="text"
+          className="field-input"
+          value={aiInsightApiModel}
+          placeholder="gpt-4o-mini"
+          onChange={(e) => {
+            const val = e.target.value.trim() || 'gpt-4o-mini'
+            setAiInsightApiModel(val)
+            scheduleConfigSave('aiInsightApiModel', () => configService.setAiInsightApiModel(val))
+          }}
+          style={{ width: 260, fontFamily: 'monospace' }}
+        />
+      </div>
+
+      {/* 测试连接 + 触发测试 */}
+      <div className="form-group">
+        <label>调试工具</label>
+        <span className="form-hint">
+          先用"测试 API 连接"确认 Key 和 URL 填写正确，再用"立即触发测试见解"验证完整链路（数据库→API→弹窗）。触发后请留意右下角通知弹窗。
+        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+          {/* 测试 API 连接 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleTestInsightConnection}
+              disabled={isTestingInsight || !aiInsightApiBaseUrl || !aiInsightApiKey}
+            >
+              {isTestingInsight ? (
+                <><Loader2 size={14} style={{ marginRight: 4, animation: 'spin 1s linear infinite' }} />测试中...</>
+              ) : (
+                <>测试 API 连接</>
+              )}
+            </button>
+            {insightTestResult && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: insightTestResult.success ? 'var(--color-success, #22c55e)' : 'var(--color-danger, #ef4444)' }}>
+                {insightTestResult.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                {insightTestResult.message}
+              </span>
+            )}
+          </div>
+          {/* 触发测试见解 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={async () => {
+                setIsTriggeringInsightTest(true)
+                setInsightTriggerResult(null)
+                try {
+                  const result = await (window.electronAPI as any).insight.triggerTest()
+                  setInsightTriggerResult(result)
+                } catch (e: any) {
+                  setInsightTriggerResult({ success: false, message: `调用失败：${e?.message || String(e)}` })
+                } finally {
+                  setIsTriggeringInsightTest(false)
+                }
+              }}
+              disabled={isTriggeringInsightTest || !aiInsightEnabled || !aiInsightApiBaseUrl || !aiInsightApiKey}
+              title={!aiInsightEnabled ? '请先开启 AI 见解总开关' : ''}
+            >
+              {isTriggeringInsightTest ? (
+                <><Loader2 size={14} style={{ marginRight: 4, animation: 'spin 1s linear infinite' }} />触发中...</>
+              ) : (
+                <>立即触发测试见解</>
+              )}
+            </button>
+            {insightTriggerResult && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: insightTriggerResult.success ? 'var(--color-success, #22c55e)' : 'var(--color-danger, #ef4444)' }}>
+                {insightTriggerResult.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                {insightTriggerResult.message}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      {/* 行为配置 */}
+      <div className="form-group">
+        <label>活跃触发冷却期（分钟）</label>
+        <span className="form-hint">
+          有新消息时触发活跃分析的冷却时间。设为 <strong>0</strong> 表示无冷却，每条新消息都可能触发见解（AI 言论自由模式）。建议按需调整，费用自理。
+        </span>
+        <input
+          type="number"
+          className="field-input"
+          value={aiInsightCooldownMinutes}
+          min={0}
+          max={10080}
+          onChange={(e) => {
+            const val = Math.max(0, parseInt(e.target.value, 10) || 0)
+            setAiInsightCooldownMinutes(val)
+            scheduleConfigSave('aiInsightCooldownMinutes', () => configService.setAiInsightCooldownMinutes(val))
+          }}
+          style={{ width: 120 }}
+        />
+        {aiInsightCooldownMinutes === 0 && (
+          <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--color-warning, #f59e0b)' }}>
+            无冷却 — 每次 DB 变更均可触发
+          </span>
+        )}
+      </div>
+
+      <div className="form-group">
+        <label>沉默联系人扫描间隔（小时）</label>
+        <span className="form-hint">
+          多久扫描一次沉默联系人。重启生效。最小 0.1 小时（6 分钟）。
+        </span>
+        <input
+          type="number"
+          className="field-input"
+          value={aiInsightScanIntervalHours}
+          min={0.1}
+          max={168}
+          step={0.5}
+          onChange={(e) => {
+            const val = Math.max(0.1, parseFloat(e.target.value) || 4)
+            setAiInsightScanIntervalHours(val)
+            scheduleConfigSave('aiInsightScanIntervalHours', () => configService.setAiInsightScanIntervalHours(val))
+          }}
+          style={{ width: 120 }}
+        />
+      </div>
+
+      <div className="form-group">
+        <label>沉默联系人阈值（天）</label>
+        <span className="form-hint">
+          与某私聊联系人超过此天数没有消息往来时，触发沉默类见解。
+        </span>
+        <input
+          type="number"
+          className="field-input"
+          value={aiInsightSilenceDays}
+          min={1}
+          max={365}
+          onChange={(e) => {
+            const val = Math.max(1, parseInt(e.target.value, 10) || 3)
+            setAiInsightSilenceDays(val)
+            scheduleConfigSave('aiInsightSilenceDays', () => configService.setAiInsightSilenceDays(val))
+          }}
+          style={{ width: 100 }}
+        />
+      </div>
+
+      <div className="form-group">
+        <label>允许发送近期对话内容用于分析</label>
+        <span className="form-hint">
+          开启后，触发见解时会将该联系人最近 N 条聊天记录发送给 AI，分析质量显著提升。
+          <br />
+          <strong>关闭时</strong>：AI 仅知道统计摘要（沉默天数等），输出质量较低。
+          <br />
+          <strong>开启时</strong>：聊天文本内容（不含图片、语音）会通过你配置的 API 发送给模型提供商。请确认你信任该服务商。
+        </span>
+        <div className="log-toggle-line">
+          <span className="log-status">{aiInsightAllowContext ? '已授权' : '未授权'}</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={aiInsightAllowContext}
+              onChange={async (e) => {
+                const val = e.target.checked
+                setAiInsightAllowContext(val)
+                await configService.setAiInsightAllowContext(val)
+              }}
+            />
+            <span className="switch-slider" />
+          </label>
+        </div>
+      </div>
+
+      {aiInsightAllowContext && (
+        <div className="form-group">
+          <label>发送近期对话条数</label>
+          <span className="form-hint">
+            发送给 AI 的聊天记录最大条数。条数越多分析越准确，token 消耗也越多。
+          </span>
+          <input
+            type="number"
+            className="field-input"
+            value={aiInsightContextCount}
+            min={1}
+            max={200}
+            onChange={(e) => {
+              const val = Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 40))
+              setAiInsightContextCount(val)
+              scheduleConfigSave('aiInsightContextCount', () => configService.setAiInsightContextCount(val))
+            }}
+            style={{ width: 100 }}
+          />
+        </div>
+      )}
+
+      <div className="divider" />
+
+      {/* 自定义 System Prompt */}
+      {(() => {
+        const DEFAULT_SYSTEM_PROMPT = `你是用户的私人关系观察助手，名叫"见解"。你的任务是主动提供有价值的观察和建议。
+
+要求：
+1. 必须给出见解。基于聊天记录分析对方情绪、话题趋势、关系动态，或给出回复建议、聊天话题推荐。
+2. 控制在 80 字以内，直接、具体、一针见血。不要废话。
+3. 输出纯文本，不使用 Markdown。
+4. 只有在完全没有任何可说的内容时（比如对话只有一条"嗯"），才回复"SKIP"。绝大多数情况下你应该输出见解。`
+
+        // 展示值：有自定义内容时显示自定义内容，否则显示默认值（可直接编辑）
+        const displayValue = aiInsightSystemPrompt || DEFAULT_SYSTEM_PROMPT
+
+        return (
+          <div className="form-group">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label style={{ marginBottom: 0 }}>自定义 AI 见解提示词</label>
+              <button
+                className="button-secondary"
+                style={{ fontSize: 12, padding: '3px 10px' }}
+                onClick={async () => {
+                  // 恢复默认：清空自定义值，UI 回到显示默认内容的状态
+                  setAiInsightSystemPrompt('')
+                  await configService.setAiInsightSystemPrompt('')
+                }}
+              >
+                恢复默认
+              </button>
+            </div>
+            <span className="form-hint">
+              当前显示内置默认提示词，可直接编辑修改。修改后立即生效，无需重启。可变的统计信息（触发次数、对话内容）会自动附加在用户消息里，无需在此填写。
+            </span>
+            <textarea
+              className="field-input"
+              rows={8}
+              style={{ width: '100%', resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+              value={displayValue}
+              onChange={(e) => {
+                const val = e.target.value
+                // 如果用户把内容改得和默认值一样，仍存自定义值（不影响功能）
+                setAiInsightSystemPrompt(val)
+                scheduleConfigSave('aiInsightSystemPrompt', () => configService.setAiInsightSystemPrompt(val))
+              }}
+            />
+          </div>
+        )
+      })()}
+
+      <div className="divider" />
+
+      {/* Telegram 推送 */}
+      <div className="form-group">
+        <label>Telegram Bot 推送</label>
+        <span className="form-hint">
+          开启后，见解同时推送到指定 Telegram 用户/群组，方便手机即时收到通知。需要先创建 Bot 并获取 Token（通过 @BotFather），Chat ID 可通过 @userinfobot 获取，多个 ID 用英文逗号分隔。
+        </span>
+        <div className="log-toggle-line">
+          <span className="log-status">{aiInsightTelegramEnabled ? '已启用' : '未启用'}</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={aiInsightTelegramEnabled}
+              onChange={async (e) => {
+                const val = e.target.checked
+                setAiInsightTelegramEnabled(val)
+                await configService.setAiInsightTelegramEnabled(val)
+              }}
+            />
+            <span className="switch-slider" />
+          </label>
+        </div>
+      </div>
+
+      {aiInsightTelegramEnabled && (
+        <>
+          <div className="form-group">
+            <label>Bot Token</label>
+            <input
+              type="password"
+              className="field-input"
+              style={{ width: '100%' }}
+              placeholder="110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+              value={aiInsightTelegramToken}
+              onChange={(e) => {
+                const val = e.target.value
+                setAiInsightTelegramToken(val)
+                scheduleConfigSave('aiInsightTelegramToken', () => configService.setAiInsightTelegramToken(val))
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label>Chat ID（支持英文逗号分隔多个）</label>
+            <input
+              type="text"
+              className="field-input"
+              style={{ width: '100%' }}
+              placeholder="123456789, -987654321"
+              value={aiInsightTelegramChatIds}
+              onChange={(e) => {
+                const val = e.target.value
+                setAiInsightTelegramChatIds(val)
+                scheduleConfigSave('aiInsightTelegramChatIds', () => configService.setAiInsightTelegramChatIds(val))
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      <div className="divider" />
+
+      {/* 对话白名单 */}
+      {(() => {
+        const sortedSessions = [...chatSessions].sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0))
+        const keyword = insightWhitelistSearch.trim().toLowerCase()
+        const filteredSessions = sortedSessions.filter((s) => {
+          const id = s.username?.trim() || ''
+          if (!id || id.endsWith('@chatroom') || id.toLowerCase().includes('placeholder')) return false
+          if (!keyword) return true
+          return (
+            String(s.displayName || '').toLowerCase().includes(keyword) ||
+            id.toLowerCase().includes(keyword)
+          )
+        })
+        const filteredIds = filteredSessions.map((s) => s.username)
+        const selectedCount = aiInsightWhitelist.size
+        const selectedInFilteredCount = filteredIds.filter((id) => aiInsightWhitelist.has(id)).length
+        const allFilteredSelected = filteredIds.length > 0 && selectedInFilteredCount === filteredIds.length
+
+        const toggleSession = (id: string) => {
+          setAiInsightWhitelist((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+          })
+        }
+
+        const saveWhitelist = async (next: Set<string>) => {
+          await configService.setAiInsightWhitelist(Array.from(next))
+        }
+
+        const selectAllFiltered = () => {
+          setAiInsightWhitelist((prev) => {
+            const next = new Set(prev)
+            for (const id of filteredIds) next.add(id)
+            void saveWhitelist(next)
+            return next
+          })
+        }
+
+        const clearSelection = () => {
+          const next = new Set<string>()
+          setAiInsightWhitelist(next)
+          void saveWhitelist(next)
+        }
+
+        return (
+          <div className="anti-revoke-tab">
+            <div className="anti-revoke-hero">
+              <div className="anti-revoke-hero-main">
+                <h3>对话白名单</h3>
+                <p>
+                  开启后，AI 见解仅对勾选的私聊对话生效，未勾选的对话将被完全忽略。关闭时对所有私聊均生效。
+                </p>
+              </div>
+              <div className="anti-revoke-metrics">
+                <div className="anti-revoke-metric is-total">
+                  <span className="label">私聊总数</span>
+                  <span className="value">{filteredIds.length + (keyword ? 0 : 0)}</span>
+                </div>
+                <div className="anti-revoke-metric is-installed">
+                  <span className="label">已选中</span>
+                  <span className="value">{selectedCount}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="log-toggle-line" style={{ marginBottom: 12 }}>
+              <span className="log-status" style={{ fontWeight: 600 }}>
+                {aiInsightWhitelistEnabled ? '白名单已启用（仅对勾选对话生效）' : '白名单未启用（对所有私聊生效）'}
+              </span>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={aiInsightWhitelistEnabled}
+                  onChange={async (e) => {
+                    const val = e.target.checked
+                    setAiInsightWhitelistEnabled(val)
+                    await configService.setAiInsightWhitelistEnabled(val)
+                  }}
+                />
+                <span className="switch-slider" />
+              </label>
+            </div>
+
+            <div className="anti-revoke-control-card">
+              <div className="anti-revoke-toolbar">
+                <div className="filter-search-box anti-revoke-search">
+                  <Search size={14} />
+                  <input
+                    type="text"
+                    placeholder="搜索私聊对话..."
+                    value={insightWhitelistSearch}
+                    onChange={(e) => setInsightWhitelistSearch(e.target.value)}
+                  />
+                </div>
+                <div className="anti-revoke-toolbar-actions">
+                  <div className="anti-revoke-btn-group">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={selectAllFiltered}
+                      disabled={filteredIds.length === 0 || allFilteredSelected}
+                    >
+                      全选
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={clearSelection}
+                      disabled={selectedCount === 0}
+                    >
+                      清空选择
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="anti-revoke-batch-actions">
+                <div className="anti-revoke-selected-count">
+                  <span>已选 <strong>{selectedCount}</strong> 个对话</span>
+                  <span>筛选命中 <strong>{selectedInFilteredCount}</strong> / {filteredIds.length}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="anti-revoke-list">
+              {filteredSessions.length === 0 ? (
+                <div className="anti-revoke-empty">
+                  {insightWhitelistSearch ? '没有匹配的对话' : '暂无私聊对话'}
+                </div>
+              ) : (
+                <>
+                  <div className="anti-revoke-list-header">
+                    <span>对话（{filteredSessions.length}）</span>
+                    <span>状态</span>
+                  </div>
+                  {filteredSessions.map((session) => {
+                    const isSelected = aiInsightWhitelist.has(session.username)
+                    return (
+                      <div
+                        key={session.username}
+                        className={`anti-revoke-row ${isSelected ? 'selected' : ''}`}
+                      >
+                        <label className="anti-revoke-row-main">
+                          <span className="anti-revoke-check">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={async () => {
+                                setAiInsightWhitelist((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(session.username)) next.delete(session.username)
+                                  else next.add(session.username)
+                                  void configService.setAiInsightWhitelist(Array.from(next))
+                                  return next
+                                })
+                              }}
+                            />
+                            <span className="check-indicator" aria-hidden="true">
+                              <Check size={12} />
+                            </span>
+                          </span>
+                          <Avatar
+                            src={session.avatarUrl}
+                            name={session.displayName || session.username}
+                            size={30}
+                          />
+                          <div className="anti-revoke-row-text">
+                            <span className="name">{session.displayName || session.username}</span>
+                          </div>
+                        </label>
+                        <div className="anti-revoke-row-status">
+                          <span className={`status-badge ${isSelected ? 'installed' : 'not-installed'}`}>
+                            <i className="status-dot" aria-hidden="true" />
+                            {isSelected ? '已加入' : '未加入'}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      <div className="divider" />
+
+      {/* 工作原理说明 */}
+      <div className="form-group">
+        <label>工作原理</label>
+        <div className="api-docs">
+          <div className="api-item">
+            <p className="api-desc" style={{ lineHeight: 1.7 }}>
+              <strong>触发方式一：活跃会话分析</strong> — 每当微信数据库变化（即你收到新消息）时，经过 500ms 防抖后，对最近活跃的私聊会话进行分析。<br />
+              <strong>触发方式二：沉默扫描</strong> — 每 4 小时独立扫描一次，对超过阈值天数无消息的联系人发出提醒。<br />
+              <strong>时间观念</strong> — 每次调用时，AI 会收到今天已向该联系人和全局发出过多少次见解，由 AI 自行决定是否需要克制。<br />
+              <strong>隐私</strong> — 所有分析请求均直接从你的电脑发往你填写的 API 地址，不经过任何 WeFlow 服务器。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
   const renderApiTab = () => (
     <div className="tab-content">
       <div className="form-group">
@@ -2552,7 +3232,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               value={`http://${httpApiHost}:${httpApiPort}`}
               readOnly
             />
-            <button className="btn btn-secondary" onClick={handleCopyApiUrl} title="复制">
+            <button className="btn btn-secondary" onClick={handleCopyApiUrl} title="复���">
               <Copy size={16} />
             </button>
           </div>
@@ -2686,7 +3366,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     try {
       const verifyResult = await window.electronAPI.auth.hello('请验证您的身份以开启 Windows Hello')
       if (!verifyResult.success) {
-        showMessage(verifyResult.error || 'Windows Hello 验证失败', false)
+        showMessage(verifyResult.error || 'Windows Hello ��证失败', false)
         return
       }
 
@@ -2918,7 +3598,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                 onClick={handleSetupHello}
                 disabled={!helloAvailable || isSettingHello || !authEnabled || !helloPassword}
               >
-                {isSettingHello ? '设置中...' : '开启与设置'}
+                {isSettingHello ? '���置中...' : '开启与设置'}
               </button>
             )}
           </div>
@@ -2996,7 +3676,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
           <div className="updates-hero-main">
             <span className="updates-chip">当前版本</span>
             <h2>{appVersion || '...'}</h2>
-            <p>{updateInfo?.hasUpdate ? `发现新版本 v${updateInfo.version}` : '当前已是最新版本，可手动检查更新'}</p>
+            <p>{updateInfo?.hasUpdate ? `发现新版本 v${updateInfo.version}` : '当前已是最新版本，可手动检查更���'}</p>
           </div>
           <div className="updates-hero-action">
             {updateInfo?.hasUpdate ? (
@@ -3135,6 +3815,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
             {activeTab === 'models' && renderModelsTab()}
             {activeTab === 'cache' && renderCacheTab()}
             {activeTab === 'api' && renderApiTab()}
+            {activeTab === 'insight' && renderInsightTab()}
             {activeTab === 'updates' && renderUpdatesTab()}
             {activeTab === 'analytics' && renderAnalyticsTab()}
             {activeTab === 'security' && renderSecurityTab()}

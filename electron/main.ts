@@ -30,6 +30,7 @@ import { cloudControlService } from './services/cloudControlService'
 import { destroyNotificationWindow, registerNotificationHandlers, showNotification, setNotificationNavigateHandler } from './windows/notificationWindow'
 import { httpService } from './services/httpService'
 import { messagePushService } from './services/messagePushService'
+import { insightService } from './services/insightService'
 import { bizService } from './services/bizService'
 
 // 配置自动更新
@@ -1619,6 +1620,19 @@ function registerIpcHandlers() {
     }
     void messagePushService.handleConfigChanged(key)
     return result
+  })
+
+  // AI 见解
+  ipcMain.handle('insight:testConnection', async () => {
+    return insightService.testConnection()
+  })
+
+  ipcMain.handle('insight:getTodayStats', async () => {
+    return insightService.getTodayStats()
+  })
+
+  ipcMain.handle('insight:triggerTest', async () => {
+    return insightService.triggerTest()
   })
 
   ipcMain.handle('config:clear', async () => {
@@ -3485,8 +3499,10 @@ app.whenReady().then(async () => {
   registerIpcHandlers()
   chatService.addDbMonitorListener((type, json) => {
     messagePushService.handleDbMonitorChange(type, json)
+    insightService.handleDbMonitorChange(type, json)
   })
   messagePushService.start()
+  insightService.start()
   await delay(200)
 
   // 检查配置状态
@@ -3607,6 +3623,7 @@ app.on('before-quit', async () => {
   if (tray) { try { tray.destroy() } catch {} tray = null }
   // 通知窗使用 hide 而非 close，退出时主动销毁，避免残留窗口阻塞进程退出。
   destroyNotificationWindow()
+  insightService.stop()
   // 兜底：5秒后强制退出，防止某个异步任务卡住导致进程残留
   const forceExitTimer = setTimeout(() => {
     console.warn('[App] Force exit after timeout')
