@@ -8695,6 +8695,28 @@ function MessageBubble({
     appMsgTextCache.set(selector, value)
     return value
   }, [appMsgDoc, appMsgTextCache])
+  const queryPreferredQuotedContent = useCallback((): string => {
+    if (message.quotedContent) return message.quotedContent
+    const candidates = [
+      'refermsg > selectedcontent',
+      'refermsg > selectedtext',
+      'refermsg > selectcontent',
+      'refermsg > selecttext',
+      'refermsg > quotecontent',
+      'refermsg > quotetext',
+      'refermsg > partcontent',
+      'refermsg > parttext',
+      'refermsg > excerpt',
+      'refermsg > summary',
+      'refermsg > preview',
+      'refermsg > content'
+    ]
+    for (const selector of candidates) {
+      const value = queryAppMsgText(selector)
+      if (value) return value
+    }
+    return ''
+  }, [message.quotedContent, queryAppMsgText])
   const appMsgThumbRawCandidate = useMemo(() => (
     message.linkThumb ||
     message.appMsgThumbUrl ||
@@ -8712,7 +8734,7 @@ function MessageBubble({
     queryAppMsgText('refermsg > fromusr'),
     queryAppMsgText('refermsg > chatusr')
   )
-  const quotedContent = message.quotedContent || queryAppMsgText('refermsg > content') || ''
+  const quotedContent = queryPreferredQuotedContent()
   const quotedSenderFallbackName = useMemo(
     () => resolveQuotedSenderFallbackDisplayName(
       session.username,
@@ -9262,7 +9284,7 @@ function MessageBubble({
       // type 57: 引用回复消息，解析 refermsg 渲染为引用样式
       if (xmlType === '57') {
         const replyText = q('title') || cleanedParsedContent || ''
-        const referContent = q('refermsg > content') || ''
+        const referContent = queryPreferredQuotedContent()
         const referType = q('refermsg > type') || ''
 
         // 根据被引用消息类型渲染对应内容
@@ -9385,7 +9407,7 @@ function MessageBubble({
       if (kind === 'quote') {
         // 引用回复消息（appMsgKind='quote'，xmlType=57）
         const replyText = message.linkTitle || q('title') || cleanedParsedContent || ''
-        const referContent = message.quotedContent || q('refermsg > content') || ''
+        const referContent = queryPreferredQuotedContent()
         return (
           renderBubbleWithQuote(
             renderQuotedMessageBlock(renderTextWithEmoji(cleanMessageContent(referContent))),
@@ -9576,7 +9598,7 @@ function MessageBubble({
       // 引用回复消息 (type=57)，防止被误判为链接
       if (appMsgType === '57') {
         const replyText = parsedDoc?.querySelector('title')?.textContent?.trim() || cleanedParsedContent || ''
-        const referContent = parsedDoc?.querySelector('refermsg > content')?.textContent?.trim() || ''
+        const referContent = queryPreferredQuotedContent()
         const referType = parsedDoc?.querySelector('refermsg > type')?.textContent?.trim() || ''
 
         const renderReferContent2 = () => {

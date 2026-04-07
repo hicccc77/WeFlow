@@ -5,6 +5,9 @@ interface ExportWorkerConfig {
   sessionIds: string[]
   outputDir: string
   options: ExportOptions
+  dbPath?: string
+  decryptKey?: string
+  myWxid?: string
   resourcesPath?: string
   userDataPath?: string
   logEnabled?: boolean
@@ -29,6 +32,11 @@ async function run() {
 
   wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
   wcdbService.setLogEnabled(config.logEnabled === true)
+  exportService.setRuntimeConfig({
+    dbPath: config.dbPath,
+    decryptKey: config.decryptKey,
+    myWxid: config.myWxid
+  })
 
   const result = await exportService.exportSessions(
     Array.isArray(config.sessionIds) ? config.sessionIds : [],

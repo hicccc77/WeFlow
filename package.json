@@ -77,7 +77,9 @@
       "lodash": ">=4.17.21",
       "brace-expansion": ">=1.1.11",
       "picomatch": ">=2.3.1",
-      "ajv": ">=8.18.0"
+      "ajv": ">=8.18.0",
+      "ajv-keywords@3>ajv": "^6.12.6",
+      "@develar/schema-utils>ajv": "^6.12.6"
     }
   },
   "build": {

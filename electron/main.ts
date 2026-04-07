@@ -2362,6 +2362,9 @@ function registerIpcHandlers() {
     const cfg = configService || new ConfigService()
     configService = cfg
     const logEnabled = cfg.get('logEnabled')
+    const dbPath = String(cfg.get('dbPath') || '').trim()
+    const decryptKey = String(cfg.get('decryptKey') || '').trim()
+    const myWxid = String(cfg.get('myWxid') || '').trim()
     const resourcesPath = app.isPackaged
       ? join(process.resourcesPath, 'resources')
       : join(app.getAppPath(), 'resources')
@@ -2375,6 +2378,9 @@ function registerIpcHandlers() {
             sessionIds,
             outputDir,
             options,
+            dbPath,
+            decryptKey,
+            myWxid,
             resourcesPath,
             userDataPath,
             logEnabled

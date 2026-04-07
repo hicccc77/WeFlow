@@ -5,6 +5,13 @@ import Store from 'electron-store'
 
 // 加密前缀标记
 const SAFE_PREFIX = 'safe:'  // safeStorage 加密（普通模式）
+const isSafeStorageAvailable = (): boolean => {
+  try {
+    return typeof safeStorage?.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()
+  } catch {
+    return false
+  }
+}
 const LOCK_PREFIX = 'lock:'  // 密码派生密钥加密（锁定模式）
 
 interface ConfigSchema {
@@ -269,7 +276,7 @@ export class ConfigService {
   private safeEncrypt(plaintext: string): string {
     if (!plaintext) return ''
     if (plaintext.startsWith(SAFE_PREFIX)) return plaintext
-    if (!safeStorage.isEncryptionAvailable()) return plaintext
+    if (!isSafeStorageAvailable()) return plaintext
     const encrypted = safeStorage.encryptString(plaintext)
     return SAFE_PREFIX + encrypted.toString('base64')
   }
@@ -277,7 +284,7 @@ export class ConfigService {
   private safeDecrypt(stored: string): string {
     if (!stored) return ''
     if (!stored.startsWith(SAFE_PREFIX)) return stored
-    if (!safeStorage.isEncryptionAvailable()) return ''
+    if (!isSafeStorageAvailable()) return ''
     try {
       const buf = Buffer.from(stored.slice(SAFE_PREFIX.length), 'base64')
       return safeStorage.decryptString(buf)

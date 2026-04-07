@@ -254,6 +254,7 @@ async function parallelLimit<T, R>(
 
 class ExportService {
   private configService: ConfigService
+  private runtimeConfig: { dbPath?: string; decryptKey?: string; myWxid?: string } | null = null
   private contactCache: LRUCache<string, { displayName: string; avatarUrl?: string }>
   private inlineEmojiCache: LRUCache<string, string>
   private htmlStyleCache: string | null = null
@@ -293,6 +294,10 @@ class ExportService {
     const error = new Error('导出任务已停止')
     ;(error as Error & { code?: string }).code = this.STOP_ERROR_CODE
     return error
+  }
+
+  setRuntimeConfig(config: { dbPath?: string; decryptKey?: string; myWxid?: string } | null): void {
+    this.runtimeConfig = config
   }
 
   private normalizeSessionIds(sessionIds: string[]): string[] {
@@ -1316,9 +1321,9 @@ class ExportService {
   }
 
   private async ensureConnected(): Promise<{ success: boolean; cleanedWxid?: string; error?: string }> {
-    const wxid = this.configService.get('myWxid')
-    const dbPath = this.configService.get('dbPath')
-    const decryptKey = this.configService.get('decryptKey')
+    const wxid = String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
+    const dbPath = String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()
+    const decryptKey = String(this.runtimeConfig?.decryptKey || this.configService.get('decryptKey') || '').trim()
     if (!wxid) return { success: false, error: '请先在设置页面配置微信ID' }
     if (!dbPath) return { success: false, error: '请先在设置页面配置数据库路径' }
     if (!decryptKey) return { success: false, error: '请先在设置页面配置解密密钥' }
@@ -2254,7 +2259,7 @@ class ExportService {
       const referMsgXml = normalized.substring(referMsgStart, referMsgEnd + 11)
       const quoteInfo = this.parseQuoteMessage(normalized)
       const replyText = this.stripSenderPrefix(this.extractXmlValue(normalized, 'title') || '')
-      const quotedPreview = this.formatQuotedReferencePreview(
+      const quotedPreview = quoteInfo.content || this.formatQuotedReferencePreview(
         this.extractXmlValue(referMsgXml, 'content'),
         this.extractXmlValue(referMsgXml, 'type')
       )
@@ -2960,7 +2965,7 @@ class ExportService {
 
       switch (referType) {
         case '1':
-          displayContent = this.sanitizeQuotedContent(referContent)
+          displayContent = this.extractPreferredQuotedText(referMsgXml)
           break
         case '3':
           displayContent = '[图片]'
@@ -2999,6 +3004,76 @@ class ExportService {
     } catch {
       return {}
     }
+  }
+
+  private extractPreferredQuotedText(referMsgXml: string): string {
+    if (!referMsgXml) return ''
+
+    const sources = [this.decodeHtmlEntities(referMsgXml)]
+    const rawMsgSource = this.extractXmlValue(referMsgXml, 'msgsource')
+    if (rawMsgSource) {
+      const decodedMsgSource = this.decodeHtmlEntities(rawMsgSource)
+      if (decodedMsgSource) {
+        sources.push(decodedMsgSource)
+      }
+    }
+
+    const fullContent = this.sanitizeQuotedContent(this.extractXmlValue(sources[0] || referMsgXml, 'content'))
+    const partialText = this.extractPartialQuotedText(sources[0] || referMsgXml, fullContent)
+    if (partialText) return partialText
+
+    const candidateTags = [
+      'selectedcontent',
+      'selectedtext',
+      'selectcontent',
+      'selecttext',
+      'quotecontent',
+      'quotetext',
+      'partcontent',
+      'parttext',
+      'excerpt',
+      'summary',
+      'preview'
+    ]
+
+    for (const source of sources) {
+      for (const tag of candidateTags) {
+        const value = this.sanitizeQuotedContent(this.extractXmlValue(source, tag))
+        if (value) return value
+      }
+    }
+
+    return fullContent
+  }
+
+  private extractPartialQuotedText(xml: string, fullContent: string): string {
+    if (!xml || !fullContent) return ''
+
+    const startChar = this.extractXmlValue(xml, 'start')
+    const endChar = this.extractXmlValue(xml, 'end')
+    const startIndexRaw = this.extractXmlValue(xml, 'startindex')
+    const endIndexRaw = this.extractXmlValue(xml, 'endindex')
+    const startIndex = Number.parseInt(startIndexRaw, 10)
+    const endIndex = Number.parseInt(endIndexRaw, 10)
+
+    if (startChar && endChar) {
+      const startPos = fullContent.indexOf(startChar)
+      if (startPos !== -1) {
+        const endPos = fullContent.indexOf(endChar, startPos + startChar.length - 1)
+        if (endPos !== -1 && endPos >= startPos) {
+          const sliced = fullContent.slice(startPos, endPos + endChar.length).trim()
+          if (sliced) return sliced
+        }
+      }
+    }
+
+    if (Number.isFinite(startIndex) && Number.isFinite(endIndex) && endIndex >= startIndex) {
+      const chars = Array.from(fullContent)
+      const sliced = chars.slice(startIndex, endIndex + 1).join('').trim()
+      if (sliced) return sliced
+    }
+
+    return ''
   }
 
   private extractChatLabReplyToMessageId(content: string): string | undefined {

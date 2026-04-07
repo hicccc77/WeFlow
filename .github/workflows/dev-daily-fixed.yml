@@ -55,6 +55,8 @@ jobs:
             gh release delete "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
           fi
           gh release create "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" --title "Daily Dev Build" --notes "开发版发布页" --prerelease --target "$TARGET_BRANCH"
+          RELEASE_REST_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$FIXED_DEV_TAG" --jq '.id')"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_REST_ID" -f draft=false -f prerelease=true >/dev/null
 
   dev-mac-arm64:
     needs: prepare
@@ -327,4 +329,9 @@ jobs:
           - 如某个平台资源暂未生成，请进入[发布页]($RELEASE_PAGE)查看最新状态
           EOF
 
-          gh release edit "$TAG" --repo "$REPO" --title "Daily Dev Build" --notes-file dev_release_notes.md
+          RELEASE_REST_ID="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id')"
+          jq -n --rawfile body dev_release_notes.md \
+            '{name:"Daily Dev Build", body:$body, draft:false, prerelease:true}' \
+            > release_update_payload.json
+          gh api --method PATCH "repos/$REPO/releases/$RELEASE_REST_ID" --input release_update_payload.json >/dev/null
+          gh release view "$TAG" --repo "$REPO" --json isDraft,isPrerelease,url
