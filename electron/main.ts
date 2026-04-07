@@ -2558,7 +2558,13 @@ function registerIpcHandlers() {
   ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => {
     return imageDecryptService.decryptImage(payload)
   })
-  ipcMain.handle('image:resolveCache', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) => {
+  ipcMain.handle('image:resolveCache', async (_, payload: {
+    sessionId?: string
+    imageMd5?: string
+    imageDatName?: string
+    disableUpdateCheck?: boolean
+    allowCacheIndex?: boolean
+  }) => {
     return imageDecryptService.resolveCachedImage(payload)
   })
   ipcMain.handle(
@@ -2566,13 +2572,14 @@ function registerIpcHandlers() {
     async (
       _,
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { disableUpdateCheck?: boolean }
+      options?: { disableUpdateCheck?: boolean; allowCacheIndex?: boolean }
     ) => {
       const list = Array.isArray(payloads) ? payloads : []
       const rows = await Promise.all(list.map(async (payload) => {
         return imageDecryptService.resolveCachedImage({
           ...payload,
-          disableUpdateCheck: options?.disableUpdateCheck === true
+          disableUpdateCheck: options?.disableUpdateCheck === true,
+          allowCacheIndex: options?.allowCacheIndex !== false
         })
       }))
       return { success: true, rows }
@@ -2583,7 +2590,7 @@ function registerIpcHandlers() {
     async (
       _,
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { allowDecrypt?: boolean }
+      options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => {
     imagePreloadService.enqueue(payloads || [], options)
     return true

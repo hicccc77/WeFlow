@@ -63,6 +63,7 @@ type CachedImagePayload = {
   imageDatName?: string
   preferFilePath?: boolean
   disableUpdateCheck?: boolean
+  allowCacheIndex?: boolean
 }
 
 type DecryptImagePayload = CachedImagePayload & {
@@ -116,7 +117,9 @@ export class ImageDecryptService {
   }
 
   async resolveCachedImage(payload: CachedImagePayload): Promise<DecryptResult & { hasUpdate?: boolean }> {
-    await this.ensureCacheIndexed()
+    if (payload.allowCacheIndex !== false) {
+      await this.ensureCacheIndexed()
+    }
     const cacheKeys = this.getCacheKeys(payload)
     const cacheKey = cacheKeys[0]
     if (!cacheKey) {

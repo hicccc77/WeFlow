@@ -56,6 +56,8 @@ Thumbs.db
 *.aps
 
 wcdb/
+!resources/wcdb/
+!resources/wcdb/**
 xkey/
 server/
 *info

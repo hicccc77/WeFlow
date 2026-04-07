@@ -403,10 +403,16 @@ export interface ElectronAPI {
 
   image: {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => Promise<{ success: boolean; localPath?: string; liveVideoPath?: string; error?: string }>
-    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) => Promise<{ success: boolean; localPath?: string; hasUpdate?: boolean; liveVideoPath?: string; error?: string }>
+    resolveCache: (payload: {
+      sessionId?: string
+      imageMd5?: string
+      imageDatName?: string
+      disableUpdateCheck?: boolean
+      allowCacheIndex?: boolean
+    }) => Promise<{ success: boolean; localPath?: string; hasUpdate?: boolean; liveVideoPath?: string; error?: string }>
     resolveCacheBatch: (
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { disableUpdateCheck?: boolean }
+      options?: { disableUpdateCheck?: boolean; allowCacheIndex?: boolean }
     ) => Promise<{
       success: boolean
       rows?: Array<{ success: boolean; localPath?: string; hasUpdate?: boolean; error?: string }>
@@ -414,7 +420,7 @@ export interface ElectronAPI {
     }>
     preload: (
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { allowDecrypt?: boolean }
+      options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => Promise<boolean>
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => () => void
     onCacheResolved: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string; localPath: string }) => void) => () => void

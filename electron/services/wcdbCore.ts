@@ -121,6 +121,9 @@ export class WcdbCore {
   private videoHardlinkCache: Map<string, { result: { success: boolean; data?: any; error?: string }; updatedAt: number }> = new Map()
   private readonly hardlinkCacheTtlMs = 10 * 60 * 1000
   private readonly hardlinkCacheMaxEntries = 20000
+  private mediaStreamSessionCache: Array<{ sessionId: string; displayName: string; sortTimestamp: number }> | null = null
+  private mediaStreamSessionCacheAt = 0
+  private readonly mediaStreamSessionCacheTtlMs = 12 * 1000
   private logTimer: NodeJS.Timeout | null = null
   private lastLogTail: string | null = null
   private lastResolvedLogPath: string | null = null
@@ -277,7 +280,9 @@ export class WcdbCore {
     const isLinux = process.platform === 'linux'
     const isArm64 = process.arch === 'arm64'
     const libName = isMac ? 'libwcdb_api.dylib' : isLinux ? 'libwcdb_api.so' : 'wcdb_api.dll'
-    const subDir = isMac ? 'macos' : isLinux ? 'linux' : (isArm64 ? 'arm64' : '')
+    const legacySubDir = isMac ? 'macos' : isLinux ? 'linux' : (isArm64 ? 'arm64' : '')
+    const platformDir = isMac ? 'macos' : (isLinux ? 'linux' : 'win32')
+    const archDir = isMac ? 'universal' : (isArm64 ? 'arm64' : 'x64')
 
     const envDllPath = process.env.WCDB_DLL_PATH
     if (envDllPath && envDllPath.length > 0) {
@@ -287,19 +292,32 @@ export class WcdbCore {
     // 基础路径探测
     const isPackaged = typeof process['resourcesPath'] !== 'undefined'
     const resourcesPath = isPackaged ? process.resourcesPath : join(process.cwd(), 'resources')
-
-    const candidates = [
-      // 环境变量指定 resource 目录
-      process.env.WCDB_RESOURCES_PATH ? join(process.env.WCDB_RESOURCES_PATH, subDir, libName) : null,
-      // 显式 setPaths 设置的路径
-      this.resourcesPath ? join(this.resourcesPath, subDir, libName) : null,
-      // resources/macos/libwcdb_api.dylib 或 resources/wcdb_api.dll
-      join(resourcesPath, 'resources', subDir, libName),
-      // resources/libwcdb_api.dylib 或 resources/wcdb_api.dll (扁平结构)
-      join(resourcesPath, subDir, libName),
-      // CWD fallback
-      join(process.cwd(), 'resources', subDir, libName)
+    const roots = [
+      process.env.WCDB_RESOURCES_PATH || null,
+      this.resourcesPath || null,
+      join(resourcesPath, 'resources'),
+      resourcesPath,
+      join(process.cwd(), 'resources')
     ].filter(Boolean) as string[]
+
+    const normalizedArch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    const relativeCandidates = [
+      join('wcdb', platformDir, archDir, libName),
+      join('wcdb', platformDir, normalizedArch, libName),
+      join('wcdb', platformDir, 'x64', libName),
+      join('wcdb', platformDir, 'universal', libName),
+      join('wcdb', platformDir, libName)
+    ]
+
+    const candidates: string[] = []
+    for (const root of roots) {
+      for (const relativePath of relativeCandidates) {
+        candidates.push(join(root, relativePath))
+      }
+      // 兼容旧目录：resources/macos/libwcdb_api.dylib 或 resources/wcdb_api.dll
+      candidates.push(join(root, legacySubDir, libName))
+      candidates.push(join(root, libName))
+    }
 
     for (const path of candidates) {
       if (existsSync(path)) return path
@@ -1465,6 +1483,11 @@ export class WcdbCore {
     this.videoHardlinkCache.clear()
   }
 
+  private clearMediaStreamSessionCache(): void {
+    this.mediaStreamSessionCache = null
+    this.mediaStreamSessionCacheAt = 0
+  }
+
   isReady(): boolean {
     return this.ensureReady()
   }
@@ -1580,6 +1603,7 @@ export class WcdbCore {
       this.currentDbStoragePath = null
       this.initialized = false
       this.clearHardlinkCaches()
+      this.clearMediaStreamSessionCache()
       this.stopLogPolling()
     }
   }
@@ -1957,7 +1981,7 @@ export class WcdbCore {
     error?: string
   }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
-    if (!this.wcdbScanMediaStream) return { success: false, error: '当前数据服务版本不支持媒体流扫描，请先更新 wcdb 数据服务' }
+    if (!this.wcdbScanMediaStream) return { success: false, error: '当前数据服务版本不支持资源扫描，请先更新 wcdb 数据服务' }
     try {
       const toInt = (value: unknown): number => {
         const n = Number(value || 0)
@@ -2168,37 +2192,64 @@ export class WcdbCore {
       const offset = Math.max(0, toInt(options?.offset))
       const limit = Math.min(1200, Math.max(40, toInt(options?.limit) || 240))
 
-      const sessionsRes = await this.getSessions()
-      if (!sessionsRes.success || !Array.isArray(sessionsRes.sessions)) {
-        return { success: false, error: sessionsRes.error || '读取会话失败' }
+      const getSessionRows = async (): Promise<{
+        success: boolean
+        rows?: Array<{ sessionId: string; displayName: string; sortTimestamp: number }>
+        error?: string
+      }> => {
+        const now = Date.now()
+        const cachedRows = this.mediaStreamSessionCache
+        if (
+          cachedRows &&
+          now - this.mediaStreamSessionCacheAt <= this.mediaStreamSessionCacheTtlMs
+        ) {
+          return { success: true, rows: cachedRows }
+        }
+
+        const sessionsRes = await this.getSessions()
+        if (!sessionsRes.success || !Array.isArray(sessionsRes.sessions)) {
+          return { success: false, error: sessionsRes.error || '读取会话失败' }
+        }
+
+        const rows = (sessionsRes.sessions || [])
+          .map((row: any) => ({
+            sessionId: String(
+              row.username ||
+              row.user_name ||
+              row.userName ||
+              row.usrName ||
+              row.UsrName ||
+              row.talker ||
+              ''
+            ).trim(),
+            displayName: String(row.displayName || row.display_name || row.remark || '').trim(),
+            sortTimestamp: toInt(
+              row.sort_timestamp ||
+              row.sortTimestamp ||
+              row.last_timestamp ||
+              row.lastTimestamp ||
+              0
+            )
+          }))
+          .filter((row) => Boolean(row.sessionId))
+          .sort((a, b) => b.sortTimestamp - a.sortTimestamp)
+
+        this.mediaStreamSessionCache = rows
+        this.mediaStreamSessionCacheAt = now
+        return { success: true, rows }
       }
 
-      const sessions = (sessionsRes.sessions || [])
-        .map((row: any) => ({
-          sessionId: String(
-            row.username ||
-            row.user_name ||
-            row.userName ||
-            row.usrName ||
-            row.UsrName ||
-            row.talker ||
-            ''
-          ).trim(),
-          displayName: String(row.displayName || row.display_name || row.remark || '').trim(),
-          sortTimestamp: toInt(
-            row.sort_timestamp ||
-            row.sortTimestamp ||
-            row.last_timestamp ||
-            row.lastTimestamp ||
-            0
-          )
-        }))
-        .filter((row) => Boolean(row.sessionId))
-        .sort((a, b) => b.sortTimestamp - a.sortTimestamp)
+      let sessionRows: Array<{ sessionId: string; displayName: string; sortTimestamp: number }> = []
+      if (requestedSessionId) {
+        sessionRows = [{ sessionId: requestedSessionId, displayName: requestedSessionId, sortTimestamp: 0 }]
+      } else {
+        const sessionsRowsRes = await getSessionRows()
+        if (!sessionsRowsRes.success || !Array.isArray(sessionsRowsRes.rows)) {
+          return { success: false, error: sessionsRowsRes.error || '读取会话失败' }
+        }
+        sessionRows = sessionsRowsRes.rows
+      }
 
-      const sessionRows = requestedSessionId
-        ? sessions.filter((row) => row.sessionId === requestedSessionId)
-        : sessions
       if (sessionRows.length === 0) {
         return { success: true, items: [], hasMore: false, nextOffset: offset }
       }
@@ -2219,10 +2270,10 @@ export class WcdbCore {
         outHasMore
       )
       if (result !== 0 || !outPtr[0]) {
-        return { success: false, error: `扫描媒体流失败: ${result}` }
+        return { success: false, error: `扫描资源失败: ${result}` }
       }
       const jsonStr = this.decodeJsonPtr(outPtr[0])
-      if (!jsonStr) return { success: false, error: '解析媒体流失败' }
+      if (!jsonStr) return { success: false, error: '解析资源失败' }
       const rows = JSON.parse(jsonStr)
       const list = Array.isArray(rows) ? rows as Array<Record<string, any>> : []
 
@@ -2254,19 +2305,39 @@ export class WcdbCore {
           rawMessageContent &&
           (rawMessageContent.includes('<') || rawMessageContent.includes('md5') || rawMessageContent.includes('videomsg'))
         )
-        const content = useRawMessageContent
-          ? rawMessageContent
-          : decodeMessageContent(rawMessageContent, rawCompressContent)
+        const decodeContentIfNeeded = (): string => {
+          if (useRawMessageContent) return rawMessageContent
+          if (!rawMessageContent && !rawCompressContent) return ''
+          return decodeMessageContent(rawMessageContent, rawCompressContent)
+        }
         const packedPayload = extractPackedPayload(row)
         const imageMd5ByColumn = pickString(row, ['image_md5', 'imageMd5'])
-        const imageMd5 = localType === 3
-          ? (imageMd5ByColumn || extractImageMd5(content) || extractHexMd5(packedPayload) || undefined)
-          : undefined
-        const imageDatName = localType === 3 ? (extractImageDatName(row, content) || undefined) : undefined
         const videoMd5ByColumn = pickString(row, ['video_md5', 'videoMd5', 'raw_md5', 'rawMd5'])
-        const videoMd5 = localType === 43
-          ? (videoMd5ByColumn || extractVideoMd5(content) || extractHexMd5(packedPayload) || undefined)
-          : undefined
+
+        let content = ''
+        let imageMd5: string | undefined
+        let imageDatName: string | undefined
+        let videoMd5: string | undefined
+
+        if (localType === 3) {
+          imageMd5 = imageMd5ByColumn || extractHexMd5(packedPayload) || undefined
+          imageDatName = extractImageDatName(row, '') || undefined
+          if (!imageMd5 || !imageDatName) {
+            content = decodeContentIfNeeded()
+            if (!imageMd5) imageMd5 = extractImageMd5(content) || extractHexMd5(packedPayload) || undefined
+            if (!imageDatName) imageDatName = extractImageDatName(row, content) || undefined
+          }
+        } else if (localType === 43) {
+          videoMd5 = videoMd5ByColumn || extractHexMd5(packedPayload) || undefined
+          if (!videoMd5) {
+            content = decodeContentIfNeeded()
+            videoMd5 = extractVideoMd5(content) || extractHexMd5(packedPayload) || undefined
+          } else if (useRawMessageContent) {
+            // 占位态标题只依赖简单 XML，已带 md5 时不做额外解压
+            content = rawMessageContent
+          }
+        }
+
         return {
           sessionId,
           sessionDisplayName: sessionNameMap.get(sessionId) || sessionId,
@@ -2280,7 +2351,7 @@ export class WcdbCore {
           imageMd5,
           imageDatName,
           videoMd5,
-          content: content || undefined
+          content: localType === 43 ? (content || undefined) : undefined
         }
       })
 

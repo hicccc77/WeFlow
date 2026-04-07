@@ -27,6 +27,7 @@ export class KeyServiceMac {
 
   private getHelperPath(): string {
     const isPackaged = app.isPackaged
+    const archDir = process.arch === 'arm64' ? 'arm64' : 'x64'
     const candidates: string[] = []
 
     if (process.env.WX_KEY_HELPER_PATH) {
@@ -34,12 +35,21 @@ export class KeyServiceMac {
     }
 
     if (isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', archDir, 'xkey_helper'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'universal', 'xkey_helper'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'xkey_helper'))
       candidates.push(join(process.resourcesPath, 'resources', 'xkey_helper'))
       candidates.push(join(process.resourcesPath, 'xkey_helper'))
     } else {
       const cwd = process.cwd()
+      candidates.push(join(cwd, 'resources', 'key', 'macos', archDir, 'xkey_helper'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'universal', 'xkey_helper'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'xkey_helper'))
       candidates.push(join(cwd, 'resources', 'xkey_helper'))
       candidates.push(join(cwd, 'Xkey', 'build', 'xkey_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', archDir, 'xkey_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'universal', 'xkey_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'xkey_helper'))
       candidates.push(join(app.getAppPath(), 'resources', 'xkey_helper'))
     }
 
@@ -52,14 +62,24 @@ export class KeyServiceMac {
 
   private getImageScanHelperPath(): string {
     const isPackaged = app.isPackaged
+    const archDir = process.arch === 'arm64' ? 'arm64' : 'x64'
     const candidates: string[] = []
 
     if (isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', archDir, 'image_scan_helper'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'universal', 'image_scan_helper'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'image_scan_helper'))
       candidates.push(join(process.resourcesPath, 'resources', 'image_scan_helper'))
       candidates.push(join(process.resourcesPath, 'image_scan_helper'))
     } else {
       const cwd = process.cwd()
+      candidates.push(join(cwd, 'resources', 'key', 'macos', archDir, 'image_scan_helper'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'universal', 'image_scan_helper'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'image_scan_helper'))
       candidates.push(join(cwd, 'resources', 'image_scan_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', archDir, 'image_scan_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'universal', 'image_scan_helper'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'image_scan_helper'))
       candidates.push(join(app.getAppPath(), 'resources', 'image_scan_helper'))
     }
 
@@ -72,6 +92,7 @@ export class KeyServiceMac {
 
   private getDylibPath(): string {
     const isPackaged = app.isPackaged
+    const archDir = process.arch === 'arm64' ? 'arm64' : 'x64'
     const candidates: string[] = []
 
     if (process.env.WX_KEY_DYLIB_PATH) {
@@ -79,11 +100,20 @@ export class KeyServiceMac {
     }
 
     if (isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', archDir, 'libwx_key.dylib'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'universal', 'libwx_key.dylib'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'macos', 'libwx_key.dylib'))
       candidates.push(join(process.resourcesPath, 'resources', 'libwx_key.dylib'))
       candidates.push(join(process.resourcesPath, 'libwx_key.dylib'))
     } else {
       const cwd = process.cwd()
+      candidates.push(join(cwd, 'resources', 'key', 'macos', archDir, 'libwx_key.dylib'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'universal', 'libwx_key.dylib'))
+      candidates.push(join(cwd, 'resources', 'key', 'macos', 'libwx_key.dylib'))
       candidates.push(join(cwd, 'resources', 'libwx_key.dylib'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', archDir, 'libwx_key.dylib'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'universal', 'libwx_key.dylib'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'macos', 'libwx_key.dylib'))
       candidates.push(join(app.getAppPath(), 'resources', 'libwx_key.dylib'))
     }
 

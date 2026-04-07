@@ -1,6 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react'
 import { Calendar, Image as ImageIcon, Loader2, PlayCircle, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { VirtuosoGrid } from 'react-virtuoso'
+import { finishBackgroundTask, registerBackgroundTask, updateBackgroundTask } from '../services/backgroundTaskMonitor'
 import './ResourcesPage.scss'
 
 type MediaTab = 'image' | 'video'
@@ -35,10 +36,14 @@ type DialogState = {
   onConfirm?: (() => void) | null
 }
 
-const PAGE_SIZE = 120
-const MAX_IMAGE_CACHE_RESOLVE_PER_TICK = 18
-const MAX_IMAGE_CACHE_PRELOAD_PER_TICK = 36
-const MAX_VIDEO_POSTER_RESOLVE_PER_TICK = 4
+const PAGE_SIZE = 96
+const MAX_IMAGE_CACHE_RESOLVE_PER_TICK = 12
+const MAX_IMAGE_CACHE_PRELOAD_PER_TICK = 24
+const MAX_VIDEO_POSTER_RESOLVE_PER_TICK = 3
+const INITIAL_IMAGE_PRELOAD_END = 48
+const INITIAL_IMAGE_RESOLVE_END = 12
+const TASK_PROGRESS_UPDATE_MIN_INTERVAL_MS = 250
+const TASK_PROGRESS_UPDATE_MAX_STEPS = 100
 
 const GridList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(function GridList(props, ref) {
   const { className = '', ...rest } = props
@@ -409,7 +414,13 @@ function ResourcesPage() {
     }
 
     try {
-      await window.electronAPI.chat.connect()
+      if (reset) {
+        const connectResult = await window.electronAPI.chat.connect()
+        if (!connectResult.success) {
+          setError(connectResult.error || '连接数据库失败')
+          return
+        }
+      }
       const requestOffset = reset ? 0 : nextOffset
       const streamResult = await window.electronAPI.chat.getMediaStream({
         sessionId: selectedContact === 'all' ? undefined : selectedContact,
@@ -524,7 +535,6 @@ function ResourcesPage() {
     let cancelled = false
     const run = async () => {
       try {
-        await window.electronAPI.chat.connect()
         const sessionResult = await window.electronAPI.chat.getSessions()
         if (!cancelled && sessionResult.success && Array.isArray(sessionResult.sessions)) {
           const initialNameMap: Record<string, string> = {}
@@ -674,7 +684,10 @@ function ResourcesPage() {
     resolvingImageCacheBatchRef.current = true
     void (async () => {
       try {
-        const result = await window.electronAPI.image.resolveCacheBatch(payloads, { disableUpdateCheck: true })
+        const result = await window.electronAPI.image.resolveCacheBatch(payloads, {
+          disableUpdateCheck: true,
+          allowCacheIndex: false
+        })
         const rows = Array.isArray(result?.rows) ? result.rows : []
         const pathPatch: Record<string, string> = {}
         const updatePatch: Record<string, boolean> = {}
@@ -741,7 +754,10 @@ function ResourcesPage() {
       if (payloads.length >= MAX_IMAGE_CACHE_PRELOAD_PER_TICK) break
     }
     if (payloads.length === 0) return
-    void window.electronAPI.image.preload(payloads, { allowDecrypt: false })
+    void window.electronAPI.image.preload(payloads, {
+      allowDecrypt: false,
+      allowCacheIndex: false
+    })
   }, [displayItems])
 
   const resolveItemVideoMd5 = useCallback(async (item: MediaStreamItem): Promise<string> => {
@@ -813,14 +829,18 @@ function ResourcesPage() {
     if (!pending) return
     pendingRangeRef.current = null
     if (tab === 'image') {
-      preloadImageCacheRange(pending.start - 8, pending.end + 32)
-      resolveImageCacheRange(pending.start - 2, pending.end + 8)
+      preloadImageCacheRange(pending.start - 4, pending.end + 20)
+      resolveImageCacheRange(pending.start - 1, pending.end + 6)
       return
     }
     resolvePosterRange(pending.start, pending.end)
   }, [preloadImageCacheRange, resolveImageCacheRange, resolvePosterRange, tab])
 
   const scheduleRangeResolve = useCallback((start: number, end: number) => {
+    const previous = pendingRangeRef.current
+    if (previous && start >= previous.start && end <= previous.end) {
+      return
+    }
     pendingRangeRef.current = { start, end }
     if (rangeTimerRef.current !== null) {
       window.clearTimeout(rangeTimerRef.current)
@@ -832,8 +852,8 @@ function ResourcesPage() {
   useEffect(() => {
     if (displayItems.length === 0) return
     if (tab === 'image') {
-      preloadImageCacheRange(0, Math.min(displayItems.length - 1, 80))
-      resolveImageCacheRange(0, Math.min(displayItems.length - 1, 20))
+      preloadImageCacheRange(0, Math.min(displayItems.length - 1, INITIAL_IMAGE_PRELOAD_END))
+      resolveImageCacheRange(0, Math.min(displayItems.length - 1, INITIAL_IMAGE_RESOLVE_END))
       return
     }
     resolvePosterRange(0, Math.min(displayItems.length - 1, 12))
@@ -1057,25 +1077,61 @@ function ResourcesPage() {
 
     setBatchBusy(true)
     let success = 0
+    let failed = 0
     const previewPatch: Record<string, string> = {}
     const updatePatch: Record<string, boolean> = {}
+    const taskId = registerBackgroundTask({
+      sourcePage: 'other',
+      title: '资源页图片批量解密',
+      detail: `正在解密图片（0/${imageItems.length}）`,
+      progressText: `0 / ${imageItems.length}`,
+      cancelable: false
+    })
     try {
+      let completed = 0
+      const progressStep = Math.max(1, Math.floor(imageItems.length / TASK_PROGRESS_UPDATE_MAX_STEPS))
+      let lastProgressBucket = 0
+      let lastProgressUpdateAt = Date.now()
+      const updateTaskProgress = (force: boolean = false) => {
+        const now = Date.now()
+        const bucket = Math.floor(completed / progressStep)
+        const crossedBucket = bucket !== lastProgressBucket
+        const intervalReached = now - lastProgressUpdateAt >= TASK_PROGRESS_UPDATE_MIN_INTERVAL_MS
+        if (!force && !crossedBucket && !intervalReached) return
+        updateBackgroundTask(taskId, {
+          detail: `正在解密图片（${completed}/${imageItems.length}）`,
+          progressText: `${completed} / ${imageItems.length}`
+        })
+        lastProgressBucket = bucket
+        lastProgressUpdateAt = now
+      }
       for (const item of imageItems) {
-        if (!item.imageMd5 && !item.imageDatName) continue
+        if (!item.imageMd5 && !item.imageDatName) {
+          failed += 1
+          completed += 1
+          updateTaskProgress()
+          continue
+        }
         const result = await window.electronAPI.image.decrypt({
           sessionId: item.sessionId,
           imageMd5: item.imageMd5 || undefined,
           imageDatName: item.imageDatName || undefined,
           force: true
         })
-        if (!result?.success) continue
-        success += 1
-        if (result.localPath) {
-          const key = getItemKey(item)
-          previewPatch[key] = result.localPath
-          updatePatch[key] = isLikelyThumbnailPreview(result.localPath)
+        if (!result?.success) {
+          failed += 1
+        } else {
+          success += 1
+          if (result.localPath) {
+            const key = getItemKey(item)
+            previewPatch[key] = result.localPath
+            updatePatch[key] = isLikelyThumbnailPreview(result.localPath)
+          }
         }
+        completed += 1
+        updateTaskProgress()
       }
+      updateTaskProgress(true)
 
       if (Object.keys(previewPatch).length > 0) {
         setPreviewPathMap((prev) => ({ ...prev, ...previewPatch }))
@@ -1083,8 +1139,17 @@ function ResourcesPage() {
       if (Object.keys(updatePatch).length > 0) {
         setPreviewUpdateMap((prev) => ({ ...prev, ...updatePatch }))
       }
-      setActionMessage(`批量解密完成：成功 ${success}，失败 ${imageItems.length - success}`)
-      showAlert(`批量解密完成：成功 ${success}，失败 ${imageItems.length - success}`, '批量解密完成')
+      setActionMessage(`批量解密完成：成功 ${success}，失败 ${failed}`)
+      showAlert(`批量解密完成：成功 ${success}，失败 ${failed}`, '批量解密完成')
+      finishBackgroundTask(taskId, success > 0 || failed === 0 ? 'completed' : 'failed', {
+        detail: `资源页图片批量解密完成：成功 ${success}，失败 ${failed}`,
+        progressText: `成功 ${success} / 失败 ${failed}`
+      })
+    } catch (e) {
+      finishBackgroundTask(taskId, 'failed', {
+        detail: `资源页图片批量解密失败：${String(e)}`
+      })
+      showAlert(`批量解密失败：${String(e)}`, '批量解密失败')
     } finally {
       setBatchBusy(false)
     }

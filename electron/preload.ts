@@ -266,15 +266,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   image: {
     decrypt: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) =>
       ipcRenderer.invoke('image:decrypt', payload),
-    resolveCache: (payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) =>
+    resolveCache: (payload: {
+      sessionId?: string
+      imageMd5?: string
+      imageDatName?: string
+      disableUpdateCheck?: boolean
+      allowCacheIndex?: boolean
+    }) =>
       ipcRenderer.invoke('image:resolveCache', payload),
     resolveCacheBatch: (
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { disableUpdateCheck?: boolean }
+      options?: { disableUpdateCheck?: boolean; allowCacheIndex?: boolean }
     ) => ipcRenderer.invoke('image:resolveCacheBatch', payloads, options),
     preload: (
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { allowDecrypt?: boolean }
+      options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => ipcRenderer.invoke('image:preload', payloads, options),
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => {
       const listener = (_: unknown, payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => callback(payload)

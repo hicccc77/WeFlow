@@ -25,13 +25,23 @@ export class KeyServiceLinux {
 
   private getHelperPath(): string {
     const isPackaged = app.isPackaged
+    const archDir = process.arch === 'arm64' ? 'arm64' : 'x64'
     const candidates: string[] = []
     if (process.env.WX_KEY_HELPER_PATH) candidates.push(process.env.WX_KEY_HELPER_PATH)
     if (isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'linux', archDir, 'xkey_helper_linux'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'linux', 'x64', 'xkey_helper_linux'))
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'linux', 'xkey_helper_linux'))
       candidates.push(join(process.resourcesPath, 'resources', 'xkey_helper_linux'))
       candidates.push(join(process.resourcesPath, 'xkey_helper_linux'))
     } else {
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'linux', archDir, 'xkey_helper_linux'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'linux', 'x64', 'xkey_helper_linux'))
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'linux', 'xkey_helper_linux'))
       candidates.push(join(app.getAppPath(), 'resources', 'xkey_helper_linux'))
+      candidates.push(join(process.cwd(), 'resources', 'key', 'linux', archDir, 'xkey_helper_linux'))
+      candidates.push(join(process.cwd(), 'resources', 'key', 'linux', 'x64', 'xkey_helper_linux'))
+      candidates.push(join(process.cwd(), 'resources', 'key', 'linux', 'xkey_helper_linux'))
       candidates.push(join(app.getAppPath(), '..', 'Xkey', 'build', 'xkey_helper_linux'))
     }
     for (const p of candidates) {

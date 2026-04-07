@@ -1965,6 +1965,10 @@
       color: var(--on-primary);
       border-radius: 18px 18px 4px 18px;
     }
+
+    .bubble-body {
+      align-items: flex-end;
+    }
   }
 
   // 对方发送的消息 - 左侧白色
@@ -1973,6 +1977,10 @@
       background: var(--bg-secondary);
       color: var(--text-primary);
       border-radius: 18px 18px 18px 4px;
+    }
+
+    .bubble-body {
+      align-items: flex-start;
     }
   }
 
@@ -2036,6 +2044,12 @@
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+// 让文字气泡按内容收缩，不被群昵称行宽度牵连
+.message-bubble:not(.system) .bubble-content {
+  width: fit-content;
+  max-width: 100%;
 }
 
 // 表情包消息

@@ -8,11 +8,13 @@ type PreloadImagePayload = {
 
 type PreloadOptions = {
   allowDecrypt?: boolean
+  allowCacheIndex?: boolean
 }
 
 type PreloadTask = PreloadImagePayload & {
   key: string
   allowDecrypt: boolean
+  allowCacheIndex: boolean
 }
 
 export class ImagePreloadService {
@@ -27,6 +29,7 @@ export class ImagePreloadService {
   enqueue(payloads: PreloadImagePayload[], options?: PreloadOptions): void {
     if (!Array.isArray(payloads) || payloads.length === 0) return
     const allowDecrypt = options?.allowDecrypt !== false
+    const allowCacheIndex = options?.allowCacheIndex !== false
     for (const payload of payloads) {
       if (!allowDecrypt && this.queue.length >= this.maxQueueSize) break
       const cacheKey = payload.imageMd5 || payload.imageDatName
@@ -34,7 +37,7 @@ export class ImagePreloadService {
       const key = `${payload.sessionId || 'unknown'}|${cacheKey}`
       if (this.pending.has(key)) continue
       this.pending.add(key)
-      this.queue.push({ ...payload, key, allowDecrypt })
+      this.queue.push({ ...payload, key, allowDecrypt, allowCacheIndex })
     }
     this.processQueue()
   }
@@ -71,7 +74,8 @@ export class ImagePreloadService {
         sessionId: task.sessionId,
         imageMd5: task.imageMd5,
         imageDatName: task.imageDatName,
-        disableUpdateCheck: !task.allowDecrypt
+        disableUpdateCheck: !task.allowDecrypt,
+        allowCacheIndex: task.allowCacheIndex
       })
       if (cached.success) return
       if (!task.allowDecrypt) return
