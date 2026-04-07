@@ -8272,27 +8272,7 @@ function ExportPage() {
                 </div>
               )}
 
-              {options.format === 'excel' && (
-                <div className="dialog-section">
-                  <div className="dialog-switch-row">
-                    <div className="dialog-switch-copy">
-                      <h4>导出完整列</h4>
-                      <div className="format-note">
-                        开启后将在 Excel 表格中单独拆分出「发送者昵称」、「微信ID」、「备注」和「群昵称」列。关闭则只保留紧凑的「发送者身份」。
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className={`dialog-switch ${!options.excelCompactColumns ? 'on' : ''}`}
-                      aria-pressed={!options.excelCompactColumns}
-                      aria-label="切换导出完整列"
-                      onClick={() => setOptions(prev => ({ ...prev, excelCompactColumns: !prev.excelCompactColumns }))}
-                    >
-                      <span className="dialog-switch-thumb" />
-                    </button>
-                  </div>
-                </div>
-              )}
+
 
               <div className="dialog-section">
                 <div className="section-header-action">
@@ -8433,27 +8413,51 @@ function ExportPage() {
                 </div>
               )}
 
-              {shouldShowDisplayNameSection && (
+              {(shouldShowDisplayNameSection || options.format === 'excel') && (
                 <div className="dialog-section">
-                  <h4>发送者名称显示</h4>
-                  <div className="display-name-options" role="radiogroup" aria-label="发送者名称显示">
-                    {displayNameOptions.map(option => {
-                      const isActive = options.displayNamePreference === option.value
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={isActive}
-                          className={`display-name-item ${isActive ? 'active' : ''}`}
-                          onClick={() => setOptions(prev => ({ ...prev, displayNamePreference: option.value }))}
-                        >
-                          <span>{option.label}</span>
-                          <small>{option.desc}</small>
-                        </button>
-                      )
-                    })}
-                  </div>
+                  {shouldShowDisplayNameSection && (
+                    <>
+                      <h4>发送者名称显示</h4>
+                      <div className="display-name-options" role="radiogroup" aria-label="发送者名称显示">
+                        {displayNameOptions.map(option => {
+                          const isActive = options.displayNamePreference === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={isActive}
+                              className={`display-name-item ${isActive ? 'active' : ''}`}
+                              onClick={() => setOptions(prev => ({ ...prev, displayNamePreference: option.value }))}
+                            >
+                              <span>{option.label}</span>
+                              <small>{option.desc}</small>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {options.format === 'excel' && (
+                    <div className={`dialog-switch-row ${shouldShowDisplayNameSection ? 'nested-row' : ''}`} style={shouldShowDisplayNameSection ? { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-light)' } : {}}>
+                      <div className="dialog-switch-copy">
+                        <h4>导出完整列</h4>
+                        <div className="format-note">
+                          开启后将在 Excel 表格中单独拆分出「发送者昵称」、「微信ID」、「备注」和「群昵称」列。关闭则只保留紧凑的「发送者身份」。
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={`dialog-switch ${!options.excelCompactColumns ? 'on' : ''}`}
+                        aria-pressed={!options.excelCompactColumns}
+                        aria-label="切换导出完整列"
+                        onClick={() => setOptions(prev => ({ ...prev, excelCompactColumns: !prev.excelCompactColumns }))}
+                      >
+                        <span className="dialog-switch-thumb" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
