@@ -6601,19 +6601,15 @@ function ExportPage() {
   const taskQueuedCount = tasks.filter(task => task.status === 'queued').length
   const taskCenterAlertCount = taskRunningCount + taskQueuedCount
   const hasFilteredContacts = filteredContacts.length > 0
-  const CONTACTS_ACTION_STICKY_WIDTH = 184
-  const contactsTableMinWidth = useMemo(() => {
-    const baseWidth = 24 + 34 + 44 + 280 + 120 + (4 * 72) + CONTACTS_ACTION_STICKY_WIDTH + (8 * 12)
-    const snsWidth = shouldShowSnsColumn ? 72 + 12 : 0
-    const mutualFriendsWidth = shouldShowMutualFriendsColumn ? 72 + 12 : 0
-    return baseWidth + snsWidth + mutualFriendsWidth
-  }, [shouldShowMutualFriendsColumn, shouldShowSnsColumn])
+  const optionalMetricColumnCount = (shouldShowSnsColumn ? 1 : 0) + (shouldShowMutualFriendsColumn ? 1 : 0)
+  const contactsMetricColumnCount = 4 + optionalMetricColumnCount
+  const contactsColumnGapCount = 6 + optionalMetricColumnCount
   const contactsTableStyle = useMemo(() => (
     {
-      ['--contacts-table-min-width' as const]: `${contactsTableMinWidth}px`
+      ['--contacts-table-min-width' as const]: `calc((2 * var(--contacts-inline-padding)) + var(--contacts-left-sticky-width) + var(--contacts-message-col-width) + (${contactsMetricColumnCount} * var(--contacts-media-col-width)) + var(--contacts-actions-sticky-width) + (${contactsColumnGapCount} * var(--contacts-column-gap)))`
     } as CSSProperties
-  ), [contactsTableMinWidth])
-  const hasContactsHorizontalOverflow = contactsHorizontalScrollMetrics.contentWidth - contactsHorizontalScrollMetrics.viewportWidth > 1
+  ), [contactsColumnGapCount, contactsMetricColumnCount])
+  const hasContactsHorizontalOverflow = contactsHorizontalScrollMetrics.contentWidth - contactsHorizontalScrollMetrics.viewportWidth > 4
   const contactsBottomScrollbarInnerStyle = useMemo<CSSProperties>(() => ({
     width: `${Math.max(contactsHorizontalScrollMetrics.contentWidth, contactsHorizontalScrollMetrics.viewportWidth)}px`
   }), [contactsHorizontalScrollMetrics.contentWidth, contactsHorizontalScrollMetrics.viewportWidth])
