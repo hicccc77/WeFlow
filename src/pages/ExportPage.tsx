@@ -8440,7 +8440,7 @@ function ExportPage() {
                       <div className="dialog-switch-copy">
                         <h4>导出完整列</h4>
                         <div className="format-note">
-                          开启后将在 Excel 表格中单独拆分出「发送者昵称」、「微信ID」、「备注」和「群昵称」列。关闭则只保留紧凑的「发送者身份」。
+                          开启后会在 Excel 表格中拆分出「发送者昵称」、「微信ID」、「备注」等列；群聊会额外包含「群昵称」列，私聊不会显示这一列。关闭则只保留紧凑的「发送者身份」。
                         </div>
                       </div>
                       <button

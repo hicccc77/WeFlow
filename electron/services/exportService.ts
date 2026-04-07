@@ -6491,9 +6491,12 @@ class ExportService {
       currentRow++
 
       // 表头行
+      const includeGroupNicknameColumn = !useCompactColumns && isGroup
       const headers = useCompactColumns
         ? ['序号', '时间', '发送者身份', '消息类型', '内容']
-        : ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '群昵称', '发送者身份', '消息类型', '内容']
+        : includeGroupNicknameColumn
+          ? ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '群昵称', '发送者身份', '消息类型', '内容']
+          : ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '发送者身份', '消息类型', '内容']
       const headerRow = worksheet.getRow(currentRow)
       headerRow.height = 22
 
@@ -6521,10 +6524,16 @@ class ExportService {
         worksheet.getColumn(3).width = 18  // 发送者昵称
         worksheet.getColumn(4).width = 25  // 发送者微信ID
         worksheet.getColumn(5).width = 18  // 发送者备注
-        worksheet.getColumn(6).width = 18  // 群昵称
-        worksheet.getColumn(7).width = 15  // 发送者身份
-        worksheet.getColumn(8).width = 12  // 消息类型
-        worksheet.getColumn(9).width = 50  // 内容
+        if (includeGroupNicknameColumn) {
+          worksheet.getColumn(6).width = 18  // 群昵称
+          worksheet.getColumn(7).width = 15  // 发送者身份
+          worksheet.getColumn(8).width = 12  // 消息类型
+          worksheet.getColumn(9).width = 50  // 内容
+        } else {
+          worksheet.getColumn(6).width = 15  // 发送者身份
+          worksheet.getColumn(7).width = 12  // 消息类型
+          worksheet.getColumn(8).width = 50  // 内容
+        }
       }
 
       // 预加载群昵称 (仅群聊且完整列模式)
@@ -6805,7 +6814,7 @@ class ExportService {
           enrichedContentValue = this.buildQuotedReplyText(quotedReplyDisplay)
         }
 
-        const contentCellIndex = useCompactColumns ? 5 : 9
+        const contentCellIndex = useCompactColumns ? 5 : (includeGroupNicknameColumn ? 9 : 8)
         const contentCell = worksheet.getCell(currentRow, contentCellIndex)
 
         worksheet.getCell(currentRow, 1).value = i + 1
@@ -6813,13 +6822,19 @@ class ExportService {
         if (useCompactColumns) {
           worksheet.getCell(currentRow, 3).value = senderRole
           worksheet.getCell(currentRow, 4).value = this.getMessageTypeName(msg.localType)
-        } else {
+        } else if (includeGroupNicknameColumn) {
           worksheet.getCell(currentRow, 3).value = senderNickname
           worksheet.getCell(currentRow, 4).value = senderWxid
           worksheet.getCell(currentRow, 5).value = senderRemark
           worksheet.getCell(currentRow, 6).value = senderGroupNickname
           worksheet.getCell(currentRow, 7).value = senderRole
           worksheet.getCell(currentRow, 8).value = this.getMessageTypeName(msg.localType)
+        } else {
+          worksheet.getCell(currentRow, 3).value = senderNickname
+          worksheet.getCell(currentRow, 4).value = senderWxid
+          worksheet.getCell(currentRow, 5).value = senderRemark
+          worksheet.getCell(currentRow, 6).value = senderRole
+          worksheet.getCell(currentRow, 7).value = this.getMessageTypeName(msg.localType)
         }
         contentCell.value = enrichedContentValue
         if (!quotedReplyDisplay) {
@@ -6929,6 +6944,7 @@ class ExportService {
       })
       const worksheet = workbook.addWorksheet('聊天记录')
       const useCompactColumns = options.excelCompactColumns === true
+      const includeGroupNicknameColumn = !useCompactColumns && isGroup
       const senderProfileCache = new Map<string, ExportDisplayProfile>()
 
       worksheet.columns = useCompactColumns
@@ -6939,17 +6955,28 @@ class ExportService {
           { width: 12 },
           { width: 50 }
         ]
-        : [
-          { width: 8 },
-          { width: 20 },
-          { width: 18 },
-          { width: 25 },
-          { width: 18 },
-          { width: 18 },
-          { width: 15 },
-          { width: 12 },
-          { width: 50 }
-        ]
+        : includeGroupNicknameColumn
+          ? [
+            { width: 8 },
+            { width: 20 },
+            { width: 18 },
+            { width: 25 },
+            { width: 18 },
+            { width: 18 },
+            { width: 15 },
+            { width: 12 },
+            { width: 50 }
+          ]
+          : [
+            { width: 8 },
+            { width: 20 },
+            { width: 18 },
+            { width: 25 },
+            { width: 18 },
+            { width: 15 },
+            { width: 12 },
+            { width: 50 }
+          ]
 
       const appendRow = (values: any[]) => {
         const row = worksheet.addRow(values)
@@ -6962,7 +6989,9 @@ class ExportService {
       appendRow([])
       appendRow(useCompactColumns
         ? ['序号', '时间', '发送者身份', '消息类型', '内容']
-        : ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '群昵称', '发送者身份', '消息类型', '内容'])
+        : includeGroupNicknameColumn
+          ? ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '群昵称', '发送者身份', '消息类型', '内容']
+          : ['序号', '时间', '发送者昵称', '发送者微信ID', '发送者备注', '发送者身份', '消息类型', '内容'])
 
       for (let i = 0; i < totalMessages; i++) {
         if ((i & 0x7f) === 0) this.throwIfStopRequested(control)
@@ -7077,19 +7106,34 @@ class ExportService {
             this.getMessageTypeName(msg.localType),
             enrichedContentValue
           ]
-          : [
-            i + 1,
-            this.formatTimestamp(msg.createTime),
-            senderNickname,
-            senderWxid,
-            senderRemark,
-            senderGroupNickname,
-            senderRole,
-            this.getMessageTypeName(msg.localType),
-            enrichedContentValue
-          ])
+          : includeGroupNicknameColumn
+            ? [
+              i + 1,
+              this.formatTimestamp(msg.createTime),
+              senderNickname,
+              senderWxid,
+              senderRemark,
+              senderGroupNickname,
+              senderRole,
+              this.getMessageTypeName(msg.localType),
+              enrichedContentValue
+            ]
+            : [
+              i + 1,
+              this.formatTimestamp(msg.createTime),
+              senderNickname,
+              senderWxid,
+              senderRemark,
+              senderRole,
+              this.getMessageTypeName(msg.localType),
+              enrichedContentValue
+            ])
         if (!quotedReplyDisplay) {
-          this.applyExcelLinkCardCell(row.getCell(useCompactColumns ? 5 : 9), msg.content, msg.localType)
+          this.applyExcelLinkCardCell(
+            row.getCell(useCompactColumns ? 5 : (includeGroupNicknameColumn ? 9 : 8)),
+            msg.content,
+            msg.localType
+          )
         }
         row.commit()
 
