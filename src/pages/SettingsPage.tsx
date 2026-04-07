@@ -107,6 +107,12 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
   const [httpApiToken, setHttpApiToken] = useState('')
 
+  // LLM 配置
+  const [llmProvider, setLlmProvider] = useState<string>('mock')
+  const [llmApiKey, setLlmApiKey] = useState('')
+  const [llmBaseUrl, setLlmBaseUrl] = useState('')
+  const [llmSaving, setLlmSaving] = useState(false)
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -362,6 +368,14 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
       const savedHttpApiToken = await configService.getHttpApiToken()
       if (savedHttpApiToken) setHttpApiToken(savedHttpApiToken)
+
+      // 加载 LLM 配置
+      try {
+        const llmConfig = await window.electronAPI.intel.getLLMConfig()
+        setLlmProvider(llmConfig.provider || 'mock')
+        setLlmApiKey(llmConfig.apiKey || '')
+        setLlmBaseUrl(llmConfig.baseUrl || '')
+      } catch { /* LLM 配置可能不可用 */ }
 
       const savedApiPort = await configService.getHttpApiPort()
       if (savedApiPort) setHttpApiPort(savedApiPort)
@@ -2221,8 +2235,89 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   )
   const resolvedWhisperModelPath = whisperModelDir || whisperModelStatus?.modelPath || ''
 
+  const handleSaveLLMConfig = async () => {
+    setLlmSaving(true)
+    try {
+      await window.electronAPI.intel.setLLMConfig({
+        provider: llmProvider,
+        apiKey: llmApiKey && !llmApiKey.startsWith('••') ? llmApiKey : undefined,
+        baseUrl: llmBaseUrl,
+      })
+      showMessage('LLM 配置已保存', true)
+    } catch {
+      showMessage('保存失败', false)
+    } finally {
+      setLlmSaving(false)
+    }
+  }
+
   const renderModelsTab = () => (
     <div className="tab-content">
+      <div className="form-group">
+        <label>AI 智能助手配置</label>
+        <span className="form-hint">配置 AI 模型用于沟通分析、回复建议等智能功能</span>
+      </div>
+
+      <div className="form-group">
+        <label>AI 服务商</label>
+        <select
+          className="form-input"
+          value={llmProvider}
+          onChange={(e) => setLlmProvider(e.target.value)}
+        >
+          <option value="mock">未配置（演示模式）</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT)</option>
+          <option value="ollama">Ollama (本地)</option>
+          <option value="claude-code">Claude Code CLI</option>
+        </select>
+      </div>
+
+      {llmProvider !== 'mock' && llmProvider !== 'claude-code' && (
+        <>
+          <div className="form-group">
+            <label>API Key</label>
+            <input
+              type="password"
+              className="form-input"
+              value={llmApiKey}
+              onChange={(e) => setLlmApiKey(e.target.value)}
+              placeholder={llmProvider === 'anthropic' ? 'sk-ant-...' : llmProvider === 'openai' ? 'sk-...' : 'API Key'}
+            />
+          </div>
+          {llmProvider === 'ollama' && (
+            <div className="form-group">
+              <label>服务地址</label>
+              <input
+                type="text"
+                className="form-input"
+                value={llmBaseUrl}
+                onChange={(e) => setLlmBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434"
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {llmProvider === 'claude-code' && (
+        <div className="form-group">
+          <span className="form-hint">使用本地安装的 Claude Code CLI，无需 API Key。请确保已安装 Claude Code。</span>
+        </div>
+      )}
+
+      <div className="form-group">
+        <button
+          className="btn btn-primary"
+          onClick={handleSaveLLMConfig}
+          disabled={llmSaving}
+        >
+          {llmSaving ? '保存中...' : '保存 AI 配置'}
+        </button>
+      </div>
+
+      <hr style={{ margin: '24px 0', border: 'none', borderTop: '1px solid #EBEBEB' }} />
+
       <div className="form-group">
         <label>模型管理</label>
         <span className="form-hint">管理语音识别模型</span>

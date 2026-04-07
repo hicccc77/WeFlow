@@ -29,6 +29,13 @@ interface ConfigSchema {
   logEnabled: boolean
   launchAtStartup?: boolean
   llmModelPath: string
+
+  // 智能模块 LLM 配置
+  llmProvider: 'anthropic' | 'openai' | 'ollama' | 'claude-code' | 'mock'
+  llmApiKey: string
+  llmBaseUrl: string
+  llmSmartModel: string
+  llmFastModel: string
   whisperModelName: string
   whisperModelDir: string
   whisperDownloadSource: string
@@ -65,7 +72,7 @@ interface ConfigSchema {
 }
 
 // 需要 safeStorage 加密的字段（普通模式）
-const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken'])
+const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken', 'llmApiKey'])
 const ENCRYPTED_BOOL_KEYS: Set<string> = new Set(['authEnabled', 'authUseHello'])
 const ENCRYPTED_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 
@@ -109,6 +116,11 @@ export class ConfigService {
       language: 'zh-CN',
       logEnabled: false,
       llmModelPath: '',
+      llmProvider: 'mock' as const,
+      llmApiKey: '',
+      llmBaseUrl: '',
+      llmSmartModel: '',
+      llmFastModel: '',
       whisperModelName: 'base',
       whisperModelDir: '',
       whisperDownloadSource: 'tsinghua',

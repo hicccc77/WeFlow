@@ -892,6 +892,52 @@ export interface ElectronAPI {
     stop: () => Promise<{ success: boolean }>
     status: () => Promise<{ running: boolean; port: number; mediaExportPath: string }>
   }
+  intel: {
+    analyzeMessage: (contact: string, message: string, selectedContext?: string[]) => Promise<{
+      isComplex: boolean
+      reason: string
+      guideQuestions: string[]
+      suggestions?: Array<{ text: string; reasoning: string; style: 'safe' | 'warm' | 'firm'; confidence: number; context_used: string[] }>
+      discussionId?: number
+    }>
+    discuss: (contact: string, message: string, userInput: string, discussionId?: number) => Promise<{
+      analysis: string
+      followup?: string
+      discussionId: number
+      round: number
+    }>
+    discussReply: (discussionId: number) => Promise<Array<{ text: string; reasoning: string; style: 'safe' | 'warm' | 'firm'; confidence: number; context_used: string[] }>>
+    generateReplies: (contact: string, message: string, selectedContext?: string[], refresh?: boolean) => Promise<Array<{ text: string; reasoning: string; style: 'safe' | 'warm' | 'firm'; confidence: number; context_used: string[] }>>
+    getContext: (contact: string, offset?: number, limit?: number) => Promise<{ messages: any[]; hasMore: boolean; total: number; isGroup: boolean }>
+    starContact: (contactId: string) => Promise<void>
+    ignoreContact: (contactId: string) => Promise<void>
+    getCoachLog: (logId: number) => Promise<any>
+    getDailyBriefing: (date?: string) => Promise<any>
+    detectPUA: (contactId: string) => Promise<{ contact: string; signals: any[]; riskLevel: string; summary: string; analyzedAt: string }>
+    getPreferences: () => Promise<{ starred: string[]; ignored: string[] }>
+    generateBriefing: () => Promise<any>
+    getReplyQueue: () => Promise<Array<{ contact: string; name: string; message: string; priority: number; reason: string }>>
+    getLLMConfig: () => Promise<{ provider: string; apiKey: string; baseUrl: string; smartModel: string; fastModel: string }>
+    setLLMConfig: (config: { provider?: string; apiKey?: string; baseUrl?: string; smartModel?: string; fastModel?: string }) => Promise<void>
+    recordSuggestionUsage: (contact: string, style: string, action: string) => Promise<void>
+  }
+  contentHub: {
+    getItems: (filters?: any) => Promise<any[]>
+    analyzeContent: (itemId: string) => Promise<any>
+    starItem: (itemId: string) => Promise<void>
+    ignoreItem: (itemId: string) => Promise<void>
+  }
+  graph: {
+    getNodes: () => Promise<any[]>
+    getEdges: () => Promise<any[]>
+    getContactDetail: (contactId: string) => Promise<any>
+    build: () => Promise<{ updated: number; total: number } | { _error: string }>
+  }
+  coachLog: {
+    list: (filters?: any) => Promise<any[]>
+    getDetail: (logId: number) => Promise<any>
+    updateConfig: (key: string, value: string) => Promise<void>
+  }
 }
 
 export interface ExportOptions {

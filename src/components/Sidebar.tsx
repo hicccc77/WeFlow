@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Home, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw } from 'lucide-react'
+import { Sparkles, BookOpen, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useChatStore } from '../stores/chatStore'
 import { useAnalyticsStore } from '../stores/analyticsStore'
@@ -389,15 +389,27 @@ function Sidebar({ collapsed }: SidebarProps) {
     <>
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
         <nav className="nav-menu">
-          {/* 首页 */}
+          {/* 沟通助手 */}
           <NavLink
-            to="/home"
-            className={`nav-item ${isActive('/home') ? 'active' : ''}`}
-            title={collapsed ? '首页' : undefined}
+            to="/assistant"
+            className={`nav-item nav-item-hero ${isActive('/assistant') ? 'active' : ''}`}
+            title={collapsed ? '沟通助手' : undefined}
           >
-            <span className="nav-icon"><Home size={20} /></span>
-            <span className="nav-label">首页</span>
+            <span className="nav-icon"><Sparkles size={20} /></span>
+            <span className="nav-label">沟通助手</span>
           </NavLink>
+
+          {/* 内容中心 */}
+          <NavLink
+            to="/content"
+            className={`nav-item ${isActive('/content') ? 'active' : ''}`}
+            title={collapsed ? '内容中心' : undefined}
+          >
+            <span className="nav-icon"><BookOpen size={20} /></span>
+            <span className="nav-label">内容中心</span>
+          </NavLink>
+
+          <div className="nav-separator" />
 
           {/* 聊天 */}
           <NavLink
@@ -428,6 +440,8 @@ function Sidebar({ collapsed }: SidebarProps) {
             <span className="nav-icon"><UserCircle size={20} /></span>
             <span className="nav-label">通讯录</span>
           </NavLink>
+
+          <div className="nav-separator" />
 
           {/* 聊天分析 */}
           <NavLink

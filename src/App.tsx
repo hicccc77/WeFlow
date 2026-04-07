@@ -24,6 +24,10 @@ import BizPage from './pages/BizPage'
 import ContactsPage from './pages/ContactsPage'
 import ChatHistoryPage from './pages/ChatHistoryPage'
 import NotificationWindow from './pages/NotificationWindow'
+import AssistantPage from './pages/AssistantPage'
+import ContentHubPage from './pages/ContentHubPage'
+import CoachLogPage from './pages/CoachLogPage'
+import GraphPage from './pages/GraphPage'
 
 import { useAppStore } from './stores/appStore'
 import { themes, useThemeStore, type ThemeId, type ThemeMode } from './stores/themeStore'
@@ -39,6 +43,7 @@ import { GlobalSessionMonitor } from './components/GlobalSessionMonitor'
 import { BatchTranscribeGlobal } from './components/BatchTranscribeGlobal'
 import { BatchImageDecryptGlobal } from './components/BatchImageDecryptGlobal'
 import WindowCloseDialog from './components/WindowCloseDialog'
+import CommandPalette from './components/CommandPalette'
 
 function RouteStateRedirect({ to }: { to: string }) {
   const location = useLocation()
@@ -50,7 +55,7 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const settingsBackgroundRef = useRef<Location>({
-    pathname: '/home',
+    pathname: '/assistant',
     search: '',
     hash: '',
     state: null,
@@ -107,6 +112,19 @@ function App() {
   const [analyticsConsent, setAnalyticsConsent] = useState<boolean | null>(null)
 
   const [showWaylandWarning, setShowWaylandWarning] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
+
+  // Cmd+K 命令面板快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowCommandPalette(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   useEffect(() => {
     const checkWaylandStatus = async () => {
@@ -426,7 +444,7 @@ function App() {
             setDbConnected(true, dbPath)
             // 如果当前在欢迎页，跳转到首页
             if (window.location.hash === '#/' || window.location.hash === '') {
-              navigate('/home')
+              navigate('/assistant')
             }
           } else {
 
@@ -537,7 +555,7 @@ function App() {
   const handleCloseSettings = () => {
     const backgroundLocation = settingsRouteState?.backgroundLocation ?? settingsBackgroundRef.current
     if (backgroundLocation.pathname === '/settings') {
-      navigate('/home', { replace: true })
+      navigate('/assistant', { replace: true })
       return
     }
     navigate(
@@ -715,6 +733,8 @@ function App() {
         onCancel={() => handleWindowCloseAction('cancel')}
       />
 
+      {showCommandPalette && <CommandPalette onClose={() => setShowCommandPalette(false)} />}
+
       <div className="main-layout">
         <Sidebar collapsed={sidebarCollapsed} />
         <main className="content">
@@ -724,8 +744,12 @@ function App() {
             </div>
 
             <Routes location={routeLocation}>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/home" element={<HomePage />} />
+              <Route path="/" element={<Navigate to="/assistant" replace />} />
+              <Route path="/home" element={<Navigate to="/assistant" replace />} />
+              <Route path="/assistant" element={<AssistantPage />} />
+              <Route path="/content" element={<ContentHubPage />} />
+              <Route path="/coach-log" element={<CoachLogPage />} />
+              <Route path="/graph" element={<GraphPage />} />
               <Route path="/chat" element={<ChatPage />} />
 
               <Route path="/analytics" element={<ChatAnalyticsHubPage />} />

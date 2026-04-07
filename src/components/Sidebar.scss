@@ -218,6 +218,20 @@
   }
 }
 
+.nav-item.nav-item-hero {
+  color: var(--primary);
+  .nav-icon { width: 22px; height: 22px; }
+  &:hover { background: rgba(var(--primary-rgb), 0.1); color: var(--primary); }
+  &.active { background: var(--primary); color: var(--on-primary); box-shadow: 0 0 12px rgba(var(--primary-rgb), 0.25); }
+}
+
+.nav-separator {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 12px;
+  opacity: 0.5;
+}
+
 .nav-icon {
   display: flex;
   align-items: center;
@@ -557,4 +571,26 @@
   background: rgba(209, 158, 187, 0.15);
   color: #D19EBB;
   border: 1px solid rgba(209, 158, 187, 0.2);
+}
+
+// 繁花如梦主题：hero nav item
+[data-theme="blossom-dream"] .nav-item.nav-item-hero {
+  color: #C4748A;
+  &:hover { background: rgba(196, 116, 138, 0.1); color: #C4748A; }
+  &.active {
+    background: linear-gradient(180deg, #D4849A 0%, #C4748A 100%);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(196, 116, 138, 0.25);
+  }
+}
+
+[data-theme="blossom-dream"][data-mode="dark"] .nav-item.nav-item-hero {
+  color: #D19EBB;
+  &:hover { background: rgba(209, 158, 187, 0.1); color: #D19EBB; }
+  &.active {
+    background: rgba(209, 158, 187, 0.15);
+    color: #D19EBB;
+    border: 1px solid rgba(209, 158, 187, 0.2);
+    box-shadow: 0 0 12px rgba(209, 158, 187, 0.15);
+  }
 }

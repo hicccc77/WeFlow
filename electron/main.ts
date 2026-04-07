@@ -3020,6 +3020,411 @@ function registerIpcHandlers() {
     }
   })
 
+  // ── Intelligence (Reply Coach / Discussion / Graph) ──────────
+
+  ipcMain.handle('intel:analyzeMessage', async (_, contact: string, message: string, selectedContext?: string[]) => {
+    try {
+      const { replyCoachService } = await import('./services/intelligence/replyCoachService')
+      return replyCoachService.analyzeMessage(contact, message, selectedContext)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '分析失败' }
+    }
+  })
+
+  ipcMain.handle('intel:discuss', async (_, contact: string, message: string, userInput: string, discussionId?: number) => {
+    try {
+      const { replyCoachService } = await import('./services/intelligence/replyCoachService')
+      return replyCoachService.discuss(contact, message, userInput, discussionId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '讨论失败' }
+    }
+  })
+
+  ipcMain.handle('intel:discussReply', async (_, discussionId: number) => {
+    try {
+      const { replyCoachService } = await import('./services/intelligence/replyCoachService')
+      return replyCoachService.discussReply(discussionId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '生成回复失败' }
+    }
+  })
+
+  ipcMain.handle('intel:generateReplies', async (_, contact: string, message: string, selectedContext?: string[], refresh?: boolean) => {
+    try {
+      const { replyCoachService } = await import('./services/intelligence/replyCoachService')
+      return replyCoachService.generateReplies(contact, message, selectedContext, refresh)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '生成回复失败' }
+    }
+  })
+
+  ipcMain.handle('intel:getContext', async (_, contact: string, offset?: number, limit?: number) => {
+    try {
+      const chatService = (await import('./services/chatService')).default
+      const messages = await chatService.getMessages(contact, offset || 0, limit || 20)
+      const isGroup = contact.endsWith('@chatroom')
+      return { messages: messages || [], hasMore: (messages || []).length >= (limit || 20), total: (messages || []).length, isGroup }
+    } catch {
+      return { messages: [], hasMore: false, total: 0, isGroup: false }
+    }
+  })
+
+  ipcMain.handle('intel:getPreferences', async () => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      const prefs = intelligenceDb.getPreferenceSets()
+      return { starred: Array.from(prefs.starred), ignored: Array.from(prefs.ignored) }
+    } catch {
+      return { starred: [], ignored: [] }
+    }
+  })
+
+  ipcMain.handle('intel:starContact', async (_, contactId: string) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      intelligenceDb.starContact(contactId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '收藏失败' }
+    }
+  })
+
+  ipcMain.handle('intel:ignoreContact', async (_, contactId: string) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      intelligenceDb.ignoreContact(contactId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '忽略失败' }
+    }
+  })
+
+  ipcMain.handle('intel:getCoachLog', async (_, logId: number) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      return intelligenceDb.getCoachLog(logId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取日志失败' }
+    }
+  })
+
+  ipcMain.handle('intel:getDailyBriefing', async (_, date?: string) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      if (date) {
+        return intelligenceDb.getBriefing(date)
+      }
+      return intelligenceDb.getLatestBriefing()
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取简报失败' }
+    }
+  })
+
+  ipcMain.handle('intel:generateBriefing', async () => {
+    try {
+      const chatService = (await import('./services/chatService')).default
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      const { BriefingService } = await import('./services/intelligence/briefingService')
+      const { llmService } = await import('./services/intelligence/llmService')
+
+      // 获取最近 24 小时的消息
+      const sessionsResult = await chatService.getSessions()
+      const sessions = (sessionsResult as any)?.sessions || (Array.isArray(sessionsResult) ? sessionsResult : [])
+
+      const briefingMessages: Array<{ sender: string; content: string; timestamp: number; sessionId: string; isGroup: boolean }> = []
+      const cutoff = Math.floor(Date.now() / 1000) - 24 * 3600
+
+      for (const session of sessions.slice(0, 50)) {
+        const sessionId = session.id || session.sessionId || ''
+        if (!sessionId) continue
+        try {
+          const msgs = await chatService.getMessages(sessionId, 0, 30, cutoff)
+          if (msgs?.length) {
+            for (const m of msgs) {
+              briefingMessages.push({
+                sender: m.sender || session.displayName || sessionId,
+                content: (m.parsedContent || '').slice(0, 300),
+                timestamp: (m.createTime || Math.floor(Date.now() / 1000)) * 1000,
+                sessionId,
+                isGroup: sessionId.endsWith('@chatroom'),
+              })
+            }
+          }
+        } catch { /* skip failed sessions */ }
+      }
+
+      // LLM adapter
+      const briefingLlm = {
+        async complete(prompt: string, opts?: { systemPrompt?: string; maxTokens?: number }) {
+          const resp = await llmService.call({
+            prompt,
+            systemPrompt: opts?.systemPrompt,
+            maxTokens: opts?.maxTokens || 500,
+            tier: 'fast',
+          })
+          return resp.text
+        },
+      }
+
+      const service = new BriefingService(intelligenceDb, llmService.getProvider() !== 'mock' ? briefingLlm : null)
+      const result = await service.generate(briefingMessages)
+      return result
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '生成简报失败' }
+    }
+  })
+
+  ipcMain.handle('intel:detectPUA', async (_, contactId: string) => {
+    try {
+      const chatService = (await import('./services/chatService')).default
+      const { PuaDetectorService } = await import('./services/intelligence/puaDetectorService')
+      const { llmService } = await import('./services/intelligence/llmService')
+
+      const messages = await chatService.getMessages(contactId, 0, 100)
+      const puaMessages = (messages || []).map((m: any) => ({
+        content: m.parsedContent || m.content || '',
+        sender: m.sender || contactId,
+        timestamp: m.createTime ? new Date(m.createTime * 1000).toISOString() : new Date().toISOString(),
+      }))
+
+      const detector = new PuaDetectorService(llmService)
+      return detector.analyze(contactId, puaMessages)
+    } catch {
+      return { contact: contactId, signals: [], riskLevel: 'low', summary: 'PUA 检测暂时不可用', analyzedAt: new Date().toISOString() }
+    }
+  })
+
+  // ── Content Hub ────────────────────────────────────────────────
+
+  ipcMain.handle('contentHub:getItems', async (_, filters?: any) => {
+    try {
+      const { contentHubService } = await import('./services/intelligence/contentHubService')
+      return contentHubService.getContentFeed(filters)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '加载内容失败' }
+    }
+  })
+
+  ipcMain.handle('contentHub:analyzeContent', async (_, itemId: string) => {
+    try {
+      const { contentHubService } = await import('./services/intelligence/contentHubService')
+      return contentHubService.analyzeContent(itemId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : 'AI 分析失败' }
+    }
+  })
+
+  ipcMain.handle('contentHub:starItem', async (_, itemId: string) => {
+    try {
+      const { contentHubService } = await import('./services/intelligence/contentHubService')
+      return contentHubService.bookmarkContent(itemId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '收藏失败' }
+    }
+  })
+
+  ipcMain.handle('contentHub:ignoreItem', async (_, itemId: string) => {
+    try {
+      const { contentHubService } = await import('./services/intelligence/contentHubService')
+      return contentHubService.ignoreContent(itemId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '忽略失败' }
+    }
+  })
+
+  // ── Social Graph ───────────────────────────────────────────────
+
+  ipcMain.handle('graph:getNodes', async () => {
+    try {
+      const { graphService } = await import('./services/intelligence/graphService')
+      return graphService.getNodes()
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '加载图谱节点失败' }
+    }
+  })
+
+  ipcMain.handle('graph:getEdges', async () => {
+    try {
+      const { graphService } = await import('./services/intelligence/graphService')
+      return graphService.getEdges()
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '加载图谱边失败' }
+    }
+  })
+
+  ipcMain.handle('graph:getContactDetail', async (_, contactId: string) => {
+    try {
+      const { graphService } = await import('./services/intelligence/graphService')
+      return graphService.getContactDetail(contactId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取联系人详情失败' }
+    }
+  })
+
+  ipcMain.handle('graph:build', async () => {
+    try {
+      const chatService = (await import('./services/chatService')).default
+      const { graphService } = await import('./services/intelligence/graphService')
+
+      // 获取所有会话
+      const sessionsResult = await chatService.getSessions()
+      const sessions = (sessionsResult as any)?.sessions || (Array.isArray(sessionsResult) ? sessionsResult : [])
+
+      // 从每个会话获取最近消息
+      const allMessages: Array<{ contact: string; content: string; isGroup: boolean; timestamp: number; senders?: string[] }> = []
+      for (const session of sessions.slice(0, 100)) {
+        const sessionId = session.id || session.sessionId || ''
+        if (!sessionId) continue
+        try {
+          const msgs = await chatService.getMessages(sessionId, 0, 50)
+          if (msgs?.length) {
+            for (const m of msgs) {
+              allMessages.push({
+                contact: sessionId,
+                content: (m.parsedContent || '').slice(0, 200),
+                isGroup: sessionId.endsWith('@chatroom'),
+                timestamp: m.createTime || Math.floor(Date.now() / 1000),
+                senders: m.sender ? [m.sender] : undefined,
+              })
+            }
+          }
+        } catch { /* skip failed sessions */ }
+      }
+
+      const updated = await graphService.buildFromMessages(allMessages)
+      return { updated, total: allMessages.length }
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '构建图谱失败' }
+    }
+  })
+
+  // ── Coach Log ──────────────────────────────────────────────────
+
+  ipcMain.handle('coachLog:list', async (_, filters?: any) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      return intelligenceDb.getCoachLogs(filters?.limit, filters?.offset, filters?.callType)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取日志列表失败' }
+    }
+  })
+
+  ipcMain.handle('coachLog:getDetail', async (_, logId: number) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      return intelligenceDb.getCoachLog(logId)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取日志详情失败' }
+    }
+  })
+
+  ipcMain.handle('coachLog:updateConfig', async (_, key: string, value: string) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      intelligenceDb.setCoachConfig(key, value)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '更新配置失败' }
+    }
+  })
+
+  // ─── LLM 配置 ────────────────────────────────────────────────
+  ipcMain.handle('intel:getLLMConfig', async () => {
+    try {
+      return {
+        provider: configService.get('llmProvider') || 'mock',
+        apiKey: configService.get('llmApiKey') ? '••••••••' : '',
+        baseUrl: configService.get('llmBaseUrl') || '',
+        smartModel: configService.get('llmSmartModel') || '',
+        fastModel: configService.get('llmFastModel') || '',
+      }
+    } catch {
+      return { provider: 'mock', apiKey: '', baseUrl: '', smartModel: '', fastModel: '' }
+    }
+  })
+
+  ipcMain.handle('intel:setLLMConfig', async (_, config: {
+    provider?: string
+    apiKey?: string
+    baseUrl?: string
+    smartModel?: string
+    fastModel?: string
+  }) => {
+    try {
+      if (config.provider) configService.set('llmProvider', config.provider as any)
+      if (config.apiKey) configService.set('llmApiKey', config.apiKey)
+      if (config.baseUrl !== undefined) configService.set('llmBaseUrl', config.baseUrl)
+      if (config.smartModel !== undefined) configService.set('llmSmartModel', config.smartModel)
+      if (config.fastModel !== undefined) configService.set('llmFastModel', config.fastModel)
+
+      // 实时更新 llmService 配置
+      const { llmService } = await import('./services/intelligence/llmService')
+      llmService.configure({
+        provider: (config.provider as any) || undefined,
+        apiKey: config.apiKey || undefined,
+        baseUrl: config.baseUrl || undefined,
+        smartModel: config.smartModel || undefined,
+        fastModel: config.fastModel || undefined,
+      })
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '保存配置失败' }
+    }
+  })
+
+  // ─── E1: 智能回复队列 ───────────────────────────────────────
+  ipcMain.handle('intel:getReplyQueue', async () => {
+    try {
+      const chatService = (await import('./services/chatService')).default
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+
+      const sessionsResult = await chatService.getSessions()
+      const sessions = (sessionsResult as any)?.sessions || (Array.isArray(sessionsResult) ? sessionsResult : [])
+      const { starred, ignored } = intelligenceDb.getPreferenceSets()
+
+      const queue: Array<{ contact: string; name: string; message: string; priority: number; reason: string }> = []
+      const oneDayAgo = Math.floor(Date.now() / 1000) - 24 * 3600
+
+      for (const session of sessions.slice(0, 50)) {
+        const sessionId = session.id || session.sessionId || ''
+        const displayName = session.displayName || session.name || sessionId
+        if (!sessionId || ignored.has(displayName)) continue
+
+        const unread = session.unreadCount || 0
+        if (unread === 0) continue
+
+        let priority = unread
+        let reason = `${unread} 条未读`
+
+        if (starred.has(displayName)) {
+          priority *= 3
+          reason = `⭐ ${reason}`
+        }
+
+        // Get last message preview
+        let lastMsg = session.lastMessage || ''
+        try {
+          const msgs = await chatService.getMessages(sessionId, 0, 1, oneDayAgo)
+          if (msgs?.length) {
+            lastMsg = (msgs[0].parsedContent || '').slice(0, 100)
+          }
+        } catch { /* use session lastMessage */ }
+
+        queue.push({ contact: sessionId, name: displayName, message: lastMsg, priority, reason })
+      }
+
+      // Sort by priority descending, limit to 10
+      queue.sort((a, b) => b.priority - a.priority)
+      return queue.slice(0, 10)
+    } catch (e) {
+      return { _error: e instanceof Error ? e.message : '获取回复队列失败' }
+    }
+  })
+
+  // ─── E4: 回复风格学习 ───────────────────────────────────────
+  ipcMain.handle('intel:recordSuggestionUsage', async (_, contact: string, style: string, action: string) => {
+    try {
+      const { intelligenceDb } = await import('./services/intelligence/intelligenceDb')
+      intelligenceDb.recordSuggestionUsage(contact, style, action)
+    } catch { /* non-critical */ }
+  })
+
 }
 
 // 主窗口引用
@@ -3112,6 +3517,53 @@ app.whenReady().then(async () => {
   updateSplashProgress(18, '正在初始化...')
   wcdbService.setPaths(resourcesPath, userDataPath)
   wcdbService.setLogEnabled(configService.get('logEnabled') === true)
+
+  // 初始化智能模块数据库（持久化到 userData/intelligence.db）
+  try {
+    const { initializeIntelligenceDb } = await import('./services/intelligence/intelligenceDb')
+    const intelligenceDbPath = join(userDataPath, 'intelligence.db')
+    initializeIntelligenceDb(intelligenceDbPath)
+  } catch (e) {
+    console.warn('[intelligence] DB initialization failed, falling back to in-memory:', e)
+  }
+
+  // 初始化 LLM 服务（从配置读取 Provider + API Key）
+  try {
+    const { llmService } = await import('./services/intelligence/llmService')
+    const llmProvider = configService.get('llmProvider') || 'mock'
+    const llmApiKey = configService.get('llmApiKey') || ''
+    const llmBaseUrl = configService.get('llmBaseUrl') || ''
+    const llmSmartModel = configService.get('llmSmartModel') || ''
+    const llmFastModel = configService.get('llmFastModel') || ''
+    llmService.configure({
+      provider: llmProvider,
+      apiKey: llmApiKey,
+      baseUrl: llmBaseUrl,
+      smartModel: llmSmartModel || undefined,
+      fastModel: llmFastModel || undefined,
+      logDir: join(userDataPath, 'intelligence', 'llm_context'),
+    })
+  } catch (e) {
+    console.warn('[intelligence] LLM service initialization failed:', e)
+  }
+
+  // 启动后定期清理智能模块旧数据（每 6 小时）
+  setTimeout(async () => {
+    try {
+      const { intelligenceDb: db } = await import('./services/intelligence/intelligenceDb')
+      const result = db.runMaintenance()
+      if (result.coachLogs || result.briefings || result.discussions || result.cache) {
+        console.log('[intelligence] Maintenance:', result)
+      }
+    } catch { /* non-critical */ }
+  }, 30_000) // 启动 30 秒后首次清理
+  setInterval(async () => {
+    try {
+      const { intelligenceDb: db } = await import('./services/intelligence/intelligenceDb')
+      db.runMaintenance()
+    } catch { /* non-critical */ }
+  }, 6 * 3600 * 1000)
+
   await delay(200)
 
   // 注册 IPC 处理器

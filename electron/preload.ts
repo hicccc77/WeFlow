@@ -442,5 +442,75 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (port?: number, host?: string) => ipcRenderer.invoke('http:start', port, host),
     stop: () => ipcRenderer.invoke('http:stop'),
     status: () => ipcRenderer.invoke('http:status')
-  }
+  },
+
+  // 智能助理 (Intelligence)
+  intel: {
+    analyzeMessage: (contact: string, message: string, selectedContext?: string[]) =>
+      ipcRenderer.invoke('intel:analyzeMessage', contact, message, selectedContext),
+    discuss: (contact: string, message: string, userInput: string, discussionId?: number) =>
+      ipcRenderer.invoke('intel:discuss', contact, message, userInput, discussionId),
+    discussReply: (discussionId: number) =>
+      ipcRenderer.invoke('intel:discussReply', discussionId),
+    generateReplies: (contact: string, message: string, selectedContext?: string[], refresh?: boolean) =>
+      ipcRenderer.invoke('intel:generateReplies', contact, message, selectedContext, refresh),
+    getContext: (contact: string, offset?: number, limit?: number) =>
+      ipcRenderer.invoke('intel:getContext', contact, offset, limit),
+    getPreferences: () =>
+      ipcRenderer.invoke('intel:getPreferences'),
+    starContact: (contactId: string) =>
+      ipcRenderer.invoke('intel:starContact', contactId),
+    ignoreContact: (contactId: string) =>
+      ipcRenderer.invoke('intel:ignoreContact', contactId),
+    getCoachLog: (logId: number) =>
+      ipcRenderer.invoke('intel:getCoachLog', logId),
+    getDailyBriefing: (date?: string) =>
+      ipcRenderer.invoke('intel:getDailyBriefing', date),
+    detectPUA: (contactId: string) =>
+      ipcRenderer.invoke('intel:detectPUA', contactId),
+    generateBriefing: () =>
+      ipcRenderer.invoke('intel:generateBriefing'),
+    getReplyQueue: () =>
+      ipcRenderer.invoke('intel:getReplyQueue'),
+    getLLMConfig: () =>
+      ipcRenderer.invoke('intel:getLLMConfig'),
+    setLLMConfig: (config: { provider?: string; apiKey?: string; baseUrl?: string; smartModel?: string; fastModel?: string }) =>
+      ipcRenderer.invoke('intel:setLLMConfig', config),
+    recordSuggestionUsage: (contact: string, style: string, action: string) =>
+      ipcRenderer.invoke('intel:recordSuggestionUsage', contact, style, action),
+  },
+
+  // 内容中心 (Content Hub)
+  contentHub: {
+    getItems: (filters?: any) =>
+      ipcRenderer.invoke('contentHub:getItems', filters),
+    analyzeContent: (itemId: string) =>
+      ipcRenderer.invoke('contentHub:analyzeContent', itemId),
+    starItem: (itemId: string) =>
+      ipcRenderer.invoke('contentHub:starItem', itemId),
+    ignoreItem: (itemId: string) =>
+      ipcRenderer.invoke('contentHub:ignoreItem', itemId),
+  },
+
+  // 社交图谱 (Graph)
+  graph: {
+    getNodes: () =>
+      ipcRenderer.invoke('graph:getNodes'),
+    getEdges: () =>
+      ipcRenderer.invoke('graph:getEdges'),
+    getContactDetail: (contactId: string) =>
+      ipcRenderer.invoke('graph:getContactDetail', contactId),
+    build: () =>
+      ipcRenderer.invoke('graph:build'),
+  },
+
+  // 教练日志 (Coach Log)
+  coachLog: {
+    list: (filters?: any) =>
+      ipcRenderer.invoke('coachLog:list', filters),
+    getDetail: (logId: number) =>
+      ipcRenderer.invoke('coachLog:getDetail', logId),
+    updateConfig: (key: string, value: string) =>
+      ipcRenderer.invoke('coachLog:updateConfig', key, value),
+  },
 })
