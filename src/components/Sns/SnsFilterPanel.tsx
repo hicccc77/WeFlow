@@ -29,6 +29,7 @@ interface SnsFilterPanelProps {
     activeContactUsername?: string
     onOpenContactTimeline: (contact: Contact) => void
     onToggleContactSelected: (contact: Contact) => void
+    onToggleFilteredContacts: (usernames: string[], shouldSelect: boolean) => void
     onClearSelectedContacts: () => void
     onExportSelectedContacts: () => void
 }
@@ -46,6 +47,7 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     activeContactUsername,
     onOpenContactTimeline,
     onToggleContactSelected,
+    onToggleFilteredContacts,
     onClearSelectedContacts,
     onExportSelectedContacts
 }) => {
@@ -57,6 +59,16 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
         () => new Set(selectedContactUsernames),
         [selectedContactUsernames]
     )
+    const filteredContactUsernames = React.useMemo(
+        () => filteredContacts.map((contact) => contact.username),
+        [filteredContacts]
+    )
+    const selectedFilteredCount = React.useMemo(
+        () => filteredContactUsernames.filter((username) => selectedContactLookup.has(username)).length,
+        [filteredContactUsernames, selectedContactLookup]
+    )
+    const hasFilteredContacts = filteredContactUsernames.length > 0
+    const allFilteredSelected = hasFilteredContacts && selectedFilteredCount === filteredContactUsernames.length
 
     const clearFilters = () => {
         setSearchKeyword('')
@@ -126,6 +138,20 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
                         {contactSearch && (
                             <X size={14} className="clear-icon" onClick={() => setContactSearch('')} />
                         )}
+                    </div>
+
+                    <div className="contact-selection-toolbar">
+                        <span className="contact-selection-summary">
+                            当前 {filteredContactUsernames.length} 人，已选 {selectedFilteredCount} 人
+                        </span>
+                        <button
+                            type="button"
+                            className={`contact-selection-toggle${allFilteredSelected ? ' active' : ''}`}
+                            onClick={() => onToggleFilteredContacts(filteredContactUsernames, !allFilteredSelected)}
+                            disabled={!hasFilteredContacts}
+                        >
+                            {allFilteredSelected ? '取消全选' : '全选'}
+                        </button>
                     </div>
 
                     {contactsCountProgress && contactsCountProgress.total > 0 && (

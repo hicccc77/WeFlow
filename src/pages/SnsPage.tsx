@@ -1398,6 +1398,24 @@ export default function SnsPage() {
         setSelectedContactUsernames([])
     }, [])
 
+    const toggleSelectFilteredContacts = useCallback((usernames: string[], shouldSelect: boolean) => {
+        const normalizedTargets = Array.from(new Set(
+            usernames
+                .map((username) => String(username || '').trim())
+                .filter(Boolean)
+        ))
+        if (normalizedTargets.length === 0) return
+
+        setSelectedContactUsernames((prev) => {
+            if (shouldSelect) {
+                const next = new Set(prev)
+                normalizedTargets.forEach((username) => next.add(username))
+                return Array.from(next)
+            }
+            return prev.filter((username) => !normalizedTargets.includes(username))
+        })
+    }, [])
+
     const openSelectedContactsExport = useCallback(() => {
         if (selectedContactUsernames.length === 0) return
         openExportDialog({ kind: 'selected', usernames: [...selectedContactUsernames] })
@@ -1783,6 +1801,7 @@ export default function SnsPage() {
                 activeContactUsername={authorTimelineTarget?.username}
                 onOpenContactTimeline={openContactTimeline}
                 onToggleContactSelected={toggleContactSelected}
+                onToggleFilteredContacts={toggleSelectFilteredContacts}
                 onClearSelectedContacts={clearSelectedContacts}
                 onExportSelectedContacts={openSelectedContactsExport}
             />

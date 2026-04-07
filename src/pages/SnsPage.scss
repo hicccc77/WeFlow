@@ -1265,6 +1265,52 @@
             }
         }
 
+        .contact-selection-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 16px;
+            border-bottom: 1px dashed color-mix(in srgb, var(--border-color) 72%, transparent);
+        }
+
+        .contact-selection-summary {
+            min-width: 0;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .contact-selection-toggle {
+            flex-shrink: 0;
+            border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border-color));
+            background: color-mix(in srgb, var(--bg-primary) 84%, rgba(var(--primary-rgb), 0.08));
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+
+            &:hover:not(:disabled) {
+                border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+                color: var(--primary);
+            }
+
+            &.active {
+                border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+                background: rgba(var(--primary-rgb), 0.12);
+                color: var(--primary);
+            }
+
+            &:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+        }
+
         .contact-count-progress {
             padding: 8px 16px 10px;
             font-size: 11px;
