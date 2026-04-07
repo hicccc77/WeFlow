@@ -58,7 +58,7 @@
     "sharp": "^0.34.5",
     "typescript": "^6.0.2",
     "vite": "^7.3.2",
-    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.6"
   },
   "pnpm": {
