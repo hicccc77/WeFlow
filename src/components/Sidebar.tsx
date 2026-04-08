@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Home, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw, FolderClosed, Building2, Store, ChevronDown, Wrench, MapPin, Clock, UserCog } from 'lucide-react'
+import { Home, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw, FolderClosed, Building2, Store, ChevronDown, Wrench, MapPin, Clock, UserCog, Tag, LogOut } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useChatStore } from '../stores/chatStore'
 import { useAnalyticsStore } from '../stores/analyticsStore'
@@ -124,6 +124,7 @@ function Sidebar({ collapsed }: SidebarProps) {
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
   const accountCardWrapRef = useRef<HTMLDivElement | null>(null)
   const setLocked = useAppStore(state => state.setLocked)
+  const setIsLoggedIn = useAppStore(state => state.setIsLoggedIn)
   const isDbConnected = useAppStore(state => state.isDbConnected)
   const isMacPlatform = useAppStore(state => state.isMacPlatform)
   const resetChatStore = useChatStore(state => state.reset)
@@ -454,7 +455,7 @@ function Sidebar({ collapsed }: SidebarProps) {
           </NavLink>
 
           {/* 系统配置维护（一级可展开） */}
-          <div className={`nav-group ${isActive('/city') || isActive('/time') ? 'has-active' : ''}`}>
+          <div className={`nav-group ${isActive('/city') || isActive('/time') || isActive('/tag-dict') ? 'has-active' : ''}`}>
             <div
               className={`nav-item nav-group-title ${configMenuOpen ? 'open' : ''}`}
               onClick={() => setConfigMenuOpen(!configMenuOpen)}
@@ -484,6 +485,14 @@ function Sidebar({ collapsed }: SidebarProps) {
                   <span className="nav-icon"><Clock size={18} /></span>
                   <span className="nav-label">基础时间</span>
                 </NavLink>
+                <NavLink
+                  to="/tag-dict"
+                  className={`nav-item nav-child ${isActive('/tag-dict') ? 'active' : ''}`}
+                  title={collapsed ? '标签字典' : undefined}
+                >
+                  <span className="nav-icon"><Tag size={18} /></span>
+                  <span className="nav-label">标签字典</span>
+                </NavLink>
               </div>
             )}
           </div>
@@ -491,26 +500,6 @@ function Sidebar({ collapsed }: SidebarProps) {
         </nav>
 
         <div className="sidebar-footer">
-          <button
-            className="nav-item"
-            onClick={() => {
-              if (authEnabled) {
-                setLocked(true)
-                return
-              }
-              navigate('/settings', {
-                state: {
-                  initialTab: 'security',
-                  backgroundLocation: location
-                }
-              })
-            }}
-            title={collapsed ? (authEnabled ? '锁定' : '未锁定') : undefined}
-          >
-            <span className="nav-icon">{authEnabled ? <Lock size={20} /> : <LockOpen size={20} />}</span>
-            <span className="nav-label">{authEnabled ? '锁定' : '未锁定'}</span>
-          </button>
-
           <div className="sidebar-user-card-wrap" ref={accountCardWrapRef}>
             <div className={`sidebar-user-menu ${isAccountMenuOpen ? 'open' : ''}`} role="menu" aria-label="账号菜单">
               <button
@@ -530,6 +519,18 @@ function Sidebar({ collapsed }: SidebarProps) {
               >
                 <Settings size={14} />
                 <span>设置</span>
+              </button>
+              <button
+                className="sidebar-user-menu-item danger"
+                onClick={() => {
+                  setIsAccountMenuOpen(false)
+                  setIsLoggedIn(false)
+                }}
+                type="button"
+                role="menuitem"
+              >
+                <LogOut size={14} />
+                <span>退出</span>
               </button>
             </div>
             <div

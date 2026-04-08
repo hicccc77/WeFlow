@@ -1,94 +1,145 @@
-import { useState, useRef } from 'react'
-import { ArrowRight, LogIn } from 'lucide-react'
+import { useState } from 'react'
+import { Button, Input, Form, message, Typography, Space } from 'antd'
+import { UserOutlined, LockOutlined, LoginOutlined, PoweroffOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
-import './LoginPage.scss'
 
 const HARDCODED_USERNAME = 'admin'
 const HARDCODED_PASSWORD = 'admin123'
 
 export default function LoginPage() {
   const setIsLoggedIn = useAppStore(state => state.setIsLoggedIn)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [isLogging, setIsLogging] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
-  const usernameRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!username || !password) {
-      setError('请输入账号和密码')
-      return
-    }
-
+  const handleSubmit = (values: { username: string; password: string }) => {
     setIsLogging(true)
-    setError('')
 
-    // 模拟异步验证
     setTimeout(() => {
-      if (username === HARDCODED_USERNAME && password === HARDCODED_PASSWORD) {
+      if (values.username === HARDCODED_USERNAME && values.password === HARDCODED_PASSWORD) {
         setIsSuccess(true)
         setTimeout(() => {
           setIsLoggedIn(true)
         }, 600)
       } else {
-        setError('账号或密码错误')
-        setPassword('')
+        message.error('账号或密码错误')
         setIsLogging(false)
       }
     }, 300)
   }
 
+  const handleQuit = () => {
+    try {
+      window.electronAPI.window.respondCloseConfirm('quit')
+    } catch {
+      window.close()
+    }
+  }
+
   return (
-    <div className={`login-screen ${isSuccess ? 'success' : ''}`}>
-      <div className="login-content">
-        <div className="login-logo">
-          <LogIn size={36} />
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+      zIndex: 9999,
+      WebkitAppRegion: 'drag' as any,
+      opacity: isSuccess ? 0 : 1,
+      transition: 'opacity 0.5s ease',
+    }}>
+      <div style={{
+        width: 380,
+        padding: '48px 40px 40px',
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 8px 40px rgba(0, 0, 0, 0.12)',
+        WebkitAppRegion: 'no-drag' as any,
+        animation: 'loginCardFadeIn 0.5s ease',
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32 }}>
+          <img
+            src="https://www.quikms.com/favicon.ico"
+            alt="Logo"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 14,
+              marginBottom: 20,
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+            }}
+          />
+          <Typography.Title level={4} style={{ margin: 0, fontWeight: 600 }}>
+            浅雨科技人力仓管理系统
+          </Typography.Title>
+          <Typography.Text type="secondary" style={{ marginTop: 8 }}>
+            请输入账号密码以继续
+          </Typography.Text>
         </div>
 
-        <h2 className="login-title">浅雨科技人力仓管理系统</h2>
-        <p className="login-subtitle">请输入账号密码以继续</p>
-
-        <form className="login-form" onSubmit={handleSubmit}>
-          <div className="login-field">
-            <label htmlFor="login-username">账号</label>
-            <input
-              id="login-username"
-              ref={usernameRef}
-              type="text"
+        <Form
+          onFinish={handleSubmit}
+          size="large"
+          autoComplete="off"
+        >
+          <Form.Item
+            name="username"
+            rules={[{ required: true, message: '请输入账号' }]}
+          >
+            <Input
+              prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
               placeholder="请输入账号"
-              value={username}
-              onChange={(e) => { setUsername(e.target.value); setError('') }}
               disabled={isLogging}
               autoFocus
             />
-          </div>
+          </Form.Item>
 
-          <div className="login-field">
-            <label htmlFor="login-password">密码</label>
-            <input
-              id="login-password"
-              type="password"
+          <Form.Item
+            name="password"
+            rules={[{ required: true, message: '请输入密码' }]}
+          >
+            <Input.Password
+              prefix={<LockOutlined style={{ color: '#bfbfbf' }} />}
               placeholder="请输入密码"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError('') }}
               disabled={isLogging}
             />
-          </div>
+          </Form.Item>
 
-          <button
-            type="submit"
-            className={`login-submit-btn ${isLogging ? 'loading' : ''}`}
-            disabled={isLogging || !username || !password}
-          >
-            {isLogging ? '登录中...' : '登录'}
-            {!isLogging && <ArrowRight size={16} />}
-          </button>
-        </form>
-
-        {error && <div className="login-error">{error}</div>}
+          <Form.Item style={{ marginBottom: 12 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={isLogging}
+                icon={<LoginOutlined />}
+                style={{ height: 44, borderRadius: 8, fontWeight: 500 }}
+              >
+                登录
+              </Button>
+              <Button
+                block
+                danger
+                icon={<PoweroffOutlined />}
+                onClick={handleQuit}
+                style={{ height: 44, borderRadius: 8, fontWeight: 500 }}
+              >
+                退出软件
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
       </div>
+
+      <style>{`
+        @keyframes loginCardFadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }

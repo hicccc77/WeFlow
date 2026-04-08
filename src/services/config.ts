@@ -70,8 +70,6 @@ export const CONFIG_KEYS = {
   HTTP_API_ENABLED: 'httpApiEnabled',
   HTTP_API_PORT: 'httpApiPort',
   HTTP_API_HOST: 'httpApiHost',
-  OSS_ACCESS_KEY_ID: 'oss_access_key_id',
-  OSS_ACCESS_KEY_SECRET: 'oss_access_key_secret',
   MESSAGE_PUSH_ENABLED: 'messagePushEnabled',
   WINDOW_CLOSE_BEHAVIOR: 'windowCloseBehavior',
   QUOTE_LAYOUT: 'quoteLayout',
@@ -137,26 +135,6 @@ export async function getHttpApiToken(): Promise<string> {
 // 设置access_token
 export async function setHttpApiToken(token: string): Promise<void> {
   await config.set(CONFIG_KEYS.HTTP_API_TOKEN, token)
-}
-
-// OSS AccessKey ID
-export async function getOssAccessKeyId(): Promise<string> {
-  const value = await config.get(CONFIG_KEYS.OSS_ACCESS_KEY_ID)
-  return (value as string) || ''
-}
-
-export async function setOssAccessKeyId(key: string): Promise<void> {
-  await config.set(CONFIG_KEYS.OSS_ACCESS_KEY_ID, key)
-}
-
-// OSS AccessKey Secret
-export async function getOssAccessKeySecret(): Promise<string> {
-  const value = await config.get(CONFIG_KEYS.OSS_ACCESS_KEY_SECRET)
-  return (value as string) || ''
-}
-
-export async function setOssAccessKeySecret(key: string): Promise<void> {
-  await config.set(CONFIG_KEYS.OSS_ACCESS_KEY_SECRET, key)
 }
 
 // 设置数据库路径

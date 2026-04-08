@@ -1,49 +1,52 @@
-import OSS from 'ali-oss'
-import * as configService from '../services/config'
+const API_BASE = 'https://store.quikms.com'
 
-/**
- * 获取 OSS 客户端（延迟初始化，从配置读取密钥）
- */
-let _client: OSS | null = null
-
-export function resetOssClient(): void {
-  _client = null
-}
-
-async function getOssClient(): Promise<OSS> {
-  if (_client) return _client
-  const accessKeyId = await configService.getOssAccessKeyId()
-  const accessKeySecret = await configService.getOssAccessKeySecret()
-  if (!accessKeyId || !accessKeySecret) {
-    throw new Error('请先在设置中配置 OSS 密钥')
+interface OssSignatureResponse {
+  errno: number
+  errmsg: string
+  data: {
+    accessKeyId: string
+    policy: string
+    signature: string
+    host: string
+    dir: string
+    expire: number
   }
-  _client = new OSS({
-    region: 'oss-cn-hangzhou',
-    endpoint: 'oss-cn-hangzhou.aliyuncs.com',
-    accessKeyId,
-    accessKeySecret,
-    bucket: 'chauge-job',
-    secure: true,
-  })
-  return _client
+}
+
+async function getOssSignature(type: 'company' | 'shop'): Promise<OssSignatureResponse['data']> {
+  const res = await fetch(`${API_BASE}/admin/auth/getOssSignature?type=${type}`)
+  const json: OssSignatureResponse = await res.json()
+  if (json.errno !== 0) {
+    throw new Error(json.errmsg || '获取 OSS 签名失败')
+  }
+  return json.data
 }
 
 /**
- * 上传图片到阿里云 OSS（启用服务端 AES256 加密）
+ * 通过服务端签名上传图片到阿里云 OSS
  * @param file 要上传的文件
+ * @param type 上传类型：company（企业）或 shop（门店）
  * @returns 上传后的完整 URL
  */
-export async function uploadImageToOss(file: File): Promise<string> {
-  const client = await getOssClient()
-  const ext = file.name.split('.').pop() || 'png'
-  const timestamp = Date.now()
-  const random = Math.random().toString(36).slice(2, 8)
-  const ossKey = `meeting-store/${timestamp}_${random}.${ext}`
+export async function uploadImageToOss(file: File, type: 'company' | 'shop'): Promise<string> {
+  const signature = await getOssSignature(type)
 
-  const result = await client.put(ossKey, file, {
-    headers: {
-      'x-oss-server-side-encryption': 'AES256',
-    },
+  const formData = new FormData()
+  formData.append('key', signature.dir)
+  formData.append('OSSAccessKeyId', signature.accessKeyId)
+  formData.append('policy', signature.policy)
+  formData.append('signature', signature.signature)
+  formData.append('success_action_status', '200')
+  formData.append('file', file)
+
+  const res = await fetch(signature.host, {
+    method: 'POST',
+    body: formData,
   })
-  return result.url
+
+  if (!res.ok) {
+    throw new Error(`上传失败，状态码：${res.status}`)
+  }
+
+  return `${signature.host}/${signature.dir}`
 }

@@ -20,15 +20,8 @@ type SettingsTab = 'appearance' | 'notification' | 'antiRevoke' | 'database' | '
 const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'notification', label: '通知', icon: Bell },
-  { id: 'antiRevoke', label: '防撤回', icon: RotateCcw },
   { id: 'database', label: '数据库连接', icon: Database },
-  { id: 'models', label: '模型管理', icon: Mic },
   { id: 'cache', label: '缓存', icon: HardDrive },
-  { id: 'api', label: 'API 服务', icon: Globe },
-  { id: 'analytics', label: '分析', icon: BarChart2 },
-  { id: 'security', label: '安全', icon: ShieldCheck },
-  { id: 'updates', label: '版本更新', icon: RefreshCw },
-  { id: 'about', label: '关于', icon: Info }
 ]
 
 const isMac = navigator.userAgent.toLowerCase().includes('mac')
@@ -106,9 +99,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [whisperModelStatus, setWhisperModelStatus] = useState<{ exists: boolean; modelPath?: string; tokensPath?: string } | null>(null)
 
   const [httpApiToken, setHttpApiToken] = useState('')
-  const [ossAccessKeyId, setOssAccessKeyId] = useState('')
-  const [ossAccessKeySecret, setOssAccessKeySecret] = useState('')
-  const [showOssSecret, setShowOssSecret] = useState(false)
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -372,10 +362,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       const savedApiHost = await configService.getHttpApiHost()
       if (savedApiHost) setHttpApiHost(savedApiHost)
 
-      const savedOssKeyId = await configService.getOssAccessKeyId()
-      if (savedOssKeyId) setOssAccessKeyId(savedOssKeyId)
-      const savedOssKeySecret = await configService.getOssAccessKeySecret()
-      if (savedOssKeySecret) setOssAccessKeySecret(savedOssKeySecret)
 
       setAuthEnabled(savedAuthEnabled)
       setAuthUseHello(savedAuthUseHello)
@@ -2142,57 +2128,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       </div>
 
       <div className="form-group">
-        <label>图片 XOR 密钥 <span className="optional">(可选)</span></label>
-        <span className="form-hint">用于解密图片缓存</span>
-        <input
-          type="text"
-          placeholder="例如: 0xA4"
-          value={imageXorKey}
-          onChange={(e) => {
-            const value = e.target.value
-            setImageXorKey(value)
-            const parsed = parseImageXorKey(value)
-            if (value === '' || parsed !== null) {
-              scheduleConfigSave('keys', () => syncCurrentKeys({ imageXorKey: value, wxid }))
-            }
-          }}
-        />
-      </div>
-
-      <div className="form-group">
-        <label>图片 AES 密钥 <span className="optional">(可选)</span></label>
-        <span className="form-hint">16 位密钥</span>
-        <input
-          type="text"
-          placeholder="16 位 AES 密钥"
-          value={imageAesKey}
-          onChange={(e) => {
-            const value = e.target.value
-            setImageAesKey(value)
-            scheduleConfigSave('keys', () => syncCurrentKeys({ imageAesKey: value, wxid }))
-          }}
-        />
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-          <button className="btn btn-primary btn-sm" onClick={handleAutoGetImageKey} disabled={isFetchingImageKey} title="从本地缓存快速计算">
-            <Plug size={14} /> {isFetchingImageKey ? '获取中...' : '缓存计算（推荐）'}
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={handleScanImageKeyFromMemory} disabled={isFetchingImageKey} title="扫描微信进程内存">
-            {isFetchingImageKey ? '扫描中...' : '内存扫描'}
-          </button>
-        </div>
-        {isFetchingImageKey ? (
-          <div className="brute-force-progress">
-            <div className="status-header">
-              <span className="status-text">{imageKeyStatus || '正在启动...'}</span>
-            </div>
-          </div>
-        ) : (
-          imageKeyStatus && <div className="form-hint status-text" style={{ marginTop: '8px' }}>{imageKeyStatus}</div>
-        )}
-        <span className="form-hint">优先推荐缓存计算方案。若图片无法解密，可使用内存扫描（需微信运行并打开 2-3 张图片大图）</span>
-      </div>
-
-      <div className="form-group">
         <label>调试日志</label>
         <span className="form-hint">开启后写入 WCDB 调试日志，便于排查连接问题</span>
         <div className="log-toggle-line">
@@ -2381,12 +2316,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
         </div>
 
       <div className="btn-row">
-        <button className="btn btn-secondary" onClick={handleClearAnalyticsCache} disabled={isClearingCache}>
-          <Trash2 size={16} /> 清除分析缓存
-        </button>
-        <button className="btn btn-secondary" onClick={handleClearImageCache} disabled={isClearingCache}>
-          <Trash2 size={16} /> 清除图片缓存
-        </button>
         <button className="btn btn-danger" onClick={handleClearAllCache} disabled={isClearingCache}>
           <Trash2 size={16} /> 清除所有缓存</button>
       </div>
@@ -2577,50 +2506,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
           value={httpApiMediaExportPath || '未获取到目录'}
           readOnly
         />
-      </div>
-
-      <div className="divider" />
-
-      <div className="form-group">
-        <label>OSS 云存储</label>
-        <span className="form-hint">配置阿里云 OSS 密钥，用于上传图片等文件。密钥保存在本地，上传启用 AES256 服务端加密</span>
-      </div>
-
-      <div className="form-group">
-        <label>AccessKey ID</label>
-        <input
-          type="text"
-          className="field-input"
-          value={ossAccessKeyId}
-          placeholder="请输入 AccessKey ID"
-          onChange={(e) => {
-            const val = e.target.value.trim()
-            setOssAccessKeyId(val)
-            scheduleConfigSave('ossAccessKeyId', () => configService.setOssAccessKeyId(val))
-          }}
-          style={{ fontFamily: 'monospace' }}
-        />
-      </div>
-
-      <div className="form-group">
-        <label>AccessKey Secret</label>
-        <div className="input-with-toggle">
-          <input
-            type={showOssSecret ? 'text' : 'password'}
-            className="field-input"
-            value={ossAccessKeySecret}
-            placeholder="请输入 AccessKey Secret"
-            onChange={(e) => {
-              const val = e.target.value.trim()
-              setOssAccessKeySecret(val)
-              scheduleConfigSave('ossAccessKeySecret', () => configService.setOssAccessKeySecret(val))
-            }}
-            style={{ fontFamily: 'monospace' }}
-          />
-          <button type="button" className="toggle-visibility" onClick={() => setShowOssSecret(!showOssSecret)}>
-            {showOssSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        </div>
       </div>
 
       <div className="divider" />
@@ -3182,15 +3067,8 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
           <div className="settings-body">
             {activeTab === 'appearance' && renderAppearanceTab()}
             {activeTab === 'notification' && renderNotificationTab()}
-            {activeTab === 'antiRevoke' && renderAntiRevokeTab()}
             {activeTab === 'database' && renderDatabaseTab()}
-            {activeTab === 'models' && renderModelsTab()}
             {activeTab === 'cache' && renderCacheTab()}
-            {activeTab === 'api' && renderApiTab()}
-            {activeTab === 'updates' && renderUpdatesTab()}
-            {activeTab === 'analytics' && renderAnalyticsTab()}
-            {activeTab === 'security' && renderSecurityTab()}
-            {activeTab === 'about' && renderAboutTab()}
           </div>
         </div>
       </div>

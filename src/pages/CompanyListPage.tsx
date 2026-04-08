@@ -103,7 +103,7 @@ function CompanyListPage() {
     }
     setAddUploading(true)
     try {
-      const url = await uploadImageToOss(file)
+      const url = await uploadImageToOss(file, 'company')
       setAddLogoUrl(url)
     } catch (err: any) {
       message.error('Logo 上传失败：' + (err.message || '未知错误'))
@@ -175,7 +175,7 @@ function CompanyListPage() {
     }
     setEditUploading(true)
     try {
-      const url = await uploadImageToOss(file)
+      const url = await uploadImageToOss(file, 'company')
       setEditLogoUrl(url)
     } catch (err: any) {
       message.error('Logo 上传失败：' + (err.message || '未知错误'))

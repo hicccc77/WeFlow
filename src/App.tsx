@@ -30,6 +30,7 @@ import CompanyListPage from './pages/CompanyListPage'
 import ShopListPage from './pages/ShopListPage'
 import CityListPage from './pages/CityListPage'
 import TimeListPage from './pages/TimeListPage'
+import TagDictPage from './pages/TagDictPage'
 import ManagerListPage from './pages/ManagerListPage'
 
 import { useAppStore } from './stores/appStore'
@@ -769,6 +770,7 @@ function App() {
               <Route path="/manager" element={<ManagerListPage />} />
               <Route path="/city" element={<CityListPage />} />
               <Route path="/time" element={<TimeListPage />} />
+              <Route path="/tag-dict" element={<TagDictPage />} />
               <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
               <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
             </Routes>

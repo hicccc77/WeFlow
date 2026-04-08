@@ -496,7 +496,7 @@ function ShopListPage() {
     }
     setImgUploading(true)
     try {
-      const url = await uploadImageToOss(file)
+      const url = await uploadImageToOss(file, 'shop')
       await fetch(`${API_BASE}/admin/shop/imgPut`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
