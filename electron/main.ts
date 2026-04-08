@@ -1,4 +1,13 @@
 import './preload-env'
+
+// 修复 Windows 控制台中文乱码：设置代码页为 UTF-8
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = require('child_process')
+    execSync('chcp 65001', { stdio: 'pipe' })
+  } catch {}
+}
+
 import { app, BrowserWindow, ipcMain, nativeTheme, session, Tray, Menu, nativeImage } from 'electron'
 import { Worker } from 'worker_threads'
 import { randomUUID } from 'crypto'

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Home, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw, FolderClosed } from 'lucide-react'
+import { Home, MessageSquare, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, RefreshCw, FolderClosed, Building2, Store, ChevronDown, Wrench, MapPin, Clock, UserCog } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useChatStore } from '../stores/chatStore'
 import { useAnalyticsStore } from '../stores/analyticsStore'
@@ -118,12 +118,14 @@ function Sidebar({ collapsed }: SidebarProps) {
     displayName: '未识别用户'
   })
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  const [configMenuOpen, setConfigMenuOpen] = useState(false)
   const [showSwitchAccountDialog, setShowSwitchAccountDialog] = useState(false)
   const [wxidOptions, setWxidOptions] = useState<WxidOption[]>([])
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
   const accountCardWrapRef = useRef<HTMLDivElement | null>(null)
   const setLocked = useAppStore(state => state.setLocked)
   const isDbConnected = useAppStore(state => state.isDbConnected)
+  const isMacPlatform = useAppStore(state => state.isMacPlatform)
   const resetChatStore = useChatStore(state => state.reset)
   const clearAnalyticsStoreCache = useAnalyticsStore(state => state.clearCache)
 
@@ -402,28 +404,20 @@ function Sidebar({ collapsed }: SidebarProps) {
           {/* 聊天 */}
           <NavLink
             to="/chat"
-            className={`nav-item ${isActive('/chat') ? 'active' : ''}`}
+            className={`nav-item ${isActive('/chat') ? 'active' : ''} ${isMacPlatform ? 'disabled' : ''}`}
             title={collapsed ? '聊天' : undefined}
+            onClick={(e) => { if (isMacPlatform) e.preventDefault() }}
           >
             <span className="nav-icon"><MessageSquare size={20} /></span>
             <span className="nav-label">聊天</span>
           </NavLink>
 
-          {/* 朋友圈 */}
-          <NavLink
-            to="/sns"
-            className={`nav-item ${isActive('/sns') ? 'active' : ''}`}
-            title={collapsed ? '朋友圈' : undefined}
-          >
-            <span className="nav-icon"><Aperture size={20} /></span>
-            <span className="nav-label">朋友圈</span>
-          </NavLink>
-
           {/* 通讯录 */}
           <NavLink
             to="/contacts"
-            className={`nav-item ${isActive('/contacts') ? 'active' : ''}`}
+            className={`nav-item ${isActive('/contacts') ? 'active' : ''} ${isMacPlatform ? 'disabled' : ''}`}
             title={collapsed ? '通讯录' : undefined}
+            onClick={(e) => { if (isMacPlatform) e.preventDefault() }}
           >
             <span className="nav-icon"><UserCircle size={20} /></span>
             <span className="nav-label">通讯录</span>
@@ -439,44 +433,70 @@ function Sidebar({ collapsed }: SidebarProps) {
             <span className="nav-label">资源浏览</span>
           </NavLink>
 
-          {/* 聊天分析 */}
+          {/* 企业列表 */}
           <NavLink
-            to="/analytics"
-            className={`nav-item ${isActive('/analytics') ? 'active' : ''}`}
-            title={collapsed ? '聊天分析' : undefined}
+            to="/company"
+            className={`nav-item ${isActive('/company') ? 'active' : ''}`}
+            title={collapsed ? '企业列表' : undefined}
           >
-            <span className="nav-icon"><BarChart3 size={20} /></span>
-            <span className="nav-label">聊天分析</span>
+            <span className="nav-icon"><Building2 size={20} /></span>
+            <span className="nav-label">企业列表</span>
           </NavLink>
 
-          {/* 年度报告 */}
+          {/* 门店列表 */}
           <NavLink
-            to="/annual-report"
-            className={`nav-item ${isActive('/annual-report') ? 'active' : ''}`}
-            title={collapsed ? '年度报告' : undefined}
+            to="/shop"
+            className={`nav-item ${isActive('/shop') ? 'active' : ''}`}
+            title={collapsed ? '门店列表' : undefined}
           >
-            <span className="nav-icon"><FileText size={20} /></span>
-            <span className="nav-label">年度报告</span>
+            <span className="nav-icon"><Store size={20} /></span>
+            <span className="nav-label">门店列表</span>
           </NavLink>
 
-          {/* 导出 */}
+          {/* 店长列表 */}
           <NavLink
-            to="/export"
-            className={`nav-item ${isActive('/export') ? 'active' : ''}`}
-            title={collapsed ? '导出' : undefined}
+            to="/manager"
+            className={`nav-item ${isActive('/manager') ? 'active' : ''}`}
+            title={collapsed ? '店长列表' : undefined}
           >
-            <span className="nav-icon nav-icon-with-badge">
-              <Download size={20} />
-              {collapsed && activeExportTaskCount > 0 && (
-                <span className="nav-badge icon-badge">{exportTaskBadge}</span>
-              )}
-            </span>
-            <span className="nav-label">导出</span>
-            {!collapsed && activeExportTaskCount > 0 && (
-              <span className="nav-badge">{exportTaskBadge}</span>
+            <span className="nav-icon"><UserCog size={20} /></span>
+            <span className="nav-label">店长列表</span>
+          </NavLink>
+
+          {/* 系统配置维护（一级可展开） */}
+          <div className={`nav-group ${isActive('/city') || isActive('/time') ? 'has-active' : ''}`}>
+            <div
+              className={`nav-item nav-group-title ${configMenuOpen ? 'open' : ''}`}
+              onClick={() => setConfigMenuOpen(!configMenuOpen)}
+              title={collapsed ? '系统配置维护' : undefined}
+            >
+              <span className="nav-icon"><Wrench size={20} /></span>
+              <span className="nav-label">系统配置维护</span>
+              <span className="nav-group-arrow">
+                <ChevronDown size={14} className={configMenuOpen ? 'arrow-open' : 'arrow-closed'} />
+              </span>
+            </div>
+            {configMenuOpen && (
+              <div className="nav-group-children">
+                <NavLink
+                  to="/city"
+                  className={`nav-item nav-child ${isActive('/city') ? 'active' : ''}`}
+                  title={collapsed ? '商圈列表' : undefined}
+                >
+                  <span className="nav-icon"><MapPin size={18} /></span>
+                  <span className="nav-label">商圈列表</span>
+                </NavLink>
+                <NavLink
+                  to="/time"
+                  className={`nav-item nav-child ${isActive('/time') ? 'active' : ''}`}
+                  title={collapsed ? '基础时间' : undefined}
+                >
+                  <span className="nav-icon"><Clock size={18} /></span>
+                  <span className="nav-label">基础时间</span>
+                </NavLink>
+              </div>
             )}
-          </NavLink>
-
+          </div>
 
         </nav>
 

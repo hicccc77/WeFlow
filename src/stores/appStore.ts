@@ -37,6 +37,14 @@ export interface AppState {
   isLocked: boolean
   setLocked: (locked: boolean) => void
 
+  // 登录状态
+  isLoggedIn: boolean
+  setIsLoggedIn: (loggedIn: boolean) => void
+
+  // 平台状态
+  isMacPlatform: boolean
+  setIsMacPlatform: (isMac: boolean) => void
+
   reset: () => void
 }
 
@@ -47,6 +55,7 @@ export const useAppStore = create<AppState>((set) => ({
   isLoading: false,
   loadingText: '',
   isLocked: false,
+  isLoggedIn: localStorage.getItem('weflow_logged_in') === 'true',
 
   // 更新状态初始化
   updateInfo: null,
@@ -69,6 +78,14 @@ export const useAppStore = create<AppState>((set) => ({
 
   setLocked: (locked) => set({ isLocked: locked }),
 
+  setIsLoggedIn: (loggedIn) => {
+    localStorage.setItem('weflow_logged_in', loggedIn ? 'true' : 'false')
+    set({ isLoggedIn: loggedIn })
+  },
+
+  isMacPlatform: navigator.userAgent.toLowerCase().includes('mac'),
+  setIsMacPlatform: (isMac) => set({ isMacPlatform: isMac }),
+
   setUpdateInfo: (info) => set({ updateInfo: info, updateError: null }),
   setIsDownloading: (isDownloading) => set({ isDownloading: isDownloading }),
   setDownloadProgress: (progress) => set({ downloadProgress: progress }),
@@ -82,6 +99,7 @@ export const useAppStore = create<AppState>((set) => ({
     isLoading: false,
     loadingText: '',
     isLocked: false,
+    isLoggedIn: false,
     updateInfo: null,
     isDownloading: false,
     downloadProgress: { percent: 0 },

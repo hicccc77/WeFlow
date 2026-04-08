@@ -1,0 +1,106 @@
+.shop-list-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: shopFadeIn 0.3s ease-out;
+
+  .shop-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+
+    .shop-page-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-primary);
+
+      h2 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+      }
+    }
+
+    .shop-count {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+  }
+
+  .spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  // 图片网格
+  .shop-img-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .shop-img-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+// 地图搜索候选列表
+.map-suggestion-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 80px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  max-height: 280px;
+  overflow-y: auto;
+
+  .map-suggestion-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &:not(:last-child) {
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .suggestion-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .suggestion-address {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+  }
+}
+
+@keyframes shopFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

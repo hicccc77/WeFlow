@@ -11,6 +11,7 @@ const handleElectronOnStart = (options: { reload: () => void }) => {
 export default defineConfig({
   base: './',
   server: {
+    host: '127.0.0.1',
     port: 3000,
     strictPort: false  // 如果3000被占用，自动尝试下一个
   },

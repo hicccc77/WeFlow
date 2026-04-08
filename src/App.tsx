@@ -25,6 +25,12 @@ import ContactsPage from './pages/ContactsPage'
 import ResourcesPage from './pages/ResourcesPage'
 import ChatHistoryPage from './pages/ChatHistoryPage'
 import NotificationWindow from './pages/NotificationWindow'
+import LoginPage from './pages/LoginPage'
+import CompanyListPage from './pages/CompanyListPage'
+import ShopListPage from './pages/ShopListPage'
+import CityListPage from './pages/CityListPage'
+import TimeListPage from './pages/TimeListPage'
+import ManagerListPage from './pages/ManagerListPage'
 
 import { useAppStore } from './stores/appStore'
 import { themes, useThemeStore, type ThemeId, type ThemeMode } from './stores/themeStore'
@@ -534,6 +540,19 @@ function App() {
     return <NotificationWindow />
   }
 
+  // 主窗口 - 登录检查
+  const isLoggedIn = useAppStore(state => state.isLoggedIn)
+  const isMacPlatform = useAppStore(state => state.isMacPlatform)
+  const isDbConnectedValue = useAppStore(state => state.isDbConnected)
+  if (!isLoggedIn) {
+    return <LoginPage />
+  }
+
+  // 登录后：Mac 系统跳过配置页直接进后台；Windows 需要数据库已连接才进后台，否则走配置流程
+  if (!isMacPlatform && !isDbConnectedValue) {
+    return <WelcomePage />
+  }
+
   // 主窗口 - 完整布局
   const handleCloseSettings = () => {
     const backgroundLocation = settingsRouteState?.backgroundLocation ?? settingsBackgroundRef.current
@@ -745,6 +764,11 @@ function App() {
               <Route path="/biz" element={<BizPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/resources" element={<ResourcesPage />} />
+              <Route path="/company" element={<CompanyListPage />} />
+              <Route path="/shop" element={<ShopListPage />} />
+              <Route path="/manager" element={<ManagerListPage />} />
+              <Route path="/city" element={<CityListPage />} />
+              <Route path="/time" element={<TimeListPage />} />
               <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
               <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
             </Routes>

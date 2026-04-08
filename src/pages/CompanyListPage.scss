@@ -1,0 +1,122 @@
+.company-list-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: companyFadeIn 0.3s ease-out;
+
+  .company-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+
+    .company-page-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-primary);
+
+      h2 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+      }
+    }
+
+    .company-count {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+  }
+
+  // Logo 图片
+  .company-logo-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    object-fit: cover;
+    display: block;
+  }
+
+  // Logo 上传区域
+  .logo-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+
+    .logo-upload-placeholder {
+      width: 100px;
+      height: 100px;
+      border-radius: 8px;
+      border: 2px dashed var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: border-color 0.2s;
+      color: var(--text-tertiary);
+      font-size: 12px;
+
+      &:hover {
+        border-color: var(--primary);
+        color: var(--primary);
+      }
+    }
+
+    .logo-preview {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .logo-preview-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        color: #fff;
+        font-size: 12px;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      &:hover .logo-preview-overlay {
+        opacity: 1;
+      }
+    }
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes companyFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

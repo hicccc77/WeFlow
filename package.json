@@ -23,7 +23,10 @@
     "electron:build": "npm run build"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.1",
     "@vscode/sudo-prompt": "^9.3.2",
+    "ali-oss": "^6.23.0",
+    "antd": "^6.3.5",
     "dbus-native": "^0.4.0",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.2",
@@ -53,6 +56,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "ajv-keywords": "^5.1.0",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
     "sass": "^1.99.0",
@@ -196,6 +200,10 @@
   "overrides": {
     "picomatch": "^4.0.4",
     "tar": "^7.5.13",
-    "immutable": "^5.1.5"
+    "immutable": "^5.1.5",
+    "@develar/schema-utils": {
+      "ajv": "6.12.6",
+      "ajv-keywords": "3.5.2"
+    }
   }
 }

@@ -216,6 +216,17 @@
     background: var(--primary);
     color: var(--on-primary);
   }
+
+  &.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+
+    &:hover {
+      background: transparent;
+      color: var(--text-secondary);
+    }
+  }
 }
 
 .nav-icon {
@@ -234,6 +245,59 @@
 .nav-label {
   font-size: 14px;
   font-weight: 500;
+}
+
+// ---- 导航组（一级可展开 + 二级子项） ----
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+
+  &.has-active > .nav-group-title {
+    color: var(--text-primary);
+  }
+
+  .nav-group-title {
+    user-select: none;
+
+    .nav-group-arrow {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+
+      .arrow-closed {
+        transition: transform 0.2s;
+        transform: rotate(-90deg);
+      }
+
+      .arrow-open {
+        transition: transform 0.2s;
+        transform: rotate(0deg);
+      }
+    }
+  }
+
+  .nav-group-children {
+    display: flex;
+    flex-direction: column;
+    padding-left: 12px;
+
+    .nav-child {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+
+      .nav-icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .nav-label {
+        font-size: 13px;
+        font-weight: 400;
+      }
+    }
+  }
 }
 
 .nav-badge {
