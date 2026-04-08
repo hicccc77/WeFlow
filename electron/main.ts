@@ -3585,9 +3585,12 @@ app.whenReady().then(async () => {
   await new Promise((resolve) => setTimeout(resolve, 250))
   closeSplash()
 
-  if (!onboardingDone) {
+  if (!onboardingDone && process.platform !== 'darwin') {
     createOnboardingWindow()
   } else {
+    if (!onboardingDone && process.platform === 'darwin') {
+      try { configService?.set('onboardingDone', true) } catch {}
+    }
     mainWindow?.show()
   }
 

@@ -423,16 +423,6 @@ function Sidebar({ collapsed }: SidebarProps) {
             <span className="nav-label">通讯录</span>
           </NavLink>
 
-          {/* 资源浏览 */}
-          <NavLink
-            to="/resources"
-            className={`nav-item ${isActive('/resources') ? 'active' : ''}`}
-            title={collapsed ? '资源浏览' : undefined}
-          >
-            <span className="nav-icon"><FolderClosed size={20} /></span>
-            <span className="nav-label">资源浏览</span>
-          </NavLink>
-
           {/* 企业列表 */}
           <NavLink
             to="/company"
