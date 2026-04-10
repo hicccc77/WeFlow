@@ -107,44 +107,6 @@ function App() {
   const [showAnalyticsConsent, setShowAnalyticsConsent] = useState(false)
   const [analyticsConsent, setAnalyticsConsent] = useState<boolean | null>(null)
 
-  const [showWaylandWarning, setShowWaylandWarning] = useState(false)
-
-  useEffect(() => {
-    const checkWaylandStatus = async () => {
-      try {
-        // 防止在非客户端环境报错，先检查 API 是否存在
-        if (!window.electronAPI?.app?.checkWayland) return
-
-        // 通过 configService 检查是否已经弹过窗
-        const hasWarned = await window.electronAPI.config.get('waylandWarningShown')
-
-        if (!hasWarned) {
-          const isWayland = await window.electronAPI.app.checkWayland()
-          if (isWayland) {
-            setShowWaylandWarning(true)
-          }
-        }
-      } catch (e) {
-        console.error('检查 Wayland 状态失败:', e)
-      }
-    }
-
-    // 只有在协议同意之后并且已经进入主应用流程才检查
-    if (!isAgreementWindow && !isOnboardingWindow && !agreementLoading) {
-      checkWaylandStatus()
-    }
-  }, [isAgreementWindow, isOnboardingWindow, agreementLoading])
-
-  const handleDismissWaylandWarning = async () => {
-    try {
-      // 记录到本地配置中，下次不再提示
-      await window.electronAPI.config.set('waylandWarningShown', true)
-    } catch (e) {
-      console.error('保存 Wayland 提示状态失败:', e)
-    }
-    setShowWaylandWarning(false)
-  }
-
   useEffect(() => {
     if (location.pathname !== '/settings') {
       settingsBackgroundRef.current = location
@@ -684,33 +646,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/*{showWaylandWarning && (*/}
-      {/*  <div className="agreement-overlay">*/}
-      {/*    <div className="agreement-modal">*/}
-      {/*      <div className="agreement-header">*/}
-      {/*        <Shield size={32} />*/}
-      {/*        <h2>环境兼容性提示 (Wayland)</h2>*/}
-      {/*      </div>*/}
-      {/*      <div className="agreement-content">*/}
-      {/*        <div className="agreement-text">*/}
-      {/*          <p>检测到您当前正在使用 <strong>Wayland</strong> 显示服务器。</p>*/}
-      {/*          <p>在 Wayland 环境下，出于系统级的安全与设计机制，<strong>应用程序无法直接控制新弹出窗口的位置</strong>。</p>*/}
-      {/*          <p>这可能导致某些独立窗口（如消息通知、图片查看器等）出现位置随机、或不受控制的情况。这是底层机制导致的，对此我们无能为力。</p>*/}
-      {/*          <br />*/}
-      {/*          <p>如果您觉得窗口位置异常严重影响了使用体验，建议尝试：</p>*/}
-      {/*          <p>1. 在系统登录界面，将会话切换回 <strong>X11 (Xorg)</strong> 模式。</p>*/}
-      {/*          <p>2. 修改您的桌面管理器 (WM/DE) 配置，强制指定该应用程序的窗口规则。</p>*/}
-      {/*        </div>*/}
-      {/*      </div>*/}
-      {/*      <div className="agreement-footer">*/}
-      {/*        <div className="agreement-actions">*/}
-      {/*          <button className="btn btn-primary" onClick={handleDismissWaylandWarning}>我知道了，不再提示</button>*/}
-      {/*        </div>*/}
-      {/*      </div>*/}
-      {/*    </div>*/}
-      {/*  </div>*/}
-      {/*)}*/}     
 
       {/* 更新提示对话框 */}
       <UpdateDialog

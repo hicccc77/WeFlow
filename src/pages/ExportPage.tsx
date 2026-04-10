@@ -1621,6 +1621,7 @@ function ExportPage() {
   const [exportDefaultFormat, setExportDefaultFormat] = useState<TextExportFormat>('excel')
   const [exportDefaultAvatars, setExportDefaultAvatars] = useState(true)
   const [exportDefaultDateRangeSelection, setExportDefaultDateRangeSelection] = useState<ExportDateRangeSelection>(() => createDefaultExportDateRangeSelection())
+  const [exportDefaultFileNamingMode, setExportDefaultFileNamingMode] = useState<configService.ExportFileNamingMode>('classic')
   const [exportDefaultMedia, setExportDefaultMedia] = useState<configService.ExportDefaultMediaConfig>({
     images: true,
     videos: true,
@@ -2270,7 +2271,7 @@ function ExportPage() {
     setIsBaseConfigLoading(true)
     let isReady = true
     try {
-      const [savedPath, savedFormat, savedAvatars, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedTxtColumns, savedConcurrency, savedImageDeepSearchOnMiss, savedSessionMap, savedContentMap, savedSessionRecordMap, savedSnsPostCount, savedWriteLayout, savedSessionNameWithTypePrefix, savedDefaultDateRange, exportCacheScope] = await Promise.all([
+      const [savedPath, savedFormat, savedAvatars, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedTxtColumns, savedConcurrency, savedImageDeepSearchOnMiss, savedSessionMap, savedContentMap, savedSessionRecordMap, savedSnsPostCount, savedWriteLayout, savedSessionNameWithTypePrefix, savedDefaultDateRange, savedFileNamingMode, exportCacheScope] = await Promise.all([
         configService.getExportPath(),
         configService.getExportDefaultFormat(),
         configService.getExportDefaultAvatars(),
@@ -2287,6 +2288,7 @@ function ExportPage() {
         configService.getExportWriteLayout(),
         configService.getExportSessionNamePrefixEnabled(),
         configService.getExportDefaultDateRange(),
+        configService.getExportDefaultFileNamingMode(),
         ensureExportCacheScope()
       ])
 
@@ -2318,6 +2320,7 @@ function ExportPage() {
       setExportDefaultExcelCompactColumns(savedExcelCompactColumns ?? true)
       setExportDefaultConcurrency(savedConcurrency ?? 2)
       setExportDefaultImageDeepSearchOnMiss(savedImageDeepSearchOnMiss ?? true)
+      setExportDefaultFileNamingMode(savedFileNamingMode ?? 'classic')
       const resolvedDefaultDateRange = resolveExportDateRangeConfig(savedDefaultDateRange)
       setExportDefaultDateRangeSelection(resolvedDefaultDateRange)
       setTimeRangeSelection(resolvedDefaultDateRange)
@@ -4397,6 +4400,7 @@ function ExportPage() {
       displayNamePreference: options.displayNamePreference,
       exportConcurrency: options.exportConcurrency,
       imageDeepSearchOnMiss: options.imageDeepSearchOnMiss,
+      fileNamingMode: exportDefaultFileNamingMode,
       sessionLayout,
       sessionNameWithTypePrefix,
       dateRange: options.useAllTime
@@ -7088,6 +7092,9 @@ function ExportPage() {
     }
     if (patch.dateRange) {
       setExportDefaultDateRangeSelection(patch.dateRange)
+    }
+    if (patch.fileNamingMode) {
+      setExportDefaultFileNamingMode(patch.fileNamingMode)
     }
     if (patch.media) {
       const mediaPatch = patch.media

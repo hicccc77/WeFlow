@@ -15,10 +15,8 @@
 
 import https from 'https'
 import http from 'http'
-import fs from 'fs'
-import path from 'path'
 import { URL } from 'url'
-import { app, Notification } from 'electron'
+import { Notification } from 'electron'
 import { ConfigService } from './config'
 import { chatService, ChatSession, Message } from './chatService'
 
@@ -53,32 +51,16 @@ interface TodayTriggerRecord {
   timestamps: number[]
 }
 
-// ─── 桌面日志 ─────────────────────────────────────────────────────────────────
+// ─── 日志 ─────────────────────────────────────────────────────────────────────
 
 /**
- * 将日志同时输出到 console 和桌面上的 weflow-insight.log 文件。
- * 文件名带当天日期，每天自动换一个新文件，旧文件保留。
+ * 仅输出到 console，不落盘到文件。
  */
 function insightLog(level: 'INFO' | 'WARN' | 'ERROR', message: string): void {
-  const now = new Date()
-  const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-  const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false })
-  const line = `[${dateStr} ${timeStr}] [${level}] ${message}\n`
-
-  // 同步到 console
   if (level === 'ERROR' || level === 'WARN') {
     console.warn(`[InsightService] ${message}`)
   } else {
     console.log(`[InsightService] ${message}`)
-  }
-
-  // 异步写入桌面日志文件，避免同步磁盘 I/O 阻塞 Electron 主线程事件循环
-  try {
-    const desktopPath = app.getPath('desktop')
-    const logFile = path.join(desktopPath, `weflow-insight-${dateStr}.log`)
-    fs.appendFile(logFile, line, 'utf-8', () => { /* 失败静默处理 */ })
-  } catch {
-    // getPath 失败时静默处理
   }
 }
 
@@ -245,11 +227,18 @@ class InsightService {
   }
 
   stop(): void {
+    const hadActiveFlow =
+      this.dbDebounceTimer !== null ||
+      this.silenceScanTimer !== null ||
+      this.silenceInitialDelayTimer !== null ||
+      this.processing
     this.started = false
     this.clearTimers()
     this.clearRuntimeCache()
     this.processing = false
-    insightLog('INFO', '已停止')
+    if (hadActiveFlow) {
+      insightLog('INFO', '已停止')
+    }
   }
 
   async handleConfigChanged(key: string): Promise<void> {

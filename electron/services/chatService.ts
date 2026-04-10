@@ -323,6 +323,8 @@ class ChatService {
   private contactLabelNameMapCacheAt = 0
   private readonly contactLabelNameMapCacheTtlMs = 10 * 60 * 1000
   private contactsLoadInFlight: { mode: 'lite' | 'full'; promise: Promise<{ success: boolean; contacts?: ContactInfo[]; error?: string }> } | null = null
+  private contactsMemoryCache = new Map<'lite' | 'full', { scope: string; updatedAt: number; contacts: ContactInfo[] }>()
+  private readonly contactsMemoryCacheTtlMs = 3 * 60 * 1000
   private readonly contactDisplayNameCollator = new Intl.Collator('zh-CN')
   private readonly slowGetContactsLogThresholdMs = 1200
 
@@ -510,6 +512,43 @@ class ChatService {
       }
     } catch (e) {
       // 静默失败，不影响主流程
+    }
+  }
+
+  async warmupMessageDbSnapshot(): Promise<{ success: boolean; messageDbCount?: number; mediaDbCount?: number; error?: string }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error || '数据库未连接' }
+      }
+
+      const [messageSnapshot, mediaResult] = await Promise.all([
+        this.getMessageDbCountSnapshot(true),
+        wcdbService.listMediaDbs()
+      ])
+
+      let messageDbCount = 0
+      if (messageSnapshot.success && Array.isArray(messageSnapshot.dbPaths)) {
+        messageDbCount = messageSnapshot.dbPaths.length
+      }
+
+      let mediaDbCount = 0
+      if (mediaResult.success && Array.isArray(mediaResult.data)) {
+        this.mediaDbsCache = [...mediaResult.data]
+        this.mediaDbsCacheTime = Date.now()
+        mediaDbCount = mediaResult.data.length
+      }
+
+      if (!messageSnapshot.success && !mediaResult.success) {
+        return {
+          success: false,
+          error: messageSnapshot.error || mediaResult.error || '初始化消息库索引失败'
+        }
+      }
+
+      return { success: true, messageDbCount, mediaDbCount }
+    } catch (e) {
+      return { success: false, error: String(e) }
     }
   }
 
@@ -1362,8 +1401,50 @@ class ChatService {
     }
   }
 
+  private getContactsCacheScope(): string {
+    const dbPath = String(this.configService.get('dbPath') || '').trim()
+    const myWxid = String(this.configService.get('myWxid') || '').trim()
+    return `${dbPath}::${myWxid}`
+  }
+
+  private cloneContacts(contacts: ContactInfo[]): ContactInfo[] {
+    return (contacts || []).map((contact) => ({
+      ...contact,
+      labels: Array.isArray(contact.labels) ? [...contact.labels] : contact.labels
+    }))
+  }
+
+  private getContactsFromMemoryCache(mode: 'lite' | 'full', scope: string): ContactInfo[] | null {
+    const cached = this.contactsMemoryCache.get(mode)
+    if (!cached) return null
+    if (cached.scope !== scope) return null
+    if (Date.now() - cached.updatedAt > this.contactsMemoryCacheTtlMs) return null
+    return this.cloneContacts(cached.contacts)
+  }
+
+  private setContactsMemoryCache(mode: 'lite' | 'full', scope: string, contacts: ContactInfo[]): void {
+    this.contactsMemoryCache.set(mode, {
+      scope,
+      updatedAt: Date.now(),
+      contacts: this.cloneContacts(contacts)
+    })
+  }
+
   private async getContactsInternal(options?: GetContactsOptions): Promise<{ success: boolean; contacts?: ContactInfo[]; error?: string }> {
     const isLiteMode = options?.lite === true
+    const mode: 'lite' | 'full' = isLiteMode ? 'lite' : 'full'
+    const cacheScope = this.getContactsCacheScope()
+    const cachedContacts = this.getContactsFromMemoryCache(mode, cacheScope)
+    if (cachedContacts) {
+      return { success: true, contacts: cachedContacts }
+    }
+    if (isLiteMode) {
+      const fullCachedContacts = this.getContactsFromMemoryCache('full', cacheScope)
+      if (fullCachedContacts) {
+        return { success: true, contacts: fullCachedContacts }
+      }
+    }
+
     const startedAt = Date.now()
     const stageDurations: Array<{ stage: string; ms: number }> = []
     const captureStage = (stage: string, stageStartedAt: number) => {
@@ -1486,6 +1567,10 @@ class ChatService {
           .map((item) => `${item.stage}=${item.ms}ms`)
           .join(', ')
         console.warn(`[ChatService] getContacts(${isLiteMode ? 'lite' : 'full'}) 慢查询 total=${totalMs}ms, ${stageSummary}`)
+      }
+      this.setContactsMemoryCache(mode, cacheScope, result)
+      if (!isLiteMode) {
+        this.setContactsMemoryCache('lite', cacheScope, result)
       }
       return { success: true, contacts: result }
     } catch (e) {
@@ -2886,6 +2971,7 @@ class ChatService {
     this.sessionTablesCache.clear()
     this.messageTableColumnsCache.clear()
     this.messageDbCountSnapshotCache = null
+    this.contactsMemoryCache.clear()
     this.refreshSessionStatsCacheScope(scope)
     this.refreshGroupMyMessageCountCacheScope(scope)
   }
@@ -5983,6 +6069,7 @@ class ChatService {
     if (includeContacts) {
       this.avatarCache.clear()
       this.contactCacheService.clear()
+      this.contactsMemoryCache.clear()
     }
 
     if (includeMessages) {

@@ -30,6 +30,7 @@ export const CONFIG_KEYS = {
   EXPORT_DEFAULT_FORMAT: 'exportDefaultFormat',
   EXPORT_DEFAULT_AVATARS: 'exportDefaultAvatars',
   EXPORT_DEFAULT_DATE_RANGE: 'exportDefaultDateRange',
+  EXPORT_DEFAULT_FILE_NAMING_MODE: 'exportDefaultFileNamingMode',
   EXPORT_DEFAULT_MEDIA: 'exportDefaultMedia',
   EXPORT_DEFAULT_VOICE_AS_TEXT: 'exportDefaultVoiceAsText',
   EXPORT_DEFAULT_EXCEL_COMPACT_COLUMNS: 'exportDefaultExcelCompactColumns',
@@ -113,6 +114,8 @@ export interface ExportDefaultMediaConfig {
   emojis: boolean
   files: boolean
 }
+
+export type ExportFileNamingMode = 'classic' | 'date-range'
 
 export type WindowCloseBehavior = 'ask' | 'tray' | 'quit'
 export type QuoteLayout = 'quote-top' | 'quote-bottom'
@@ -432,6 +435,18 @@ export async function getExportDefaultDateRange(): Promise<ExportDefaultDateRang
 // 设置导出默认时间范围
 export async function setExportDefaultDateRange(range: ExportDefaultDateRangeConfig | string): Promise<void> {
   await config.set(CONFIG_KEYS.EXPORT_DEFAULT_DATE_RANGE, range)
+}
+
+// 获取导出默认文件命名方式
+export async function getExportDefaultFileNamingMode(): Promise<ExportFileNamingMode | null> {
+  const value = await config.get(CONFIG_KEYS.EXPORT_DEFAULT_FILE_NAMING_MODE)
+  if (value === 'classic' || value === 'date-range') return value
+  return null
+}
+
+// 设置导出默认文件命名方式
+export async function setExportDefaultFileNamingMode(mode: ExportFileNamingMode): Promise<void> {
+  await config.set(CONFIG_KEYS.EXPORT_DEFAULT_FILE_NAMING_MODE, mode)
 }
 
 // 获取导出默认媒体设置
