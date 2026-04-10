@@ -71,7 +71,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('app:updateAvailable', (_, info) => callback(info))
       return () => ipcRenderer.removeAllListeners('app:updateAvailable')
     },
-    checkWayland: () => ipcRenderer.invoke('app:checkWayland'),
   },
 
   // 日志

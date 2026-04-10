@@ -69,7 +69,6 @@ export interface ElectronAPI {
     ignoreUpdate: (version: string) => Promise<{ success: boolean }>
     onDownloadProgress: (callback: (progress: number) => void) => () => void
     onUpdateAvailable: (callback: (info: { version: string; releaseNotes: string }) => void) => () => void
-    checkWayland: () => Promise<boolean>
   }
   notification: {
     show: (data: { title: string; content: string; avatarUrl?: string; sessionId: string }) => Promise<{ success?: boolean; error?: string } | void>
@@ -1006,6 +1005,7 @@ export interface ExportOptions {
   exportVoiceAsText?: boolean
   excelCompactColumns?: boolean
   txtColumns?: string[]
+  fileNamingMode?: 'classic' | 'date-range'
   sessionLayout?: 'shared' | 'per-session'
   sessionNameWithTypePrefix?: boolean
   displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
