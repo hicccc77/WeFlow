@@ -5959,9 +5959,7 @@ class ChatService {
     if (cachePath) {
       return join(cachePath, 'Voices')
     }
-    // 回退到默认目录
-    const documentsPath = app.getPath('documents')
-    return join(documentsPath, 'WeFlow', 'Voices')
+    return join(this.getDefaultDocumentsBaseDir(), 'Voices')
   }
 
   private getEmojiCacheDir(): string {
@@ -5969,9 +5967,19 @@ class ChatService {
     if (cachePath) {
       return join(cachePath, 'Emojis')
     }
-    // 回退到默认目录
-    const documentsPath = app.getPath('documents')
-    return join(documentsPath, 'WeFlow', 'Emojis')
+    return join(this.getDefaultDocumentsBaseDir(), 'Emojis')
+  }
+
+  private getDefaultDocumentsBaseDir(): string {
+    const workerUserDataPath = String(process.env.WEFLOW_USER_DATA_PATH || process.env.WEFLOW_CONFIG_CWD || '').trim()
+    if (workerUserDataPath) {
+      return join(workerUserDataPath, 'documents-fallback', 'WeFlow')
+    }
+    const documentsPath = app?.getPath?.('documents')
+    if (documentsPath) {
+      return join(documentsPath, 'WeFlow')
+    }
+    return join(this.configService.getCacheBasePath(), '..')
   }
 
   clearCaches(options?: { includeMessages?: boolean; includeContacts?: boolean; includeEmojis?: boolean }): { success: boolean; error?: string } {
@@ -7373,7 +7381,7 @@ class ChatService {
   /** 获取持久化转写缓存文件路径 */
   private getTranscriptCachePath(): string {
     const cachePath = this.configService.get('cachePath')
-    const base = cachePath || join(app.getPath('documents'), 'WeFlow')
+    const base = cachePath || this.getDefaultDocumentsBaseDir()
     return join(base, 'Voices', 'transcripts.json')
   }
 

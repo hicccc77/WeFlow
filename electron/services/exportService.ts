@@ -88,6 +88,7 @@ const MESSAGE_TYPE_MAP: Record<number, number> = {
 
 export interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
+  streamingHtml?: boolean
   contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji'
   dateRange?: { start: number; end: number } | null
   senderUsername?: string
@@ -225,6 +226,27 @@ interface ExportAggregatedSessionMetric {
 interface ExportAggregatedSessionStatsCacheEntry {
   createdAt: number
   data: Record<string, ExportAggregatedSessionMetric>
+}
+
+interface HtmlExportChunkManifestItem {
+  file: string
+  count: number
+  startIndex: number
+  endIndex: number
+  startTime?: number
+  endTime?: number
+}
+
+interface HtmlExportManifest {
+  version: 1
+  generatedBy: string
+  sessionId: string
+  sessionName: string
+  isGroup: boolean
+  totalMessages: number
+  exportedAt: number
+  manifestPath: string
+  chunks: HtmlExportChunkManifestItem[]
 }
 
 // 并发控制：限制同时执行的 Promise 数量
@@ -7991,6 +8013,25 @@ class ExportService {
           this.renderBatch();
         }
 
+        onDataAppended() {
+          if (this.data.length === 0) {
+            this.list.innerHTML = '<div class="empty">暂无消息</div>';
+            return;
+          }
+          if (this.rendered === 0 && this.list.children.length === 0) {
+            this.renderBatch();
+          }
+          while (
+            this.rendered < this.data.length &&
+            (
+              this.container.scrollHeight <= this.container.clientHeight + 240 ||
+              this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight < 1200
+            )
+          ) {
+            this.renderBatch();
+          }
+        }
+
         scrollToTime(timestamp) {
           const idx = this.data.findIndex(item => item.t >= timestamp);
           if (idx === -1) return;
@@ -8017,6 +8058,324 @@ class ExportService {
         }
       }
     `;
+  }
+
+  private getStreamingHtmlChunkSize(): number {
+    return 1000
+  }
+
+  private getStreamingHtmlBundlePaths(outputPath: string): {
+    bundleDirName: string
+    bundleDir: string
+    manifestPath: string
+    chunksDir: string
+    manifestRelativePath: string
+  } {
+    const htmlBaseName = path.basename(outputPath, path.extname(outputPath))
+    const bundleDirName = `${htmlBaseName}.stream`
+    const bundleDir = path.join(path.dirname(outputPath), bundleDirName)
+    return {
+      bundleDirName,
+      bundleDir,
+      manifestPath: path.join(bundleDir, 'manifest.json'),
+      chunksDir: path.join(bundleDir, 'chunks'),
+      manifestRelativePath: path.posix.join(bundleDirName, 'manifest.json')
+    }
+  }
+
+  private buildStreamingHtmlDocument(
+    sessionName: string,
+    totalMessages: number,
+    isGroup: boolean,
+    exportedAt: number,
+    htmlStyles: string,
+    manifestRelativePath: string
+  ): string {
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${this.escapeHtml(sessionName)} - 聊天记录</title>
+    <style>${htmlStyles}</style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1 class="title">${this.escapeHtml(sessionName)}</h1>
+        <div class="meta">
+          <span>${totalMessages} 条消息</span>
+          <span>${isGroup ? '群聊' : '私聊'}</span>
+          <span>${this.escapeHtml(this.formatTimestamp(exportedAt))}</span>
+        </div>
+        <div class="controls">
+          <input id="searchInput" type="search" placeholder="搜索消息..." />
+          <input id="timeInput" type="datetime-local" />
+          <button id="jumpBtn" type="button">跳转</button>
+          <div class="stats">
+            <span id="resultCount">正在加载...</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="scrollContainer" class="scroll-container"></div>
+    </div>
+
+    <div class="image-preview" id="imagePreview">
+      <img id="imagePreviewTarget" alt="预览" />
+    </div>
+
+    <script>
+      window.WEFLOW_MANIFEST_PATH = ${JSON.stringify(manifestRelativePath)};
+    </script>
+
+    <script>
+      ${this.getVirtualScrollScript()}
+
+      const searchInput = document.getElementById('searchInput')
+      const timeInput = document.getElementById('timeInput')
+      const jumpBtn = document.getElementById('jumpBtn')
+      const resultCount = document.getElementById('resultCount')
+      const imagePreview = document.getElementById('imagePreview')
+      const imagePreviewTarget = document.getElementById('imagePreviewTarget')
+      const container = document.getElementById('scrollContainer')
+      let imageZoom = 1
+      let manifest = null
+      let allData = []
+      let currentList = allData
+      let loadedChunkCount = 0
+      let loadingChunk = false
+      let activeSearchToken = 0
+
+      const renderItem = (item) => {
+        const isSenderMe = item.s === 1
+        const platformIdAttr = item.p ? \` data-platform-message-id="\${item.p}"\` : ''
+        const replyToAttr = item.r ? \` data-reply-to-message-id="\${item.r}"\` : ''
+        return \`
+          <div class="message \${isSenderMe ? 'sent' : 'received'}" data-index="\${item.i}"\${platformIdAttr}\${replyToAttr}>
+            <div class="message-row">
+              <div class="avatar">\${item.a}</div>
+              <div class="bubble">\${item.b}</div>
+            </div>
+          </div>
+        \`
+      }
+
+      const renderer = new ChunkedRenderer(container, currentList, renderItem)
+
+      const setStatus = (text) => {
+        resultCount.textContent = text
+      }
+
+      const updateCount = () => {
+        const keyword = searchInput.value.trim()
+        if (keyword) {
+          resultCount.textContent = \`匹配 \${currentList.length} 条\`
+          return
+        }
+        if (manifest && loadedChunkCount < manifest.chunks.length) {
+          resultCount.textContent = \`已加载 \${allData.length}/\${manifest.totalMessages} 条\`
+          return
+        }
+        resultCount.textContent = \`共 \${currentList.length} 条\`
+      }
+
+      const loadText = async (relativePath) => {
+        const targetUrl = new URL(relativePath, window.location.href).href
+        try {
+          const response = await fetch(targetUrl)
+          if (!response.ok) {
+            throw new Error(\`HTTP \${response.status}\`)
+          }
+          return await response.text()
+        } catch (fetchError) {
+          return await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open('GET', targetUrl, true)
+            xhr.onreadystatechange = () => {
+              if (xhr.readyState !== XMLHttpRequest.DONE) return
+              if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+                resolve(xhr.responseText)
+                return
+              }
+              reject(new Error(\`XHR \${xhr.status}\`))
+            }
+            xhr.onerror = () => reject(fetchError)
+            xhr.send()
+          })
+        }
+      }
+
+      const loadJson = async (relativePath) => JSON.parse(await loadText(relativePath))
+
+      const parseJsonl = (text) => {
+        const lines = text.split(/\\r?\\n/).filter(Boolean)
+        return lines.map(line => JSON.parse(line))
+      }
+
+      const hasActiveSearch = () => searchInput.value.trim().length > 0
+
+      const loadChunkByIndex = async (chunkIndex) => {
+        if (!manifest || chunkIndex < 0 || chunkIndex >= manifest.chunks.length) return []
+        const chunk = manifest.chunks[chunkIndex]
+        const text = await loadText(chunk.file)
+        return parseJsonl(text)
+      }
+
+      const maybeLoadNextChunk = async () => {
+        if (!manifest || loadingChunk || loadedChunkCount >= manifest.chunks.length || hasActiveSearch()) return
+        const remaining = container.scrollHeight - container.scrollTop - container.clientHeight
+        if (allData.length > 0 && remaining > 1200) return
+
+        loadingChunk = true
+        try {
+          const items = await loadChunkByIndex(loadedChunkCount)
+          loadedChunkCount += 1
+          allData.push(...items)
+          if (!hasActiveSearch()) {
+            currentList = allData
+            renderer.onDataAppended()
+            updateCount()
+          }
+        } finally {
+          loadingChunk = false
+        }
+
+        if (!hasActiveSearch() && loadedChunkCount < manifest.chunks.length) {
+          const nextRemaining = container.scrollHeight - container.scrollTop - container.clientHeight
+          if (container.scrollHeight <= container.clientHeight + 240 || nextRemaining < 1200) {
+            void maybeLoadNextChunk()
+          }
+        }
+      }
+
+      const ensureChunksLoaded = async (targetCount) => {
+        while (loadedChunkCount < targetCount) {
+          const items = await loadChunkByIndex(loadedChunkCount)
+          loadedChunkCount += 1
+          allData.push(...items)
+        }
+      }
+
+      const ensureAllChunksLoaded = async (token) => {
+        while (manifest && loadedChunkCount < manifest.chunks.length) {
+          if (token !== activeSearchToken) return false
+          setStatus(\`搜索中，已加载 \${allData.length}/\${manifest.totalMessages} 条...\`)
+          await ensureChunksLoaded(loadedChunkCount + 1)
+        }
+        return token === activeSearchToken
+      }
+
+      const findChunkIndexByTimestamp = (timestamp) => {
+        if (!manifest || !Array.isArray(manifest.chunks) || manifest.chunks.length === 0) return -1
+        const exactIndex = manifest.chunks.findIndex(chunk => {
+          if (typeof chunk.startTime !== 'number' || typeof chunk.endTime !== 'number') return false
+          return timestamp >= chunk.startTime && timestamp <= chunk.endTime
+        })
+        if (exactIndex >= 0) return exactIndex
+        let fallback = -1
+        for (let i = 0; i < manifest.chunks.length; i++) {
+          const chunk = manifest.chunks[i]
+          if (typeof chunk.startTime === 'number' && chunk.startTime <= timestamp) {
+            fallback = i
+          }
+        }
+        return fallback >= 0 ? fallback : 0
+      }
+
+      searchInput.addEventListener('input', () => {
+        const token = ++activeSearchToken
+        const keyword = searchInput.value.trim().toLowerCase()
+        if (!keyword) {
+          currentList = allData
+          renderer.setData(currentList)
+          updateCount()
+          void maybeLoadNextChunk()
+          return
+        }
+
+        void (async () => {
+          const completed = await ensureAllChunksLoaded(token)
+          if (!completed) return
+          currentList = allData.filter(item => item.b.toLowerCase().includes(keyword))
+          renderer.setData(currentList)
+          updateCount()
+        })()
+      })
+
+      jumpBtn.addEventListener('click', () => {
+        const value = timeInput.value
+        if (!value || !manifest) return
+        const target = Math.floor(new Date(value).getTime() / 1000)
+        const chunkIndex = findChunkIndexByTimestamp(target)
+        void (async () => {
+          await ensureChunksLoaded(chunkIndex + 1)
+          currentList = allData
+          searchInput.value = ''
+          activeSearchToken += 1
+          renderer.setData(currentList)
+          updateCount()
+          renderer.scrollToTime(target)
+          void maybeLoadNextChunk()
+        })()
+      })
+
+      container.addEventListener('scroll', () => {
+        void maybeLoadNextChunk()
+      }, { passive: true })
+
+      container.addEventListener('click', (e) => {
+        const target = e.target
+        if (target.classList.contains('previewable')) {
+          const full = target.getAttribute('data-full')
+          if (!full) return
+          imagePreviewTarget.src = full
+          imageZoom = 1
+          imagePreviewTarget.style.transform = 'scale(1)'
+          imagePreview.classList.add('active')
+        }
+      })
+
+      imagePreviewTarget.addEventListener('click', (event) => {
+        event.stopPropagation()
+      })
+
+      imagePreviewTarget.addEventListener('dblclick', (event) => {
+        event.stopPropagation()
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
+      })
+
+      imagePreviewTarget.addEventListener('wheel', (event) => {
+        event.preventDefault()
+        const delta = event.deltaY > 0 ? -0.1 : 0.1
+        imageZoom = Math.min(3, Math.max(0.5, imageZoom + delta))
+        imagePreviewTarget.style.transform = \`scale(\${imageZoom})\`
+      }, { passive: false })
+
+      imagePreview.addEventListener('click', () => {
+        imagePreview.classList.remove('active')
+        imagePreviewTarget.src = ''
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
+      })
+
+      void (async () => {
+        try {
+          manifest = await loadJson(window.WEFLOW_MANIFEST_PATH)
+          await ensureChunksLoaded(1)
+          currentList = allData
+          renderer.setData(currentList)
+          updateCount()
+          void maybeLoadNextChunk()
+        } catch (error) {
+          console.error('加载流式导出失败:', error)
+          setStatus('加载失败，请检查 manifest 或分片文件是否完整')
+        }
+      })()
+    </script>
+  </body>
+</html>`
   }
 
   /**
@@ -8246,63 +8605,8 @@ class ExportService {
         exportedMessages: 0
       })
 
-      // ================= BEGIN STREAM WRITING =================
       const exportMeta = this.getExportMeta(sessionId, sessionInfo, isGroup)
       const htmlStyles = this.loadExportHtmlStyles()
-      const stream = fs.createWriteStream(outputPath, { encoding: 'utf-8' })
-
-      const writePromise = (str: string) => {
-        return new Promise<void>((resolve, reject) => {
-          this.throwIfStopRequested(control)
-          if (!stream.write(str)) {
-            stream.once('drain', resolve)
-          } else {
-            resolve()
-          }
-        })
-      }
-
-      await writePromise(`<!DOCTYPE html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${this.escapeHtml(sessionInfo.displayName)} - 聊天记录</title>
-    <style>${htmlStyles}</style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="header">
-        <h1 class="title">${this.escapeHtml(sessionInfo.displayName)}</h1>
-        <div class="meta">
-          <span>${sortedMessages.length} 条消息</span>
-          <span>${isGroup ? '群聊' : '私聊'}</span>
-          <span>${this.escapeHtml(this.formatTimestamp(exportMeta.chatlab.exportedAt))}</span>
-        </div>
-        <div class="controls">
-          <input id="searchInput" type="search" placeholder="搜索消息..." />
-          <input id="timeInput" type="datetime-local" />
-          <button id="jumpBtn" type="button">跳转</button>
-          <div class="stats">
-            <span id="resultCount">共 ${sortedMessages.length} 条</span>
-          </div>
-        </div>
-      </div>
-      
-      <div id="scrollContainer" class="scroll-container"></div>
-      
-    </div>
-    
-    <div class="image-preview" id="imagePreview">
-      <img id="imagePreviewTarget" alt="预览" />
-    </div>
-
-    <!-- Data Injection -->
-    <script>
-      window.WEFLOW_DATA = [
-`);
-
-      // Pre-build avatar HTML lookup to avoid per-message rebuilds
       const avatarHtmlCache = new Map<string, string>()
       const senderProfileCache = new Map<string, ExportDisplayProfile>()
       const getAvatarHtml = (username: string, name: string): string => {
@@ -8316,18 +8620,9 @@ class ExportService {
         return html
       }
 
-      // Write messages in buffered chunks
-      const WRITE_BATCH = 100
-      let writeBuf: string[] = []
-
-      for (let i = 0; i < totalMessages; i++) {
-        if ((i & 0x7f) === 0) {
-          this.throwIfStopRequested(control)
-        }
-        const msg = sortedMessages[i]
+      const buildHtmlExportItem = async (msg: any, index: number): Promise<Record<string, any>> => {
         const mediaKey = this.getMediaCacheKey(msg)
         const mediaItem = mediaCache.get(mediaKey) || null
-
         const isSenderMe = msg.isSend
         const senderInfo = collected.memberSet.get(msg.senderUsername)?.member
         const senderName = isGroup
@@ -8355,7 +8650,6 @@ class ExportService {
           : senderName
 
         const avatarHtml = getAvatarHtml(isSenderMe ? cleanedMyWxid : msg.senderUsername, resolvedSenderName)
-
         const timeText = this.formatTimestamp(msg.createTime)
         const typeName = this.getMessageTypeName(msg.localType)
         const quotedReplyDisplay = await this.resolveQuotedReplyDisplayWithNames({
@@ -8441,17 +8735,180 @@ class ExportService {
         const platformMessageId = this.getExportPlatformMessageId(msg)
         const replyToMessageId = this.getExportReplyToMessageId(msg.content)
 
-        // Compact JSON object
         const itemObj: Record<string, any> = {
-          i: i + 1, // index
-          t: msg.createTime, // timestamp
-          s: isSenderMe ? 1 : 0, // isSend
-          a: avatarHtml, // avatar HTML
-          b: messageBody // body HTML
+          i: index + 1,
+          t: msg.createTime,
+          s: isSenderMe ? 1 : 0,
+          a: avatarHtml,
+          b: messageBody
         }
         if (platformMessageId) itemObj.p = platformMessageId
         if (replyToMessageId) itemObj.r = replyToMessageId
+        return itemObj
+      }
 
+      if (options.streamingHtml) {
+        const bundlePaths = this.getStreamingHtmlBundlePaths(outputPath)
+        await fs.promises.rm(bundlePaths.bundleDir, { recursive: true, force: true })
+        await fs.promises.mkdir(bundlePaths.chunksDir, { recursive: true })
+
+        const manifest: HtmlExportManifest = {
+          version: 1,
+          generatedBy: 'WeFlow',
+          sessionId,
+          sessionName: sessionInfo.displayName || sessionId,
+          isGroup,
+          totalMessages,
+          exportedAt: exportMeta.chatlab.exportedAt,
+          manifestPath: bundlePaths.manifestRelativePath,
+          chunks: []
+        }
+
+        const chunkSize = this.getStreamingHtmlChunkSize()
+        let chunkNumber = 0
+        let chunkLines: string[] = []
+        let chunkStartIndex = 0
+        let chunkStartTime: number | undefined
+        let chunkEndTime: number | undefined
+
+        for (let i = 0; i < totalMessages; i++) {
+          if ((i & 0x7f) === 0) {
+            this.throwIfStopRequested(control)
+          }
+          const msg = sortedMessages[i]
+          const itemObj = await buildHtmlExportItem(msg, i)
+
+          if (chunkLines.length === 0) {
+            chunkStartIndex = i
+            chunkStartTime = msg.createTime
+          }
+          chunkLines.push(JSON.stringify(itemObj))
+          chunkEndTime = msg.createTime
+
+          if (chunkLines.length >= chunkSize || i === totalMessages - 1) {
+            chunkNumber += 1
+            const chunkFileName = `messages-${String(chunkNumber).padStart(5, '0')}.jsonl`
+            const chunkDiskPath = path.join(bundlePaths.chunksDir, chunkFileName)
+            await fs.promises.writeFile(chunkDiskPath, `${chunkLines.join('\n')}\n`, 'utf-8')
+            manifest.chunks.push({
+              file: path.posix.join(bundlePaths.bundleDirName, 'chunks', chunkFileName),
+              count: chunkLines.length,
+              startIndex: chunkStartIndex + 1,
+              endIndex: i + 1,
+              startTime: chunkStartTime,
+              endTime: chunkEndTime
+            })
+            chunkLines = []
+            chunkStartTime = undefined
+            chunkEndTime = undefined
+          }
+
+          if ((i + 1) % 500 === 0 || i === totalMessages - 1) {
+            onProgress?.({
+              current: 60 + Math.floor(((i + 1) / totalMessages) * 28),
+              total: 100,
+              currentSession: sessionInfo.displayName,
+              phase: 'writing',
+              phaseLabel: `写入分片 ${i + 1}/${totalMessages}`,
+              estimatedTotalMessages: totalMessages,
+              collectedMessages: totalMessages,
+              exportedMessages: i + 1,
+              writtenFiles: manifest.chunks.length
+            })
+          }
+        }
+
+        this.throwIfStopRequested(control)
+        await fs.promises.writeFile(bundlePaths.manifestPath, JSON.stringify(manifest, null, 2), 'utf-8')
+        await fs.promises.writeFile(
+          outputPath,
+          this.buildStreamingHtmlDocument(
+            sessionInfo.displayName,
+            totalMessages,
+            isGroup,
+            exportMeta.chatlab.exportedAt,
+            htmlStyles,
+            bundlePaths.manifestRelativePath
+          ),
+          'utf-8'
+        )
+
+        onProgress?.({
+          current: 100,
+          total: 100,
+          currentSession: sessionInfo.displayName,
+          phase: 'complete',
+          estimatedTotalMessages: totalMessages,
+          collectedMessages: totalMessages,
+          exportedMessages: totalMessages,
+          writtenFiles: manifest.chunks.length + 2
+        })
+
+        return { success: true }
+      }
+
+      const stream = fs.createWriteStream(outputPath, { encoding: 'utf-8' })
+
+      const writePromise = (str: string) => {
+        return new Promise<void>((resolve) => {
+          this.throwIfStopRequested(control)
+          if (!stream.write(str)) {
+            stream.once('drain', resolve)
+          } else {
+            resolve()
+          }
+        })
+      }
+
+      await writePromise(`<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${this.escapeHtml(sessionInfo.displayName)} - 聊天记录</title>
+    <style>${htmlStyles}</style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1 class="title">${this.escapeHtml(sessionInfo.displayName)}</h1>
+        <div class="meta">
+          <span>${sortedMessages.length} 条消息</span>
+          <span>${isGroup ? '群聊' : '私聊'}</span>
+          <span>${this.escapeHtml(this.formatTimestamp(exportMeta.chatlab.exportedAt))}</span>
+        </div>
+        <div class="controls">
+          <input id="searchInput" type="search" placeholder="搜索消息..." />
+          <input id="timeInput" type="datetime-local" />
+          <button id="jumpBtn" type="button">跳转</button>
+          <div class="stats">
+            <span id="resultCount">共 ${sortedMessages.length} 条</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="scrollContainer" class="scroll-container"></div>
+
+    </div>
+
+    <div class="image-preview" id="imagePreview">
+      <img id="imagePreviewTarget" alt="预览" />
+    </div>
+
+    <!-- Data Injection -->
+    <script>
+      window.WEFLOW_DATA = [
+`);
+
+      // Write messages in buffered chunks
+      const WRITE_BATCH = 100
+      let writeBuf: string[] = []
+
+      for (let i = 0; i < totalMessages; i++) {
+        if ((i & 0x7f) === 0) {
+          this.throwIfStopRequested(control)
+        }
+        const itemObj = await buildHtmlExportItem(sortedMessages[i], i)
         writeBuf.push(JSON.stringify(itemObj))
 
         // Flush buffer periodically
