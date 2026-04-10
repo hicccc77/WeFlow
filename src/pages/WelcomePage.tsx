@@ -31,6 +31,7 @@ const steps = [
   { id: 'image', title: '图片密钥', desc: '获取 XOR 与 AES 密钥' },
   { id: 'security', title: '安全防护', desc: '保护你的数据' }
 ]
+type SetupStepId = typeof steps[number]['id']
 
 interface WelcomePageProps {
   standalone?: boolean
@@ -438,6 +439,48 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     }
   }
 
+  const jumpToStep = (stepId: SetupStepId) => {
+    const targetIndex = steps.findIndex(step => step.id === stepId)
+    if (targetIndex >= 0) setStepIndex(targetIndex)
+  }
+
+  const validateDbStepBeforeNext = async (): Promise<string | null> => {
+    if (!dbPath) return '数据库目录步骤未完成：请先选择数据库目录'
+    if (dbPathValidationError) return `数据库目录步骤配置有误：${dbPathValidationError}`
+    try {
+      const wxids = await window.electronAPI.dbPath.scanWxids(dbPath)
+      if (!Array.isArray(wxids) || wxids.length === 0) {
+        return '数据库目录步骤配置有误：当前目录下未找到可用账号数据（缺少 db_storage），请重新选择微信数据目录'
+      }
+    } catch (e) {
+      return `数据库目录步骤配置有误：目录读取失败，请确认该路径可访问（${String(e)}）`
+    }
+    return null
+  }
+
+  const findConfigIssueBeforeConnect = async (): Promise<{ stepId: SetupStepId; message: string } | null> => {
+    const dbIssue = await validateDbStepBeforeNext()
+    if (dbIssue) return { stepId: 'db', message: dbIssue }
+
+    let scannedWxids: Array<{ wxid: string }> = []
+    try {
+      scannedWxids = await window.electronAPI.dbPath.scanWxids(dbPath)
+    } catch {
+      scannedWxids = []
+    }
+
+    if (!wxid) {
+      return { stepId: 'key', message: '解密密钥步骤未完成：请先选择微信账号 (wxid)' }
+    }
+    if (!scannedWxids.some(item => item.wxid === wxid)) {
+      return { stepId: 'key', message: `解密密钥步骤配置有误：微信账号「${wxid}」不在当前数据库目录中，请重新选择账号` }
+    }
+    if (!decryptKey || decryptKey.length !== 64) {
+      return { stepId: 'key', message: '解密密钥步骤未完成：请填写 64 位解密密钥' }
+    }
+    return null
+  }
+
   const canGoNext = () => {
     if (currentStep.id === 'intro') return true
     if (currentStep.id === 'db') return Boolean(dbPath) && !dbPathValidationError
@@ -453,7 +496,15 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     return false
   }
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (currentStep.id === 'db') {
+      const dbStepIssue = await validateDbStepBeforeNext()
+      if (dbStepIssue) {
+        setError(dbStepIssue)
+        return
+      }
+    }
+
     if (!canGoNext()) {
       if (currentStep.id === 'db' && !dbPath) setError('请先选择数据库目录')
       else if (currentStep.id === 'db' && dbPathValidationError) setError(dbPathValidationError)
@@ -473,9 +524,12 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
   }
 
   const handleConnect = async () => {
-    if (!dbPath) { setError('请先选择数据库目录'); return }
-    if (!wxid) { setError('请填写微信ID'); return }
-    if (!decryptKey || decryptKey.length !== 64) { setError('请填写 64 位解密密钥'); return }
+    const configIssue = await findConfigIssueBeforeConnect()
+    if (configIssue) {
+      setError(configIssue.message)
+      jumpToStep(configIssue.stepId)
+      return
+    }
 
     setIsConnecting(true)
     setError('')
@@ -484,7 +538,19 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     try {
       const result = await window.electronAPI.wcdb.testConnection(dbPath, decryptKey, wxid)
       if (!result.success) {
-        setError(result.error || 'WCDB 连接失败')
+        const errorMessage = result.error || 'WCDB 连接失败'
+        if (errorMessage.includes('-3001')) {
+          const fallbackIssue = await findConfigIssueBeforeConnect()
+          if (fallbackIssue) {
+            setError(fallbackIssue.message)
+            jumpToStep(fallbackIssue.stepId)
+          } else {
+            setError(`数据库目录步骤配置有误：${errorMessage}`)
+            jumpToStep('db')
+          }
+        } else {
+          setError(errorMessage)
+        }
         setLoading(false)
         return
       }

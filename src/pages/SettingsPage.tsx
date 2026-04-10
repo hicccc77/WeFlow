@@ -238,23 +238,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [aiInsightTelegramToken, setAiInsightTelegramToken] = useState('')
   const [aiInsightTelegramChatIds, setAiInsightTelegramChatIds] = useState('')
 
-  const [isWayland, setIsWayland] = useState(false)
-  useEffect(() => {
-    const checkWaylandStatus = async () => {
-      if (window.electronAPI?.app?.checkWayland) {
-        try {
-          const wayland = await window.electronAPI.app.checkWayland()
-          setIsWayland(wayland)
-        } catch (e) {
-          console.error('检查 Wayland 状态失败:', e)
-        }
-      }
-    }
-    checkWaylandStatus()
-  }, [])
-
-
-
   // 检查 Hello 可用性
   useEffect(() => {
     setHelloAvailable(isWindows)
@@ -1474,13 +1457,11 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
             {
               value: 'quote-top' as const,
               label: '引用在上',
-              description: '更接近当前 WeFlow 风格',
               successMessage: '已切换为引用在上样式'
             },
             {
               value: 'quote-bottom' as const,
               label: '正文在上',
-              description: '更接近微信 / 密语风格',
               successMessage: '已切换为正文在上样式'
             }
           ].map(option => {
@@ -1530,7 +1511,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                 <div className="quote-layout-card-footer">
                   <div className="quote-layout-card-title-group">
                     <span className="quote-layout-card-title">{option.label}</span>
-                    <span className="quote-layout-card-desc">{option.description}</span>
                   </div>
                 </div>
               </button>
@@ -1696,11 +1676,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
         <div className="form-group">
           <label>通知显示位置</label>
           <span className="form-hint">选择通知弹窗在屏幕上的显示位置</span>
-          {isWayland && (
-              <span className="form-hint" style={{ color: '#ff4d4f', marginTop: '4px', display: 'block' }}>
-              ⚠️ 注意：Wayland 环境下该配置可能无效！
-            </span>
-          )}
           <div className="custom-select">
             <div
               className={`custom-select-trigger ${positionDropdownOpen ? 'open' : ''}`}
