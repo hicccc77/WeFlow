@@ -509,5 +509,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testConnection: () => ipcRenderer.invoke('insight:testConnection'),
     getTodayStats: () => ipcRenderer.invoke('insight:getTodayStats'),
     triggerTest: () => ipcRenderer.invoke('insight:triggerTest')
+  },
+
+  social: {
+    saveWeiboCookie: (rawInput: string) => ipcRenderer.invoke('social:saveWeiboCookie', rawInput),
+    validateWeiboUid: (uid: string) => ipcRenderer.invoke('social:validateWeiboUid', uid)
   }
 })

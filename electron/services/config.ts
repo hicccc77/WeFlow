@@ -77,6 +77,7 @@ interface ConfigSchema {
   aiInsightApiModel: string
   aiInsightSilenceDays: number
   aiInsightAllowContext: boolean
+  aiInsightAllowSocialContext: boolean
   aiInsightWhitelistEnabled: boolean
   aiInsightWhitelist: string[]
   /** 活跃分析冷却时间（分钟），0 表示无冷却 */
@@ -85,6 +86,8 @@ interface ConfigSchema {
   aiInsightScanIntervalHours: number
   /** 发送上下文时的最大消息条数 */
   aiInsightContextCount: number
+  /** 发送外部社交内容时的最大条数 */
+  aiInsightSocialContextCount: number
   /** 自定义 system prompt，空字符串表示使用内置默认值 */
   aiInsightSystemPrompt: string
   /** 是否启用 Telegram 推送 */
@@ -93,10 +96,14 @@ interface ConfigSchema {
   aiInsightTelegramToken: string
   /** Telegram 接收 Chat ID，逗号分隔，支持多个 */
   aiInsightTelegramChatIds: string
+  /** 微博 Cookie，全局生效，仅用于实验性社交平台内容补充 */
+  aiInsightWeiboCookie: string
+  /** 会话到微博 UID 的手动绑定关系 */
+  aiInsightWeiboBindings: Record<string, { uid: string; screenName?: string; updatedAt: number }>
 }
 
 // 需要 safeStorage 加密的字段（普通模式）
-const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken', 'aiInsightApiKey'])
+const ENCRYPTED_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey', 'authPassword', 'httpApiToken', 'aiInsightApiKey', 'aiInsightWeiboCookie'])
 const ENCRYPTED_BOOL_KEYS: Set<string> = new Set(['authEnabled', 'authUseHello'])
 const ENCRYPTED_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 
@@ -173,15 +180,19 @@ export class ConfigService {
       aiInsightApiModel: 'gpt-4o-mini',
       aiInsightSilenceDays: 3,
       aiInsightAllowContext: false,
+      aiInsightAllowSocialContext: false,
       aiInsightWhitelistEnabled: false,
       aiInsightWhitelist: [],
       aiInsightCooldownMinutes: 120,
       aiInsightScanIntervalHours: 4,
       aiInsightContextCount: 40,
+      aiInsightSocialContextCount: 3,
       aiInsightSystemPrompt: '',
       aiInsightTelegramEnabled: false,
       aiInsightTelegramToken: '',
-      aiInsightTelegramChatIds: ''
+      aiInsightTelegramChatIds: '',
+      aiInsightWeiboCookie: '',
+      aiInsightWeiboBindings: {}
     }
 
     const storeOptions: any = {

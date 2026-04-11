@@ -89,15 +89,19 @@ export const CONFIG_KEYS = {
   AI_INSIGHT_API_MODEL: 'aiInsightApiModel',
   AI_INSIGHT_SILENCE_DAYS: 'aiInsightSilenceDays',
   AI_INSIGHT_ALLOW_CONTEXT: 'aiInsightAllowContext',
+  AI_INSIGHT_ALLOW_SOCIAL_CONTEXT: 'aiInsightAllowSocialContext',
   AI_INSIGHT_WHITELIST_ENABLED: 'aiInsightWhitelistEnabled',
   AI_INSIGHT_WHITELIST: 'aiInsightWhitelist',
   AI_INSIGHT_COOLDOWN_MINUTES: 'aiInsightCooldownMinutes',
   AI_INSIGHT_SCAN_INTERVAL_HOURS: 'aiInsightScanIntervalHours',
   AI_INSIGHT_CONTEXT_COUNT: 'aiInsightContextCount',
+  AI_INSIGHT_SOCIAL_CONTEXT_COUNT: 'aiInsightSocialContextCount',
   AI_INSIGHT_SYSTEM_PROMPT: 'aiInsightSystemPrompt',
   AI_INSIGHT_TELEGRAM_ENABLED: 'aiInsightTelegramEnabled',
   AI_INSIGHT_TELEGRAM_TOKEN: 'aiInsightTelegramToken',
-  AI_INSIGHT_TELEGRAM_CHAT_IDS: 'aiInsightTelegramChatIds'
+  AI_INSIGHT_TELEGRAM_CHAT_IDS: 'aiInsightTelegramChatIds',
+  AI_INSIGHT_WEIBO_COOKIE: 'aiInsightWeiboCookie',
+  AI_INSIGHT_WEIBO_BINDINGS: 'aiInsightWeiboBindings'
 } as const
 
 export interface WxidConfig {
@@ -105,6 +109,12 @@ export interface WxidConfig {
   imageXorKey?: number
   imageAesKey?: string
   updatedAt?: number
+}
+
+export interface AiInsightWeiboBinding {
+  uid: string
+  screenName?: string
+  updatedAt: number
 }
 
 export interface ExportDefaultMediaConfig {
@@ -1640,6 +1650,15 @@ export async function setAiInsightAllowContext(allow: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.AI_INSIGHT_ALLOW_CONTEXT, allow)
 }
 
+export async function getAiInsightAllowSocialContext(): Promise<boolean> {
+  const value = await config.get(CONFIG_KEYS.AI_INSIGHT_ALLOW_SOCIAL_CONTEXT)
+  return value === true
+}
+
+export async function setAiInsightAllowSocialContext(allow: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.AI_INSIGHT_ALLOW_SOCIAL_CONTEXT, allow)
+}
+
 export async function getAiInsightWhitelistEnabled(): Promise<boolean> {
   const value = await config.get(CONFIG_KEYS.AI_INSIGHT_WHITELIST_ENABLED)
   return value === true
@@ -1685,6 +1704,15 @@ export async function setAiInsightContextCount(count: number): Promise<void> {
   await config.set(CONFIG_KEYS.AI_INSIGHT_CONTEXT_COUNT, count)
 }
 
+export async function getAiInsightSocialContextCount(): Promise<number> {
+  const value = await config.get(CONFIG_KEYS.AI_INSIGHT_SOCIAL_CONTEXT_COUNT)
+  return typeof value === 'number' && value > 0 ? value : 3
+}
+
+export async function setAiInsightSocialContextCount(count: number): Promise<void> {
+  await config.set(CONFIG_KEYS.AI_INSIGHT_SOCIAL_CONTEXT_COUNT, count)
+}
+
 export async function getAiInsightSystemPrompt(): Promise<string> {
   const value = await config.get(CONFIG_KEYS.AI_INSIGHT_SYSTEM_PROMPT)
   return typeof value === 'string' ? value : ''
@@ -1719,4 +1747,23 @@ export async function getAiInsightTelegramChatIds(): Promise<string> {
 
 export async function setAiInsightTelegramChatIds(chatIds: string): Promise<void> {
   await config.set(CONFIG_KEYS.AI_INSIGHT_TELEGRAM_CHAT_IDS, chatIds)
+}
+
+export async function getAiInsightWeiboCookie(): Promise<string> {
+  const value = await config.get(CONFIG_KEYS.AI_INSIGHT_WEIBO_COOKIE)
+  return typeof value === 'string' ? value : ''
+}
+
+export async function setAiInsightWeiboCookie(cookieValue: string): Promise<void> {
+  await config.set(CONFIG_KEYS.AI_INSIGHT_WEIBO_COOKIE, cookieValue)
+}
+
+export async function getAiInsightWeiboBindings(): Promise<Record<string, AiInsightWeiboBinding>> {
+  const value = await config.get(CONFIG_KEYS.AI_INSIGHT_WEIBO_BINDINGS)
+  if (!value || typeof value !== 'object') return {}
+  return value as Record<string, AiInsightWeiboBinding>
+}
+
+export async function setAiInsightWeiboBindings(bindings: Record<string, AiInsightWeiboBinding>): Promise<void> {
+  await config.set(CONFIG_KEYS.AI_INSIGHT_WEIBO_BINDINGS, bindings)
 }

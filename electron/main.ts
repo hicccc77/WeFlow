@@ -31,6 +31,7 @@ import { destroyNotificationWindow, registerNotificationHandlers, showNotificati
 import { httpService } from './services/httpService'
 import { messagePushService } from './services/messagePushService'
 import { insightService } from './services/insightService'
+import { normalizeWeiboCookieInput, weiboService } from './services/social/weiboService'
 import { bizService } from './services/bizService'
 
 // 配置自动更新
@@ -1633,6 +1634,32 @@ function registerIpcHandlers() {
 
   ipcMain.handle('insight:triggerTest', async () => {
     return insightService.triggerTest()
+  })
+
+  ipcMain.handle('social:saveWeiboCookie', async (_, rawInput: string) => {
+    try {
+      if (!configService) {
+        return { success: false, error: '配置服务未初始化' }
+      }
+      const normalized = normalizeWeiboCookieInput(rawInput)
+      configService.set('aiInsightWeiboCookie' as any, normalized as any)
+      weiboService.clearCache()
+      return { success: true, normalized, hasCookie: Boolean(normalized) }
+    } catch (error) {
+      return { success: false, error: (error as Error).message || '微博 Cookie 保存失败' }
+    }
+  })
+
+  ipcMain.handle('social:validateWeiboUid', async (_, uid: string) => {
+    try {
+      if (!configService) {
+        return { success: false, error: '配置服务未初始化' }
+      }
+      const cookie = String(configService.get('aiInsightWeiboCookie' as any) || '')
+      return await weiboService.validateUid(uid, cookie)
+    } catch (error) {
+      return { success: false, error: (error as Error).message || '微博 UID 校验失败' }
+    }
   })
 
   ipcMain.handle('config:clear', async () => {
