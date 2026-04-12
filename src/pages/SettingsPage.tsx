@@ -2731,21 +2731,53 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     }
   }
 
+  const AI_PROVIDER_PRESETS = [
+    { label: 'MiniMax', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M2.7' },
+    { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  ]
+
+  const applyProviderPreset = async (preset: { baseUrl: string; model: string }) => {
+    setAiModelApiBaseUrl(preset.baseUrl)
+    setAiModelApiModel(preset.model)
+    await configService.setAiModelApiBaseUrl(preset.baseUrl)
+    await configService.setAiModelApiModel(preset.model)
+  }
+
   const renderAiCommonTab = () => (
     <div className="tab-content">
+      <div className="form-group">
+        <label>快捷预设</label>
+        <span className="form-hint">
+          点击预设按钮可自动填写对应服务商的 API 地址与推荐模型，再填入 API Key 即可使用。
+        </span>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+          {AI_PROVIDER_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              className="btn btn-secondary btn-sm"
+              onClick={() => void applyProviderPreset(preset)}
+              title={`${preset.baseUrl} / ${preset.model}`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="form-group">
         <label>通用 API 地址</label>
         <span className="form-hint">
           这是「AI 见解」与「AI 足迹总结」共享的模型接入配置。填写 OpenAI 兼容接口的 <strong>Base URL</strong>，末尾<strong>不要加斜杠</strong>。
           程序会自动拼接 <code>/chat/completions</code>。
           <br />
-          示例：<code>https://api.ohmygpt.com/v1</code> 或 <code>https://api.openai.com/v1</code>
+          示例：<code>https://api.minimax.io/v1</code>、<code>https://api.openai.com/v1</code> 或 <code>https://api.ohmygpt.com/v1</code>
         </span>
         <input
           type="text"
           className="field-input"
           value={aiModelApiBaseUrl}
-          placeholder="https://api.ohmygpt.com/v1"
+          placeholder="https://api.minimax.io/v1"
           onChange={(e) => {
             const val = e.target.value
             setAiModelApiBaseUrl(val)
@@ -2799,7 +2831,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
         <span className="form-hint">
           填写你的 API 提供商支持的模型名，将同时用于见解和足迹模块。
           <br />
-          常用示例：<code>gpt-4o-mini</code>、<code>gpt-4o</code>、<code>deepseek-chat</code>、<code>claude-3-5-haiku-20241022</code>
+          常用示例：<code>MiniMax-M2.7</code>、<code>MiniMax-M2.7-highspeed</code>、<code>gpt-4o-mini</code>、<code>gpt-4o</code>、<code>deepseek-chat</code>
         </span>
         <input
           type="text"
