@@ -11,6 +11,7 @@
   }
 
   .biz-account-item {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -44,6 +45,24 @@
       object-fit: cover;
       flex-shrink: 0;
       background-color: var(--bg-tertiary);
+    }
+
+    .biz-unread-badge {
+      position: absolute;
+      top: 8px;
+      left: 52px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: #ff4d4f;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 18px;
+      text-align: center;
+      border: 2px solid var(--bg-secondary);
+      box-sizing: border-box;
     }
 
     .biz-info {

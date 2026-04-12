@@ -2119,6 +2119,7 @@ class ExportService {
             }
             return title || '[引用消息]'
           }
+          if (xmlType === '53') return title ? `[接龙] ${title.split(/\r?\n/).map(line => line.trim()).find(Boolean) || title}` : '[接龙]'
           if (xmlType === '5' || xmlType === '49') return title ? `[链接] ${title}` : '[链接]'
 
           // 有 title 就返回 title
@@ -3220,6 +3221,8 @@ class ExportService {
       appMsgKind = 'announcement'
     } else if (xmlType === '57' || hasReferMsg || localType === 244813135921) {
       appMsgKind = 'quote'
+    } else if (xmlType === '53') {
+      appMsgKind = 'solitaire'
     } else if (xmlType === '5' || xmlType === '49') {
       appMsgKind = 'link'
     } else if (looksLikeAppMsg) {

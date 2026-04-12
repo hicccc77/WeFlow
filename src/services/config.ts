@@ -72,6 +72,8 @@ export const CONFIG_KEYS = {
   HTTP_API_PORT: 'httpApiPort',
   HTTP_API_HOST: 'httpApiHost',
   MESSAGE_PUSH_ENABLED: 'messagePushEnabled',
+  MESSAGE_PUSH_FILTER_MODE: 'messagePushFilterMode',
+  MESSAGE_PUSH_FILTER_LIST: 'messagePushFilterList',
   WINDOW_CLOSE_BEHAVIOR: 'windowCloseBehavior',
   QUOTE_LAYOUT: 'quoteLayout',
 
@@ -1503,6 +1505,29 @@ export async function getMessagePushEnabled(): Promise<boolean> {
 
 export async function setMessagePushEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.MESSAGE_PUSH_ENABLED, enabled)
+}
+
+export type MessagePushFilterMode = 'all' | 'whitelist' | 'blacklist'
+export type MessagePushSessionType = 'private' | 'group' | 'official' | 'other'
+
+export async function getMessagePushFilterMode(): Promise<MessagePushFilterMode> {
+  const value = await config.get(CONFIG_KEYS.MESSAGE_PUSH_FILTER_MODE)
+  if (value === 'whitelist' || value === 'blacklist') return value
+  return 'all'
+}
+
+export async function setMessagePushFilterMode(mode: MessagePushFilterMode): Promise<void> {
+  await config.set(CONFIG_KEYS.MESSAGE_PUSH_FILTER_MODE, mode)
+}
+
+export async function getMessagePushFilterList(): Promise<string[]> {
+  const value = await config.get(CONFIG_KEYS.MESSAGE_PUSH_FILTER_LIST)
+  return Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : []
+}
+
+export async function setMessagePushFilterList(list: string[]): Promise<void> {
+  const normalized = Array.from(new Set((list || []).map(item => String(item || '').trim()).filter(Boolean)))
+  await config.set(CONFIG_KEYS.MESSAGE_PUSH_FILTER_LIST, normalized)
 }
 
 export async function getWindowCloseBehavior(): Promise<WindowCloseBehavior> {

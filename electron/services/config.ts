@@ -61,6 +61,8 @@ interface ConfigSchema {
   notificationFilterMode: 'all' | 'whitelist' | 'blacklist'
   notificationFilterList: string[]
   messagePushEnabled: boolean
+  messagePushFilterMode: 'all' | 'whitelist' | 'blacklist'
+  messagePushFilterList: string[]
   httpApiEnabled: boolean
   httpApiPort: number
   httpApiHost: string
@@ -177,6 +179,8 @@ export class ConfigService {
       httpApiPort: 5031,
       httpApiHost: '127.0.0.1',
       messagePushEnabled: false,
+      messagePushFilterMode: 'all',
+      messagePushFilterList: [],
       windowCloseBehavior: 'ask',
       quoteLayout: 'quote-top',
       wordCloudExcludeWords: [],

@@ -232,6 +232,16 @@ interface SessionDetailExtra {
 
 type SessionDetail = SessionDetailFast & SessionDetailExtra
 
+interface SyntheticUnreadState {
+  readTimestamp: number
+  scannedTimestamp: number
+  latestTimestamp: number
+  unreadCount: number
+  summaryTimestamp?: number
+  summary?: string
+  lastMsgType?: number
+}
+
 interface MyFootprintSummary {
   private_inbound_people: number
   private_replied_people: number
@@ -378,6 +388,7 @@ class ChatService {
   private readonly messageDbCountSnapshotCacheTtlMs = 8000
   private sessionMessageCountCache = new Map<string, { count: number; updatedAt: number }>()
   private sessionMessageCountHintCache = new Map<string, number>()
+  private syntheticUnreadState = new Map<string, SyntheticUnreadState>()
   private sessionMessageCountBatchCache: {
     dbSignature: string
     sessionIdsKey: string
@@ -865,6 +876,10 @@ class ChatService {
         }
       }
 
+      await this.addMissingOfficialSessions(sessions, myWxid)
+      await this.applySyntheticUnreadCounts(sessions)
+      sessions.sort((a, b) => Number(b.sortTimestamp || b.lastTimestamp || 0) - Number(a.sortTimestamp || a.lastTimestamp || 0))
+
       // 不等待联系人信息加载，直接返回基础会话列表
       // 前端可以异步调用 enrichSessionsWithContacts 来补充信息
       return { success: true, sessions }
@@ -872,6 +887,242 @@ class ChatService {
       console.error('ChatService: 获取会话列表失败:', e)
       return { success: false, error: String(e) }
     }
+  }
+
+  private async addMissingOfficialSessions(sessions: ChatSession[], myWxid?: string): Promise<void> {
+    const existing = new Set(sessions.map((session) => String(session.username || '').trim()).filter(Boolean))
+    try {
+      const contactResult = await wcdbService.getContactsCompact()
+      if (!contactResult.success || !Array.isArray(contactResult.contacts)) return
+
+      for (const row of contactResult.contacts as Record<string, any>[]) {
+        const username = String(row.username || '').trim()
+        if (!username.startsWith('gh_') || existing.has(username)) continue
+
+        sessions.push({
+          username,
+          type: 0,
+          unreadCount: 0,
+          summary: '查看公众号历史消息',
+          sortTimestamp: 0,
+          lastTimestamp: 0,
+          lastMsgType: 0,
+          displayName: row.remark || row.nick_name || row.alias || username,
+          avatarUrl: undefined,
+          selfWxid: myWxid
+        })
+        existing.add(username)
+      }
+    } catch (error) {
+      console.warn('[ChatService] 补充公众号会话失败:', error)
+    }
+  }
+
+  private shouldUseSyntheticUnread(sessionId: string): boolean {
+    const normalized = String(sessionId || '').trim()
+    return normalized.startsWith('gh_')
+  }
+
+  private async getSessionMessageStatsSnapshot(sessionId: string): Promise<{ total: number; latestTimestamp: number }> {
+    const tableStatsResult = await wcdbService.getMessageTableStats(sessionId)
+    if (!tableStatsResult.success || !Array.isArray(tableStatsResult.tables)) {
+      return { total: 0, latestTimestamp: 0 }
+    }
+
+    let total = 0
+    let latestTimestamp = 0
+    for (const row of tableStatsResult.tables as Record<string, any>[]) {
+      const count = Number(row.count ?? row.message_count ?? row.messageCount ?? 0)
+      if (Number.isFinite(count) && count > 0) {
+        total += Math.floor(count)
+      }
+
+      const latest = Number(
+        row.last_timestamp ??
+        row.lastTimestamp ??
+        row.last_time ??
+        row.lastTime ??
+        row.max_create_time ??
+        row.maxCreateTime ??
+        0
+      )
+      if (Number.isFinite(latest) && latest > latestTimestamp) {
+        latestTimestamp = Math.floor(latest)
+      }
+    }
+
+    return { total, latestTimestamp }
+  }
+
+  private async applySyntheticUnreadCounts(sessions: ChatSession[]): Promise<void> {
+    const candidates = sessions.filter((session) => this.shouldUseSyntheticUnread(session.username))
+    if (candidates.length === 0) return
+
+    for (const session of candidates) {
+      try {
+        const snapshot = await this.getSessionMessageStatsSnapshot(session.username)
+        const latestTimestamp = Math.max(
+          Number(session.lastTimestamp || 0),
+          Number(session.sortTimestamp || 0),
+          snapshot.latestTimestamp
+        )
+        if (latestTimestamp > 0) {
+          session.lastTimestamp = latestTimestamp
+          session.sortTimestamp = Math.max(Number(session.sortTimestamp || 0), latestTimestamp)
+        }
+        if (snapshot.total > 0) {
+          session.messageCountHint = Math.max(Number(session.messageCountHint || 0), snapshot.total)
+          this.sessionMessageCountHintCache.set(session.username, session.messageCountHint)
+        }
+
+        let state = this.syntheticUnreadState.get(session.username)
+        if (!state) {
+          const initialUnread = await this.getInitialSyntheticUnreadState(session.username, latestTimestamp)
+          state = {
+            readTimestamp: latestTimestamp,
+            scannedTimestamp: latestTimestamp,
+            latestTimestamp,
+            unreadCount: initialUnread.count
+          }
+          if (initialUnread.latestMessage) {
+            state.summary = this.getSessionSummaryFromMessage(initialUnread.latestMessage)
+            state.summaryTimestamp = Number(initialUnread.latestMessage.createTime || latestTimestamp)
+            state.lastMsgType = Number(initialUnread.latestMessage.localType || 0)
+          }
+          this.syntheticUnreadState.set(session.username, state)
+        }
+
+        let latestMessageForSummary: Message | undefined
+        if (latestTimestamp > state.scannedTimestamp) {
+          const newMessagesResult = await this.getNewMessages(
+            session.username,
+            Math.max(0, state.scannedTimestamp),
+            1000
+          )
+          if (newMessagesResult.success && Array.isArray(newMessagesResult.messages)) {
+            let nextUnread = state.unreadCount
+            let nextScannedTimestamp = state.scannedTimestamp
+            for (const message of newMessagesResult.messages) {
+              const createTime = Number(message.createTime || 0)
+              if (!Number.isFinite(createTime) || createTime <= state.scannedTimestamp) continue
+              if (message.isSend === 1) continue
+              nextUnread += 1
+              latestMessageForSummary = message
+              if (createTime > nextScannedTimestamp) {
+                nextScannedTimestamp = Math.floor(createTime)
+              }
+            }
+            state.unreadCount = nextUnread
+            state.scannedTimestamp = Math.max(nextScannedTimestamp, latestTimestamp)
+          } else {
+            state.scannedTimestamp = latestTimestamp
+          }
+        }
+
+        state.latestTimestamp = Math.max(state.latestTimestamp, latestTimestamp)
+        if (latestMessageForSummary) {
+          const summary = this.getSessionSummaryFromMessage(latestMessageForSummary)
+          if (summary) {
+            state.summary = summary
+            state.summaryTimestamp = Number(latestMessageForSummary.createTime || latestTimestamp)
+            state.lastMsgType = Number(latestMessageForSummary.localType || 0)
+          }
+        }
+        if (state.summary) {
+          session.summary = state.summary
+          session.lastMsgType = Number(state.lastMsgType || session.lastMsgType || 0)
+        }
+        session.unreadCount = Math.max(Number(session.unreadCount || 0), state.unreadCount)
+      } catch (error) {
+        console.warn(`[ChatService] 合成公众号未读失败: ${session.username}`, error)
+      }
+    }
+  }
+
+  private getSessionSummaryFromMessage(message: Message): string {
+    const cleanOfficialPrefix = (value: string): string => value.replace(/^\s*\[视频号\]\s*/u, '').trim()
+    let summary = ''
+    switch (Number(message.localType || 0)) {
+      case 1:
+        summary = message.parsedContent || message.rawContent || ''
+        break
+      case 3:
+        summary = '[图片]'
+        break
+      case 34:
+        summary = '[语音]'
+        break
+      case 43:
+        summary = '[视频]'
+        break
+      case 47:
+        summary = '[表情]'
+        break
+      case 42:
+        summary = message.cardNickname || '[名片]'
+        break
+      case 48:
+        summary = '[位置]'
+        break
+      case 49:
+        summary = message.linkTitle || message.fileName || message.parsedContent || '[消息]'
+        break
+      default:
+        summary = message.parsedContent || message.rawContent || this.getMessageTypeLabel(Number(message.localType || 0))
+        break
+    }
+    return cleanOfficialPrefix(this.cleanString(summary))
+  }
+
+  private async getInitialSyntheticUnreadState(sessionId: string, latestTimestamp: number): Promise<{
+    count: number
+    latestMessage?: Message
+  }> {
+    const normalizedLatest = Number(latestTimestamp || 0)
+    if (!Number.isFinite(normalizedLatest) || normalizedLatest <= 0) return { count: 0 }
+
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    if (Math.abs(nowSeconds - normalizedLatest) > 10 * 60) {
+      return { count: 0 }
+    }
+
+    const result = await this.getNewMessages(sessionId, Math.max(0, Math.floor(normalizedLatest) - 1), 20)
+    if (!result.success || !Array.isArray(result.messages)) return { count: 0 }
+    const unreadMessages = result.messages.filter((message) => {
+      const createTime = Number(message.createTime || 0)
+      return Number.isFinite(createTime) &&
+        createTime >= normalizedLatest &&
+        message.isSend !== 1
+    })
+    return {
+      count: unreadMessages.length,
+      latestMessage: unreadMessages[unreadMessages.length - 1]
+    }
+  }
+
+  private markSyntheticUnreadRead(sessionId: string, messages: Message[] = []): void {
+    const normalized = String(sessionId || '').trim()
+    if (!this.shouldUseSyntheticUnread(normalized)) return
+
+    let latestTimestamp = 0
+    const state = this.syntheticUnreadState.get(normalized)
+    if (state) latestTimestamp = Math.max(latestTimestamp, state.latestTimestamp, state.scannedTimestamp)
+    for (const message of messages) {
+      const createTime = Number(message.createTime || 0)
+      if (Number.isFinite(createTime) && createTime > latestTimestamp) {
+        latestTimestamp = Math.floor(createTime)
+      }
+    }
+
+    this.syntheticUnreadState.set(normalized, {
+      readTimestamp: latestTimestamp,
+      scannedTimestamp: latestTimestamp,
+      latestTimestamp,
+      unreadCount: 0,
+      summary: state?.summary,
+      summaryTimestamp: state?.summaryTimestamp,
+      lastMsgType: state?.lastMsgType
+    })
   }
 
   async getSessionStatuses(usernames: string[]): Promise<{
@@ -1814,6 +2065,9 @@ class ChatService {
       releaseMessageCursorMutex?.()
 
       this.messageCacheService.set(sessionId, filtered)
+      if (offset === 0 && startTime === 0 && endTime === 0) {
+        this.markSyntheticUnreadRead(sessionId, filtered)
+      }
       console.log(
         `[ChatService] getMessages session=${sessionId} rawRowsConsumed=${rawRowsConsumed} visibleMessagesReturned=${filtered.length} filteredOut=${collected.filteredOut || 0} nextOffset=${state.fetched} hasMore=${hasMore}`
       )
@@ -4416,6 +4670,8 @@ class ChatService {
         case '57':
           // 引用消息，title 就是回复的内容
           return title
+        case '53':
+          return `[接龙] ${title.split(/\r?\n/).map(line => line.trim()).find(Boolean) || title}`
         case '2000':
           return `[转账] ${title}`
         case '2001':
@@ -4445,6 +4701,8 @@ class ChatService {
         return '[链接]'
       case '87':
         return '[群公告]'
+      case '53':
+        return '[接龙]'
       default:
         return '[消息]'
     }
@@ -5044,6 +5302,8 @@ class ChatService {
         const quoteInfo = this.parseQuoteMessage(content)
         result.quotedContent = quoteInfo.content
         result.quotedSender = quoteInfo.sender
+      } else if (xmlType === '53') {
+        result.appMsgKind = 'solitaire'
       } else if ((xmlType === '5' || xmlType === '49') && (sourceUsername?.startsWith('gh_') || appName?.includes('公众号') || sourceName)) {
         result.appMsgKind = 'official-link'
       } else if (url) {

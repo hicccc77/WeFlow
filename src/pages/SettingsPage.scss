@@ -2349,6 +2349,24 @@
   border-radius: 10px;
 }
 
+.filter-panel-action {
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+
+  &:hover {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border-color));
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-tertiary));
+  }
+}
+
 .filter-panel-list {
   flex: 1;
   min-height: 200px;
@@ -2412,12 +2430,52 @@
     white-space: nowrap;
   }
 
+  .filter-item-type {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+  }
+
   .filter-item-action {
     font-size: 18px;
     font-weight: 500;
     color: var(--text-tertiary);
     opacity: 0.5;
     transition: all 0.15s;
+  }
+}
+
+.push-filter-type-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 10px;
+}
+
+.push-filter-type-tab {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+
+  &:hover {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--primary) 38%, var(--border-color));
+  }
+
+  &.active {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 54%, var(--border-color));
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-primary));
   }
 }
 

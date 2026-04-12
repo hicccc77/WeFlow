@@ -11,6 +11,7 @@ interface SessionBaseline {
 interface MessagePushPayload {
   event: 'message.new'
   sessionId: string
+  sessionType: 'private' | 'group' | 'official' | 'other'
   messageKey: string
   avatarUrl?: string
   sourceName: string
@@ -20,6 +21,8 @@ interface MessagePushPayload {
 
 const PUSH_CONFIG_KEYS = new Set([
   'messagePushEnabled',
+  'messagePushFilterMode',
+  'messagePushFilterList',
   'dbPath',
   'decryptKey',
   'myWxid'
@@ -38,6 +41,7 @@ class MessagePushService {
   private rerunRequested = false
   private started = false
   private baselineReady = false
+  private messageTableScanRequested = false
 
   constructor() {
     this.configService = ConfigService.getInstance()
@@ -60,12 +64,15 @@ class MessagePushService {
       payload = null
     }
 
-    const tableName = String(payload?.table || '').trim().toLowerCase()
-    if (tableName && tableName !== 'session') {
+    const tableName = String(payload?.table || '').trim()
+    if (this.isSessionTableChange(tableName)) {
+      this.scheduleSync()
       return
     }
 
-    this.scheduleSync()
+    if (!tableName || this.isMessageTableChange(tableName)) {
+      this.scheduleSync({ scanMessageBackedSessions: true })
+    }
   }
 
   async handleConfigChanged(key: string): Promise<void> {
@@ -91,6 +98,7 @@ class MessagePushService {
     this.recentMessageKeys.clear()
     this.groupNicknameCache.clear()
     this.baselineReady = false
+    this.messageTableScanRequested = false
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer)
       this.debounceTimer = null
@@ -121,7 +129,11 @@ class MessagePushService {
     this.baselineReady = true
   }
 
-  private scheduleSync(): void {
+  private scheduleSync(options: { scanMessageBackedSessions?: boolean } = {}): void {
+    if (options.scanMessageBackedSessions) {
+      this.messageTableScanRequested = true
+    }
+
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer)
     }
@@ -141,6 +153,8 @@ class MessagePushService {
     this.processing = true
     try {
       if (!this.isPushEnabled()) return
+      const scanMessageBackedSessions = this.messageTableScanRequested
+      this.messageTableScanRequested = false
 
       const connectResult = await chatService.connect()
       if (!connectResult.success) {
@@ -163,26 +177,46 @@ class MessagePushService {
       const previousBaseline = new Map(this.sessionBaseline)
       this.setBaseline(sessions)
 
-      const candidates = sessions.filter((session) => this.shouldInspectSession(previousBaseline.get(session.username), session))
+      const candidates = sessions.filter((session) => {
+        const previous = previousBaseline.get(session.username)
+        if (this.shouldInspectSession(previous, session)) {
+          return true
+        }
+        return scanMessageBackedSessions && this.shouldScanMessageBackedSession(previous, session)
+      })
       for (const session of candidates) {
-        await this.pushSessionMessages(session, previousBaseline.get(session.username))
+        await this.pushSessionMessages(
+          session,
+          previousBaseline.get(session.username) || this.sessionBaseline.get(session.username)
+        )
       }
     } finally {
       this.processing = false
       if (this.rerunRequested) {
         this.rerunRequested = false
-        this.scheduleSync()
+        this.scheduleSync({ scanMessageBackedSessions: this.messageTableScanRequested })
       }
     }
   }
 
   private setBaseline(sessions: ChatSession[]): void {
+    const previousBaseline = new Map(this.sessionBaseline)
+    const nextBaseline = new Map<string, SessionBaseline>()
+    const nowSeconds = Math.floor(Date.now() / 1000)
     this.sessionBaseline.clear()
     for (const session of sessions) {
-      this.sessionBaseline.set(session.username, {
-        lastTimestamp: Number(session.lastTimestamp || 0),
+      const username = String(session.username || '').trim()
+      if (!username) continue
+      const previous = previousBaseline.get(username)
+      const sessionTimestamp = Number(session.lastTimestamp || 0)
+      const initialTimestamp = sessionTimestamp > 0 ? sessionTimestamp : nowSeconds
+      nextBaseline.set(username, {
+        lastTimestamp: Math.max(sessionTimestamp, Number(previous?.lastTimestamp || 0), previous ? 0 : initialTimestamp),
         unreadCount: Number(session.unreadCount || 0)
       })
+    }
+    for (const [username, baseline] of nextBaseline.entries()) {
+      this.sessionBaseline.set(username, baseline)
     }
   }
 
@@ -204,16 +238,30 @@ class MessagePushService {
       return unreadCount > 0 && lastTimestamp > 0
     }
 
-    if (lastTimestamp <= previous.lastTimestamp) {
+    return lastTimestamp > previous.lastTimestamp || unreadCount > previous.unreadCount
+  }
+
+  private shouldScanMessageBackedSession(previous: SessionBaseline | undefined, session: ChatSession): boolean {
+    const sessionId = String(session.username || '').trim()
+    if (!sessionId || sessionId.toLowerCase().includes('placeholder_foldgroup')) {
       return false
     }
 
-    // unread 未增长时，大概率是自己发送、其他设备已读或状态同步，不作为主动推送
-    return unreadCount > previous.unreadCount
+    const summary = String(session.summary || '').trim()
+    if (Number(session.lastMsgType || 0) === 10002 || summary.includes('撤回了一条消息')) {
+      return false
+    }
+
+    const sessionType = this.getSessionType(sessionId, session)
+    if (sessionType === 'private') {
+      return false
+    }
+
+    return Boolean(previous) || Number(session.lastTimestamp || 0) > 0
   }
 
   private async pushSessionMessages(session: ChatSession, previous: SessionBaseline | undefined): Promise<void> {
-    const since = Math.max(0, Number(previous?.lastTimestamp || 0) - 1)
+    const since = Math.max(0, Number(previous?.lastTimestamp || 0))
     const newMessagesResult = await chatService.getNewMessages(session.username, since, 1000)
     if (!newMessagesResult.success || !newMessagesResult.messages || newMessagesResult.messages.length === 0) {
       return
@@ -224,7 +272,7 @@ class MessagePushService {
       if (!messageKey) continue
       if (message.isSend === 1) continue
 
-      if (previous && Number(message.createTime || 0) < Number(previous.lastTimestamp || 0)) {
+      if (previous && Number(message.createTime || 0) <= Number(previous.lastTimestamp || 0)) {
         continue
       }
 
@@ -234,9 +282,11 @@ class MessagePushService {
 
       const payload = await this.buildPayload(session, message)
       if (!payload) continue
+      if (!this.shouldPushPayload(payload)) continue
 
       httpService.broadcastMessagePush(payload)
       this.rememberMessageKey(messageKey)
+      this.bumpSessionBaseline(session.username, message)
     }
   }
 
@@ -246,6 +296,7 @@ class MessagePushService {
     if (!sessionId || !messageKey) return null
 
     const isGroup = sessionId.endsWith('@chatroom')
+    const sessionType = this.getSessionType(sessionId, session)
     const content = this.getMessageDisplayContent(message)
 
     if (isGroup) {
@@ -255,6 +306,7 @@ class MessagePushService {
       return {
         event: 'message.new',
         sessionId,
+        sessionType,
         messageKey,
         avatarUrl: session.avatarUrl || groupInfo?.avatarUrl,
         groupName,
@@ -267,6 +319,7 @@ class MessagePushService {
     return {
       event: 'message.new',
       sessionId,
+      sessionType,
       messageKey,
       avatarUrl: session.avatarUrl || contactInfo?.avatarUrl,
       sourceName: session.displayName || contactInfo?.displayName || sessionId,
@@ -274,10 +327,84 @@ class MessagePushService {
     }
   }
 
+  private getSessionType(sessionId: string, session: ChatSession): MessagePushPayload['sessionType'] {
+    if (sessionId.endsWith('@chatroom')) {
+      return 'group'
+    }
+    if (sessionId.startsWith('gh_') || session.type === 'official') {
+      return 'official'
+    }
+    if (session.type === 'friend') {
+      return 'private'
+    }
+    return 'other'
+  }
+
+  private shouldPushPayload(payload: MessagePushPayload): boolean {
+    const sessionId = String(payload.sessionId || '').trim()
+    const filterMode = this.getMessagePushFilterMode()
+    if (filterMode === 'all') {
+      return true
+    }
+
+    const filterList = this.getMessagePushFilterList()
+    const listed = filterList.has(sessionId)
+    if (filterMode === 'whitelist') {
+      return listed
+    }
+    return !listed
+  }
+
+  private getMessagePushFilterMode(): 'all' | 'whitelist' | 'blacklist' {
+    const value = this.configService.get('messagePushFilterMode')
+    if (value === 'whitelist' || value === 'blacklist') return value
+    return 'all'
+  }
+
+  private getMessagePushFilterList(): Set<string> {
+    const value = this.configService.get('messagePushFilterList')
+    if (!Array.isArray(value)) return new Set()
+    return new Set(value.map((item) => String(item || '').trim()).filter(Boolean))
+  }
+
+  private isSessionTableChange(tableName: string): boolean {
+    return String(tableName || '').trim().toLowerCase() === 'session'
+  }
+
+  private isMessageTableChange(tableName: string): boolean {
+    const normalized = String(tableName || '').trim().toLowerCase()
+    if (!normalized) return false
+    return normalized === 'message' ||
+      normalized === 'msg' ||
+      normalized.startsWith('message_') ||
+      normalized.startsWith('msg_') ||
+      normalized.includes('message')
+  }
+
+  private bumpSessionBaseline(sessionId: string, message: Message): void {
+    const key = String(sessionId || '').trim()
+    if (!key) return
+
+    const createTime = Number(message.createTime || 0)
+    if (!Number.isFinite(createTime) || createTime <= 0) return
+
+    const current = this.sessionBaseline.get(key) || { lastTimestamp: 0, unreadCount: 0 }
+    if (createTime > current.lastTimestamp) {
+      this.sessionBaseline.set(key, {
+        ...current,
+        lastTimestamp: createTime
+      })
+    }
+  }
+
   private getMessageDisplayContent(message: Message): string | null {
+    const cleanOfficialPrefix = (value: string | null): string | null => {
+      if (!value) return value
+      return value.replace(/^\s*\[视频号\]\s*/u, '').trim() || value
+    }
     switch (Number(message.localType || 0)) {
       case 1:
-        return message.rawContent || null
+        return cleanOfficialPrefix(message.rawContent || null)
       case 3:
         return '[图片]'
       case 34:
@@ -287,13 +414,13 @@ class MessagePushService {
       case 47:
         return '[表情]'
       case 42:
-        return message.cardNickname || '[名片]'
+        return cleanOfficialPrefix(message.cardNickname || '[名片]')
       case 48:
         return '[位置]'
       case 49:
-        return message.linkTitle || message.fileName || '[消息]'
+        return cleanOfficialPrefix(message.linkTitle || message.fileName || '[消息]')
       default:
-        return message.parsedContent || message.rawContent || null
+        return cleanOfficialPrefix(message.parsedContent || message.rawContent || null)
     }
   }
 

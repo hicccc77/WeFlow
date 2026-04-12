@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useThemeStore } from '../stores/themeStore';
 import { Newspaper, MessageSquareOff } from 'lucide-react';
 import './BizPage.scss';
@@ -10,6 +10,7 @@ export interface BizAccount {
   type: string;
   last_time: number;
   formatted_last_time: string;
+  unread_count?: number;
 }
 
 export const BizAccountList: React.FC<{
@@ -36,24 +37,41 @@ export const BizAccountList: React.FC<{
     initWxid().then(_r => { });
   }, []);
 
-  useEffect(() => {
-    const fetch = async () => {
-      if (!myWxid) {
-        return;
-      }
+  const fetchAccounts = useCallback(async () => {
+    if (!myWxid) {
+      return;
+    }
 
-      setLoading(true);
-      try {
-        const res = await window.electronAPI.biz.listAccounts(myWxid)
-        setAccounts(res || []);
-      } catch (err) {
-        console.error('获取服务号列表失败:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch().then(_r => { } );
+    setLoading(true);
+    try {
+      const res = await window.electronAPI.biz.listAccounts(myWxid)
+      setAccounts(res || []);
+    } catch (err) {
+      console.error('获取服务号列表失败:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [myWxid]);
+
+  useEffect(() => {
+    fetchAccounts().then(_r => { });
+  }, [fetchAccounts]);
+
+  useEffect(() => {
+    if (!window.electronAPI.chat.onWcdbChange) return;
+    const removeListener = window.electronAPI.chat.onWcdbChange((_event: any, data: { json?: string }) => {
+      try {
+        const payload = JSON.parse(data.json || '{}');
+        const tableName = String(payload.table || '').toLowerCase();
+        if (!tableName || tableName === 'session' || tableName.includes('message') || tableName.startsWith('msg_')) {
+          fetchAccounts().then(_r => { });
+        }
+      } catch {
+        fetchAccounts().then(_r => { });
+      }
+    });
+    return () => removeListener();
+  }, [fetchAccounts]);
 
 
   const filtered = useMemo(() => {
@@ -80,7 +98,12 @@ export const BizAccountList: React.FC<{
         {filtered.map(item => (
             <div
                 key={item.username}
-                onClick={() => onSelect(item)}
+                onClick={() => {
+                  setAccounts(prev => prev.map(account =>
+                    account.username === item.username ? { ...account, unread_count: 0 } : account
+                  ));
+                  onSelect({ ...item, unread_count: 0 });
+                }}
                 className={`biz-account-item ${selectedUsername === item.username ? 'active' : ''} ${item.username === 'gh_3dfda90e39d6' ? 'pay-account' : ''}`}
             >
               <img
@@ -88,6 +111,9 @@ export const BizAccountList: React.FC<{
                   className="biz-avatar"
                   alt=""
               />
+              {(item.unread_count || 0) > 0 && (
+                  <span className="biz-unread-badge">{(item.unread_count || 0) > 99 ? '99+' : item.unread_count}</span>
+              )}
               <div className="biz-info">
                 <div className="biz-info-top">
                   <span className="biz-name">{item.name || item.username}</span>

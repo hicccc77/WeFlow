@@ -13,6 +13,7 @@ export interface BizAccount {
   type: number
   last_time: number
   formatted_last_time: string
+  unread_count?: number
 }
 
 export interface BizMessage {
@@ -104,18 +105,23 @@ export class BizService {
       if (!root || !accountWxid) return []
 
       const bizLatestTime: Record<string, number> = {}
+      const bizUnreadCount: Record<string, number> = {}
 
       try {
-        const sessionsRes = await wcdbService.getSessions()
+        const sessionsRes = await chatService.getSessions()
         if (sessionsRes.success && sessionsRes.sessions) {
           for (const session of sessionsRes.sessions) {
             const uname = session.username || session.strUsrName || session.userName || session.id
             // 适配日志中发现的字段，注意转为整型数字
-            const timeStr = session.last_timestamp || session.sort_timestamp || session.nTime || session.timestamp || '0'
+            const timeStr = session.lastTimestamp || session.sortTimestamp || session.last_timestamp || session.sort_timestamp || session.nTime || session.timestamp || '0'
             const time = parseInt(timeStr.toString(), 10)
 
             if (usernames.includes(uname) && time > 0) {
               bizLatestTime[uname] = time
+            }
+            if (usernames.includes(uname)) {
+              const unread = Number(session.unreadCount ?? session.unread_count ?? 0)
+              bizUnreadCount[uname] = Number.isFinite(unread) ? Math.max(0, Math.floor(unread)) : 0
             }
           }
         }
@@ -152,7 +158,8 @@ export class BizService {
           avatar: info?.avatarUrl || '',
           type: 0,
           last_time: lastTime,
-          formatted_last_time: formatBizTime(lastTime)
+          formatted_last_time: formatBizTime(lastTime),
+          unread_count: bizUnreadCount[uname] || 0
         }
       })
 
