@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import {
   EXPORT_DATE_RANGE_PRESETS,
   WEEKDAY_SHORT_LABELS,
@@ -152,6 +152,7 @@ export function ExportDateRangeDialog({
     start: '00:00',
     end: '23:59'
   })
+  const [timeInputError, setTimeInputError] = useState({ start: false, end: false })
   const [openTimeDropdown, setOpenTimeDropdown] = useState<ActiveBoundary | null>(null)
   const startTimeSelectRef = useRef<HTMLDivElement>(null)
   const endTimeSelectRef = useRef<HTMLDivElement>(null)
@@ -324,7 +325,11 @@ export function ExportDateRangeDialog({
     setTimeInput(prev => ({ ...prev, [boundary]: timeStr }))
 
     const parsedTime = parseTimeValue(timeStr)
-    if (!parsedTime) return
+    if (!parsedTime) {
+      setTimeInputError(prev => ({ ...prev, [boundary]: true }))
+      return
+    }
+    setTimeInputError(prev => ({ ...prev, [boundary]: false }))
 
     setDraft(prev => {
       const dateObj = boundary === 'start' ? prev.dateRange.start : prev.dateRange.end
@@ -342,9 +347,9 @@ export function ExportDateRangeDialog({
     })
   }, [])
 
-  const toggleTimeDropdown = useCallback((boundary: ActiveBoundary) => {
+  const handleTimeInputFocus = useCallback((boundary: ActiveBoundary) => {
     setActiveBoundary(boundary)
-    setOpenTimeDropdown(prev => (prev === boundary ? null : boundary))
+    setOpenTimeDropdown(boundary)
   }, [])
 
   const handleTimeColumnSelect = useCallback((boundary: ActiveBoundary, field: 'hour' | 'minute', value: string) => {
@@ -618,16 +623,26 @@ export function ExportDateRangeDialog({
               ref={startTimeSelectRef}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                className="export-date-range-time-trigger"
-                onClick={() => toggleTimeDropdown('start')}
-                aria-haspopup="dialog"
-                aria-expanded={openTimeDropdown === 'start'}
-              >
-                <span className="export-date-range-time-trigger-value">{timeInput.start}</span>
-                <ChevronDown size={14} />
-              </button>
+              <input
+                type="text"
+                className={`export-date-range-date-input ${timeInputError.start ? 'invalid' : ''}`}
+                value={timeInput.start}
+                placeholder="HH:mm"
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  updateBoundaryTime('start', nextValue)
+                }}
+                onFocus={() => {
+                  setActiveBoundary('start')
+                  setOpenTimeDropdown('start')
+                }}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  setOpenTimeDropdown(null)
+                }}
+              />
               {openTimeDropdown === 'start' && renderTimeDropdown('start')}
             </div>
           </div>
@@ -662,16 +677,26 @@ export function ExportDateRangeDialog({
               ref={endTimeSelectRef}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                className="export-date-range-time-trigger"
-                onClick={() => toggleTimeDropdown('end')}
-                aria-haspopup="dialog"
-                aria-expanded={openTimeDropdown === 'end'}
-              >
-                <span className="export-date-range-time-trigger-value">{timeInput.end}</span>
-                <ChevronDown size={14} />
-              </button>
+              <input
+                type="text"
+                className={`export-date-range-date-input ${timeInputError.end ? 'invalid' : ''}`}
+                value={timeInput.end}
+                placeholder="HH:mm"
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  updateBoundaryTime('end', nextValue)
+                }}
+                onFocus={() => {
+                  setActiveBoundary('end')
+                  setOpenTimeDropdown('end')
+                }}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  setOpenTimeDropdown(null)
+                }}
+              />
               {openTimeDropdown === 'end' && renderTimeDropdown('end')}
             </div>
           </div>
