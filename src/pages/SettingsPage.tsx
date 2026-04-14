@@ -48,7 +48,7 @@ const tabs: { id: Exclude<SettingsTab, 'insight' | 'aiFootprint'>; label: string
 ]
 
 const aiTabs: Array<{ id: Extract<SettingsTab, 'aiCommon' | 'insight' | 'aiFootprint'>; label: string }> = [
-  { id: 'aiCommon', label: 'AI 通用' },
+  { id: 'aiCommon', label: '基础配置' },
   { id: 'insight', label: 'AI 见解' },
   { id: 'aiFootprint', label: 'AI 足迹' }
 ]
@@ -3036,7 +3036,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       <div className="form-group">
         <label>调试工具</label>
         <span className="form-hint">
-          该功能依赖「AI 通用」里的模型配置。用于验证完整链路（数据库→API→弹窗）。
+          该功能依赖「基础配置」里的模型配置。用于验证完整链路（数据库→API→弹窗）。
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '10px' }}>
           <button
@@ -4520,43 +4520,51 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
         <div className="settings-layout">
           <div className="settings-tabs" role="tablist" aria-label="设置项">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <tab.icon size={16} />
-                <span>{tab.label}</span>
-              </button>
-            ))}
+            {tabs.flatMap((tab) => {
+              const row: React.ReactNode[] = [
+                <button
+                  key={tab.id}
+                  className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  <tab.icon size={16} />
+                  <span>{tab.label}</span>
+                </button>
+              ]
 
-            <div className={`tab-group ${aiGroupExpanded ? 'expanded' : ''}`}>
-              <button
-                className={`tab-btn tab-group-trigger ${(activeTab === 'aiCommon' || activeTab === 'insight' || activeTab === 'aiFootprint') ? 'active' : ''}`}
-                onClick={() => setAiGroupExpanded((prev) => !prev)}
-                aria-expanded={aiGroupExpanded}
-              >
-                <Sparkles size={16} />
-                <span>AI 相关</span>
-                <ChevronDown size={14} className={`tab-group-arrow ${aiGroupExpanded ? 'expanded' : ''}`} />
-              </button>
-              <div className={`tab-sublist-wrap ${aiGroupExpanded ? 'expanded' : 'collapsed'}`}>
-                <div className="tab-sublist">
-                  {aiTabs.map((tab) => (
+              if (tab.id === 'analytics') {
+                row.push(
+                  <div key="ai-settings-group" className={`tab-group ${aiGroupExpanded ? 'expanded' : ''}`}>
                     <button
-                      key={tab.id}
-                      className={`tab-btn tab-sub-btn ${activeTab === tab.id ? 'active' : ''}`}
-                      onClick={() => setActiveTab(tab.id)}
-                      tabIndex={aiGroupExpanded ? 0 : -1}
+                      className={`tab-btn tab-group-trigger ${(activeTab === 'aiCommon' || activeTab === 'insight' || activeTab === 'aiFootprint') ? 'active' : ''}`}
+                      onClick={() => setAiGroupExpanded((prev) => !prev)}
+                      aria-expanded={aiGroupExpanded}
                     >
-                      <span className="tab-sub-dot" />
-                      <span>{tab.label}</span>
+                      <Sparkles size={16} />
+                      <span>AI 设置</span>
+                      <ChevronDown size={14} className={`tab-group-arrow ${aiGroupExpanded ? 'expanded' : ''}`} />
                     </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+                    <div className={`tab-sublist-wrap ${aiGroupExpanded ? 'expanded' : 'collapsed'}`}>
+                      <div className="tab-sublist">
+                        {aiTabs.map((tab) => (
+                          <button
+                            key={tab.id}
+                            className={`tab-btn tab-sub-btn ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                            tabIndex={aiGroupExpanded ? 0 : -1}
+                          >
+                            <span className="tab-sub-dot" />
+                            <span>{tab.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              return row
+            })}
           </div>
 
           <div className="settings-body">
