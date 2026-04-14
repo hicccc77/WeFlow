@@ -90,6 +90,7 @@ type SnsTimelineExportFormat = 'json' | 'html' | 'arkmejson'
 
 interface ExportOptions {
   format: TextExportFormat
+  streamingHtml: boolean
   dateRange: { start: Date; end: Date } | null
   useAllTime: boolean
   exportAvatars: boolean
@@ -1907,6 +1908,7 @@ function ExportPage() {
 
   const [options, setOptions] = useState<ExportOptions>({
     format: 'json',
+    streamingHtml: false,
     dateRange: {
       start: new Date(new Date().setHours(0, 0, 0, 0)),
       end: new Date()
@@ -4473,6 +4475,7 @@ function ExportPage() {
       const next: ExportOptions = {
         ...prev,
         format: exportDefaultFormat,
+        streamingHtml: prev.streamingHtml,
         exportAvatars: exportDefaultAvatars,
         useAllTime: exportDefaultDateRangeSelection.useAllTime,
         dateRange: nextDateRange,
@@ -4742,6 +4745,7 @@ function ExportPage() {
 
     const base: ElectronExportOptions = {
       format: options.format,
+      streamingHtml: options.format === 'html' ? options.streamingHtml : false,
       exportAvatars: options.exportAvatars,
       exportMedia: exportMediaEnabled,
       exportImages: options.exportImages,
@@ -7393,6 +7397,7 @@ function ExportPage() {
   const useCollapsedSessionFormatSelector = isSessionScopeDialog || isContentTextDialog
   const shouldShowFormatSection = !isContentScopeDialog || isContentTextDialog
   const shouldShowMediaSection = !isContentScopeDialog
+  const shouldShowStreamingHtmlToggle = exportDialog.scope !== 'sns' && options.format === 'html'
   const shouldRenderImageDeepSearchToggle = exportDialog.scope !== 'sns' && (
     isSessionScopeDialog ||
     (isContentScopeDialog && exportDialog.contentType === 'image')
@@ -9609,6 +9614,26 @@ function ExportPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {shouldShowStreamingHtmlToggle && (
+                <div className="dialog-section">
+                  <div className="dialog-switch-row">
+                    <div className="dialog-switch-copy">
+                      <h4>使用流式导出</h4>
+                      <div className="format-note">将消息拆分为多个 JSONL 分片，打开大型导出更流畅。</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`dialog-switch ${options.streamingHtml ? 'on' : ''}`}
+                      aria-pressed={options.streamingHtml}
+                      aria-label="切换流式导出"
+                      onClick={() => setOptions(prev => ({ ...prev, streamingHtml: !prev.streamingHtml }))}
+                    >
+                      <span className="dialog-switch-thumb" />
+                    </button>
+                  </div>
                 </div>
               )}
 

@@ -1097,6 +1097,7 @@ export interface ElectronAPI {
 
 export interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
+  streamingHtml?: boolean
   contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji' | 'file'
   dateRange?: { start: number; end: number } | null
   senderUsername?: string
