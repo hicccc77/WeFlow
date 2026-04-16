@@ -339,7 +339,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 视频
   video: {
-    getVideoInfo: (videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => ipcRenderer.invoke('video:getVideoInfo', videoMd5, options),
+    getVideoInfo: (
+      videoMd5: string,
+      options?: {
+        includePoster?: boolean
+        posterFormat?: 'dataUrl' | 'fileUrl'
+        lookupContext?: { sessionId?: string; localId?: number; createTime?: number }
+      }
+    ) => ipcRenderer.invoke('video:getVideoInfo', videoMd5, options),
     parseVideoMd5: (content: string) => ipcRenderer.invoke('video:parseVideoMd5', content)
   },
 

@@ -8752,7 +8752,13 @@ function MessageBubble({
     videoLoadingRef.current = true
     setVideoLoading(true)
     try {
-      const result = await window.electronAPI.video.getVideoInfo(videoMd5)
+      const result = await window.electronAPI.video.getVideoInfo(videoMd5, {
+        lookupContext: {
+          sessionId: session.username,
+          localId: message.localId,
+          createTime: message.createTime
+        }
+      })
       if (result && result.success && result.exists) {
         setVideoInfo({
           exists: result.exists,

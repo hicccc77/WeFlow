@@ -524,7 +524,11 @@ export interface ElectronAPI {
     }) => void) => () => void
   }
   video: {
-    getVideoInfo: (videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => Promise<{
+    getVideoInfo: (videoMd5: string, options?: {
+      includePoster?: boolean
+      posterFormat?: 'dataUrl' | 'fileUrl'
+      lookupContext?: { sessionId?: string; localId?: number; createTime?: number }
+    }) => Promise<{
       success: boolean
       exists: boolean
       videoUrl?: string

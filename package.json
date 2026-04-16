@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",
-    "electron:dev": "vite --mode electron",
+    "electron:dev": "chcp 65001 && vite --mode electron",
     "electron:build": "npm run build"
   },
   "dependencies": {

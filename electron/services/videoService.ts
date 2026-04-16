@@ -25,6 +25,18 @@ interface VideoIndexEntry {
   thumbPath?: string
 }
 
+interface FileMd5CacheEntry {
+  md5: string
+  mtimeMs: number
+  size: number
+}
+
+type VideoLookupContext = {
+  sessionId?: string
+  localId?: number
+  createTime?: number
+}
+
 type PosterFormat = 'dataUrl' | 'fileUrl'
 
 function getStaticFfmpegPath(): string | null {
@@ -62,6 +74,7 @@ class VideoService {
   private pendingVideoInfo = new Map<string, Promise<VideoInfo>>()
   private pendingPosterExtract = new Map<string, Promise<string | null>>()
   private extractedPosterCache = new Map<string, TimedCacheEntry<string | null>>()
+  private videoContentMd5Cache = new Map<string, TimedCacheEntry<FileMd5CacheEntry>>()
   private posterExtractRunning = 0
   private posterExtractQueue: Array<() => void> = []
   private readonly hardlinkCacheTtlMs = 10 * 60 * 1000
@@ -71,6 +84,7 @@ class VideoService {
   private readonly maxPosterExtractConcurrency = 1
   private readonly maxCacheEntries = 2000
   private readonly maxIndexEntries = 6
+  private readonly contentHashCacheTtlMs = 10 * 60 * 1000
 
   constructor() {
     this.configService = new ConfigService()
@@ -84,6 +98,14 @@ class VideoService {
       if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
       appendFileSync(join(logDir, 'wcdb.log'), `[${timestamp}] [VideoService] ${message}${metaStr}\n`, 'utf8')
     } catch { }
+  }
+
+  private debugTrace(message: string, meta?: Record<string, unknown>): void {
+    try {
+      const ts = new Date().toISOString()
+      if (meta) console.log(`[VideoTrace ${ts}] ${message}`, meta)
+      else console.log(`[VideoTrace ${ts}] ${message}`)
+    } catch { /* ignore */ }
   }
 
   private readTimedCache<T>(cache: Map<string, TimedCacheEntry<T>>, key: string): T | undefined {
@@ -185,6 +207,23 @@ class VideoService {
     ]
   }
 
+  private getMessageResourceDbPaths(dbPath: string, wxid: string, cleanedWxid: string): string[] {
+    const dbPathLower = dbPath.toLowerCase()
+    const wxidLower = wxid.toLowerCase()
+    const cleanedWxidLower = cleanedWxid.toLowerCase()
+    const dbPathContainsWxid = dbPathLower.includes(wxidLower) || dbPathLower.includes(cleanedWxidLower)
+    if (dbPathContainsWxid) {
+      return [
+        join(dbPath, 'db_storage', 'message', 'message_resource.db'),
+        join(dbPath, 'db_storage', 'message_resource.db')
+      ]
+    }
+    return [
+      join(dbPath, wxid, 'db_storage', 'message', 'message_resource.db'),
+      join(dbPath, wxid, 'db_storage', 'message_resource.db')
+    ]
+  }
+
   /**
    * 从 video_hardlink_info_v4 表查询视频文件名
    * 使用 wcdb 专属接口查询加密的 hardlink.db
@@ -264,25 +303,284 @@ class VideoService {
     return resolvedMap
   }
 
-  private async queryVideoFileName(md5: string): Promise<string | undefined> {
-    const normalizedMd5 = String(md5 || '').trim().toLowerCase()
+  private normalizeVideoToken(value: string): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^.*[\\/]/, '')
+      .replace(/\.(?:mp4|mov|m4v|hevc|jpg|jpeg|png)$/i, '')
+  }
+
+  private extractVideoNameCandidates(textRaw: string): string[] {
+    const text = String(textRaw || '')
+    if (!text) return []
+    const set = new Set<string>()
+    const push = (v?: string) => {
+      const n = this.normalizeVideoToken(String(v || ''))
+      if (n) set.add(n)
+    }
+    const fileRegex = /([a-zA-Z0-9_-]{8,})\.(?:mp4|mov|m4v|hevc|jpg|jpeg|png)\b/gi
+    let m: RegExpExecArray | null
+    while ((m = fileRegex.exec(text)) !== null) push(m[1])
+    const kvRegex = /(?:videoname|video_name|filename|file_name)\s*[:=]\s*['"]?([a-zA-Z0-9_-]{8,})['"]?/gi
+    while ((m = kvRegex.exec(text)) !== null) push(m[1])
+    const hexRegex = /\b([a-fA-F0-9]{32})\b/g
+    while ((m = hexRegex.exec(text)) !== null) push(m[1])
+    return Array.from(set)
+  }
+
+  private pickBestVideoCandidate(candidates: string[], sourceToken: string): string | undefined {
+    const source = this.normalizeVideoToken(sourceToken)
+    const uniq = Array.from(new Set((candidates || []).map((x) => this.normalizeVideoToken(x)).filter(Boolean)))
+    const alt = uniq.find((x) => /^[a-f0-9]{32}$/.test(x) && x !== source)
+    if (alt) return alt
+    const strong = uniq.find((x) => x.includes(source) || source.includes(x))
+    return strong || uniq[0]
+  }
+
+  private toPrintableText(raw: unknown): string {
+    try {
+      if (raw === null || raw === undefined) return ''
+      if (typeof raw === 'string') return raw
+      let buf: Buffer | null = null
+      if (Buffer.isBuffer(raw)) buf = raw
+      else if (raw instanceof Uint8Array) buf = Buffer.from(raw)
+      else if (typeof raw === 'object' && Array.isArray((raw as any).data)) buf = Buffer.from((raw as any).data)
+      if (!buf || buf.length === 0) return ''
+      const sanitize = (v: string): string => String(v || '').replace(/\u0000/g, '').replace(/[^\x20-\x7E]+/g, ' ').replace(/\s+/g, ' ').trim()
+      const utf8 = sanitize(buf.toString('utf8'))
+      const utf16 = sanitize(buf.toString('utf16le'))
+      if (utf8 && utf16 && utf8 !== utf16) return `${utf8}\n${utf16}`
+      return utf8 || utf16
+    } catch {
+      return ''
+    }
+  }
+
+  private extractVideoNameFromPackedRaw(raw: unknown): string | undefined {
+    try {
+      const extractFromBuffer = (buf: Buffer): string | undefined => {
+        const text = buf.toString('latin1')
+        const strict = /([a-fA-F0-9]{32})\.mp4\b/.exec(text)
+        if (strict?.[1]) return strict[1].toLowerCase()
+        const all = text.match(/[a-fA-F0-9]{32}/g) || []
+        const preferred = all.find((item) => /[a-f]/i.test(item) && !/^08011002/i.test(item))
+        if (preferred) return preferred.toLowerCase()
+        const first = all.find((item) => !/^08011002/i.test(item))
+        return (first || all[0])?.toLowerCase()
+      }
+      if (raw === null || raw === undefined) return undefined
+      let buf: Buffer | null = null
+      if (Buffer.isBuffer(raw)) buf = raw
+      else if (raw instanceof Uint8Array) buf = Buffer.from(raw)
+      else if (typeof raw === 'object' && Array.isArray((raw as any).data)) buf = Buffer.from((raw as any).data)
+      else if (typeof raw === 'string') {
+        const s = raw
+        const numeric = s.match(/\d{1,3}/g)
+        if (numeric && numeric.length >= 8) {
+          const bytes = numeric.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 255)
+          if (bytes.length >= 8) {
+            const byNums = extractFromBuffer(Buffer.from(bytes))
+            if (byNums) return byNums
+          }
+        }
+        const hexOnly = s.replace(/[^a-fA-F0-9]/g, '')
+        if (hexOnly.length >= 64 && hexOnly.length % 2 === 0) {
+          try {
+            const byHex = extractFromBuffer(Buffer.from(hexOnly, 'hex'))
+            if (byHex) return byHex
+          } catch { /* ignore */ }
+        }
+        return /([a-fA-F0-9]{32})(?:\.mp4)?/.exec(s)?.[1]?.toLowerCase()
+      }
+      if (!buf || buf.length === 0) return undefined
+      const fromBinary = extractFromBuffer(buf)
+      if (fromBinary) return fromBinary
+      let run = ''
+      const isHexByte = (b: number): boolean => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x66) || (b >= 0x41 && b <= 0x46)
+      for (const b of buf) {
+        if (!isHexByte(b)) { run = ''; continue }
+        run += String.fromCharCode(b).toLowerCase()
+        if (run.length > 32) run = run.slice(-32)
+        if (run.length === 32) return run
+      }
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private async queryVideoFileName(md5: string, context?: VideoLookupContext): Promise<string | undefined> {
+    const normalizedMd5 = this.normalizeVideoToken(md5)
     const dbPath = this.getDbPath()
     const wxid = this.getMyWxid()
     const cleanedWxid = this.cleanWxid(wxid)
-
     this.log('queryVideoFileName 开始', { md5: normalizedMd5, wxid, cleanedWxid, dbPath })
-
+    this.debugTrace('queryVideoFileName 开始', { input: md5, normalized: normalizedMd5, dbPath, wxid, cleanedWxid, context })
     if (!normalizedMd5 || !wxid || !dbPath) {
       this.log('queryVideoFileName: 参数缺失', { hasMd5: !!normalizedMd5, hasWxid: !!wxid, hasDbPath: !!dbPath })
       return undefined
     }
-
     const resolvedMap = await this.resolveVideoHardlinks([normalizedMd5], dbPath, wxid, cleanedWxid)
-    const resolved = resolvedMap.get(normalizedMd5)
-    if (resolved) {
-      this.log('queryVideoFileName 命中', { input: normalizedMd5, resolved })
-      return resolved
+    const hardlinkResolved = resolvedMap.get(normalizedMd5)
+    if (hardlinkResolved) {
+      this.log('queryVideoFileName 命中', { input: normalizedMd5, resolved: hardlinkResolved })
+      this.debugTrace('queryVideoFileName hardlink 命中', { input: normalizedMd5, resolved: hardlinkResolved })
+      return hardlinkResolved
     }
+    const packedResolved = await this.resolveVideoNameFromMessagePackedInfo(normalizedMd5, context)
+    if (packedResolved) {
+      this.debugTrace('queryVideoFileName resource 命中', { input: normalizedMd5, resolved: packedResolved })
+      return packedResolved
+    }
+    this.debugTrace('queryVideoFileName 未命中', { input: normalizedMd5 })
+    return undefined
+  }
+
+  private async resolveVideoNameFromMessagePackedInfo(token: string, context?: VideoLookupContext): Promise<string | undefined> {
+    const normalizedToken = this.normalizeVideoToken(token)
+    if (!normalizedToken) return undefined
+    this.debugTrace('开始 message packed_info 解析', { token: normalizedToken, context })
+    const messageDbRes = await wcdbService.listMessageDbs()
+    const dbPaths = messageDbRes.success && Array.isArray(messageDbRes.data) ? messageDbRes.data : []
+    if (dbPaths.length === 0) return undefined
+    this.debugTrace('message 库列表', { dbPaths })
+    const localIdCandidates = new Set<number>()
+
+    for (const dbPath of dbPaths) {
+      let preferredTables: string[] = []
+      const sessionId = String(context?.sessionId || '').trim()
+      if (sessionId) {
+        const escapedSessionId = sessionId.replace(/'/g, "''")
+        const chatMap = await wcdbService.execQuery('message', dbPath, `SELECT ChatName, ChatTableName FROM ChatName2Id WHERE ChatName = '${escapedSessionId}' LIMIT 3`)
+        if (chatMap.success && Array.isArray(chatMap.rows) && chatMap.rows.length > 0) {
+          preferredTables = chatMap.rows.map((r: any) => String(r.ChatTableName || '')).filter((x) => /^Msg_[a-fA-F0-9]{32}$/.test(x))
+        } else {
+          this.debugTrace('会话未命中 ChatName2Id', { dbPath, sessionId })
+        }
+      }
+
+      const tableRes = await wcdbService.execQuery('message', dbPath, "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Msg_%'")
+      const allMsgTables = tableRes.success && Array.isArray(tableRes.rows)
+        ? tableRes.rows.map((r: any) => String(r.name || '')).filter(Boolean)
+        : []
+      if (allMsgTables.length === 0) continue
+      const orderedTables = [...preferredTables, ...allMsgTables.filter((x) => !preferredTables.includes(x))]
+      this.debugTrace('message 候选表', { dbPath, tableCount: allMsgTables.length, preferredTables, firstTables: orderedTables.slice(0, 4) })
+
+      for (const tableName of orderedTables) {
+        const escapedTable = tableName.replace(/'/g, "''")
+        const pragmaRes = await wcdbService.execQuery('message', dbPath, `PRAGMA table_info("${escapedTable}")`)
+        if (!pragmaRes.success || !Array.isArray(pragmaRes.rows)) continue
+        const columns = new Set(pragmaRes.rows.map((item: any) => String(item?.name || '').trim().toLowerCase()).filter(Boolean))
+        if (!columns.has('local_type')) continue
+        const packedColumns = ['packed_info_data', 'packed_info_blob', 'packed_info', 'bytesextra', 'bytes_extra', 'reserved0', 'wcdb_ct_packed_info', 'wcdb_ct_reserved0']
+          .filter((c) => columns.has(c))
+        if (packedColumns.length === 0) continue
+        const sessionColumns = ['talker', 'session_id', 'sessionid', 'chat_name', 'chatname', 'chat_name_id', 'chatnameid']
+          .filter((c) => columns.has(c))
+
+        const localIdFilter = Number.isFinite(Number(context?.localId)) ? Math.max(0, Math.floor(Number(context?.localId))) : 0
+        const escapedToken = normalizedToken.replace(/'/g, "''")
+        const whereFragments = localIdFilter > 0
+          ? [`local_id = ${localIdFilter}`]
+          : [`CAST(message_content AS TEXT) LIKE '%${escapedToken}%'`, `CAST(compress_content AS TEXT) LIKE '%${escapedToken}%'`]
+        const selectFields = Array.from(new Set(['local_id', 'create_time', ...packedColumns, ...sessionColumns]))
+        const rowsRes = await wcdbService.execQuery(
+          'message',
+          dbPath,
+          `SELECT ${selectFields.join(', ')} FROM "${escapedTable}" WHERE local_type = 43 AND (${whereFragments.join(' OR ')}) ORDER BY create_time DESC LIMIT ${localIdFilter > 0 ? 8 : 80}`
+        )
+        if (!rowsRes.success || !Array.isArray(rowsRes.rows)) continue
+        if (rowsRes.rows.length > 0) this.debugTrace('message 行查询命中', { dbPath, tableName, localIdFilter, rowCount: rowsRes.rows.length })
+
+        for (const row of rowsRes.rows as Array<Record<string, unknown>>) {
+          const localId = Number(row.local_id || 0)
+          if (Number.isFinite(localId) && localId > 0) localIdCandidates.add(Math.floor(localId))
+          const rowSession = sessionColumns.map((c) => String((row as any)?.[c] || '').trim()).find(Boolean) || ''
+          const expectedSession = String(context?.sessionId || '').trim()
+          if (expectedSession && rowSession && rowSession !== expectedSession) {
+            this.debugTrace('message 行命中但会话不匹配', { dbPath, tableName, localId, rowSession, expectedSession })
+            continue
+          }
+
+          for (const col of packedColumns) {
+            const rawResolved = this.extractVideoNameFromPackedRaw((row as any)?.[col])
+            if (!rawResolved) continue
+            this.debugTrace('packed_info 原始二进制命中', { token: normalizedToken, resolved: rawResolved, sourceColumn: col, dbPath, tableName, localId: localId || row.local_id, createTime: row.create_time })
+            return rawResolved
+          }
+
+          const packedTexts = packedColumns.map((col) => ({ col, text: this.toPrintableText((row as any)?.[col]) })).filter((x) => x.text.length > 0)
+          if (packedTexts.length === 0) {
+            this.debugTrace('message 行命中但 packed 列为空', { dbPath, tableName, localId, packedColumns })
+            continue
+          }
+          for (const item of packedTexts) {
+            const strictMp4 = /([a-fA-F0-9]{32})\.mp4\b/.exec(item.text)
+            if (strictMp4?.[1]) {
+              const resolved = strictMp4[1].toLowerCase()
+              this.debugTrace('packed_info 严格命中 32hex.mp4', { token: normalizedToken, resolved, sourceColumn: item.col, dbPath, tableName, localId: localId || row.local_id, createTime: row.create_time })
+              return resolved
+            }
+          }
+          const candidates = packedTexts.flatMap((item) => this.extractVideoNameCandidates(item.text))
+          const best = this.pickBestVideoCandidate(candidates, normalizedToken)
+          if (best) {
+            this.debugTrace('packed_info 候选命中', { token: normalizedToken, resolved: best, candidates, dbPath, tableName, localId: localId || row.local_id, createTime: row.create_time })
+            return best
+          }
+        }
+      }
+    }
+
+    if (localIdCandidates.size > 0 || Number(context?.localId) > 0) {
+      if (Number(context?.localId) > 0) localIdCandidates.add(Math.max(0, Math.floor(Number(context?.localId))))
+      const dbPath = this.getDbPath()
+      const wxid = this.getMyWxid()
+      const cleanedWxid = this.cleanWxid(wxid)
+      const resourceDbPaths = this.getMessageResourceDbPaths(dbPath, wxid, cleanedWxid)
+      this.debugTrace('message_resource 兜底候选', { localIds: Array.from(localIdCandidates).slice(0, 20), resourceDbPaths })
+      for (const resourceDbPath of resourceDbPaths) {
+        if (!existsSync(resourceDbPath)) {
+          this.debugTrace('message_resource.db 不存在', { resourceDbPath })
+          continue
+        }
+        this.debugTrace('message_resource.db 开始查询', { resourceDbPath })
+        for (const localId of localIdCandidates) {
+          const query = `
+            SELECT d.packed_info AS packed_info
+            FROM MessageResourceInfo i
+            LEFT JOIN MessageResourceDetail d ON i.message_id = d.message_id
+            WHERE i.message_local_id = ${localId}
+            ORDER BY i.message_id DESC
+            LIMIT 8
+          `
+          const result = await wcdbService.execQuery('message', resourceDbPath, query)
+          if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
+          let hit = false
+          for (const row of result.rows as Array<Record<string, unknown>>) {
+            const packedInfo = row.packed_info
+            const raw = this.extractVideoNameFromPackedRaw(packedInfo)
+            if (raw) {
+              this.debugTrace('message_resource packed_info 命中', { token: normalizedToken, resolved: raw, resourceDbPath, localId })
+              return raw
+            }
+            const packedText = this.toPrintableText(packedInfo)
+            const candidates = this.extractVideoNameCandidates(packedText)
+            const best = this.pickBestVideoCandidate(candidates, normalizedToken)
+            if (best) {
+              this.debugTrace('message_resource packed_info 命中', { token: normalizedToken, resolved: best, candidates, resourceDbPath, localId })
+              return best
+            }
+            if (packedText) hit = true
+          }
+          if (!hit) this.debugTrace('message_resource packed_info 为空', { resourceDbPath, localId })
+        }
+      }
+    }
+
+    this.debugTrace('message packed_info 未命中', { token: normalizedToken })
     return undefined
   }
 
@@ -473,6 +771,102 @@ class VideoService {
     return null
   }
 
+  private resolveByKnownVideoName(
+    videoBaseDir: string,
+    videoName: string,
+    context?: VideoLookupContext,
+    includePoster = true,
+    posterFormat: PosterFormat = 'dataUrl'
+  ): VideoInfo | null {
+    const normalizedName = this.normalizeVideoToken(videoName)
+    if (!normalizedName) return null
+    const month = this.toYearMonthFromUnix(context?.createTime)
+    if (!month) return null
+    const monthDir = join(videoBaseDir, month)
+    const videoPath = join(monthDir, `${normalizedName}.mp4`)
+    if (!existsSync(videoPath)) {
+      this.debugTrace('已知文件名直达未命中', { videoName: normalizedName, monthDir, videoPath })
+      return null
+    }
+    if (!includePoster) return { exists: true, videoUrl: videoPath }
+    const base = normalizedName.replace(/_raw$/i, '')
+    return {
+      exists: true,
+      videoUrl: videoPath,
+      coverUrl: this.fileToPosterUrl(join(monthDir, `${base}.jpg`), 'image/jpeg', posterFormat),
+      thumbUrl: this.fileToPosterUrl(join(monthDir, `${base}_thumb.jpg`), 'image/jpeg', posterFormat)
+    }
+  }
+
+  private toYearMonthFromUnix(createTime?: number): string {
+    const ts = Number(createTime || 0)
+    if (!Number.isFinite(ts) || ts <= 0) return ''
+    const d = new Date(ts * 1000)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  private async calculateFileMd5(filePath: string): Promise<string | null> {
+    try {
+      if (!existsSync(filePath)) return null
+      const stat = statSync(filePath)
+      if (!stat.isFile()) return null
+      const cached = this.readTimedCache(this.videoContentMd5Cache, filePath)
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.md5
+      const buf = readFileSync(filePath)
+      if (!buf || buf.length === 0) return null
+      const md5 = crypto.createHash('md5').update(buf).digest('hex').toLowerCase()
+      this.writeTimedCache(this.videoContentMd5Cache, filePath, { md5, mtimeMs: stat.mtimeMs, size: stat.size }, this.contentHashCacheTtlMs, this.maxCacheEntries)
+      return md5
+    } catch {
+      return null
+    }
+  }
+
+  private async resolveByContentHash(
+    videoBaseDir: string,
+    targetMd5: string,
+    context?: VideoLookupContext,
+    includePoster = true,
+    posterFormat: PosterFormat = 'dataUrl'
+  ): Promise<VideoInfo | null> {
+    const normalizedTarget = this.normalizeVideoToken(targetMd5)
+    if (!normalizedTarget || !/^[a-f0-9]{32}$/.test(normalizedTarget)) return null
+    if (!existsSync(videoBaseDir)) return null
+    const preferredMonth = this.toYearMonthFromUnix(context?.createTime)
+    const allMonthDirs = readdirSync(videoBaseDir)
+      .filter((dir) => {
+        try { return statSync(join(videoBaseDir, dir)).isDirectory() } catch { return false }
+      })
+      .sort((a, b) => b.localeCompare(a))
+    const monthDirs = preferredMonth ? allMonthDirs.filter((d) => d === preferredMonth) : allMonthDirs.slice(0, 1)
+    if (monthDirs.length === 0) {
+      this.debugTrace('内容哈希扫描跳过：无可用月份目录', { targetMd5: normalizedTarget, preferredMonth, monthDirCount: allMonthDirs.length })
+      return null
+    }
+    for (const month of monthDirs) {
+      const monthDir = join(videoBaseDir, month)
+      let files: string[] = []
+      try { files = readdirSync(monthDir).filter((name) => name.toLowerCase().endsWith('.mp4')) } catch { continue }
+      if (files.length > 120) files = files.slice(0, 120)
+      this.debugTrace('内容哈希扫描目录', { targetMd5: normalizedTarget, monthDir, fileCount: files.length })
+      for (const file of files) {
+        const fullPath = join(monthDir, file)
+        const fileMd5 = await this.calculateFileMd5(fullPath)
+        if (fileMd5 !== normalizedTarget) continue
+        const base = file.toLowerCase().replace(/\.mp4$/i, '').replace(/_raw$/i, '')
+        this.debugTrace('内容哈希命中视频文件', { targetMd5: normalizedTarget, file, fullPath, monthDir })
+        if (!includePoster) return { exists: true, videoUrl: fullPath }
+        return {
+          exists: true,
+          videoUrl: fullPath,
+          coverUrl: this.fileToPosterUrl(join(monthDir, `${base}.jpg`), 'image/jpeg', posterFormat),
+          thumbUrl: this.fileToPosterUrl(join(monthDir, `${base}_thumb.jpg`), 'image/jpeg', posterFormat)
+        }
+      }
+    }
+    return null
+  }
+
   private getFfmpegPath(): string {
     const staticPath = getStaticFfmpegPath()
     if (staticPath) return staticPath
@@ -628,14 +1022,26 @@ class VideoService {
    * 视频存放在: {数据库根目录}/{用户wxid}/msg/video/{年月}/
    * 文件命名: {md5}.mp4, {md5}.jpg, {md5}_thumb.jpg
    */
-  async getVideoInfo(videoMd5: string, options?: { includePoster?: boolean; posterFormat?: PosterFormat }): Promise<VideoInfo> {
-    const normalizedMd5 = String(videoMd5 || '').trim().toLowerCase()
+  async getVideoInfo(
+    videoMd5: string,
+    options?: { includePoster?: boolean; posterFormat?: PosterFormat; lookupContext?: VideoLookupContext }
+  ): Promise<VideoInfo> {
+    const normalizedMd5 = this.normalizeVideoToken(videoMd5)
     const includePoster = options?.includePoster !== false
     const posterFormat: PosterFormat = options?.posterFormat === 'fileUrl' ? 'fileUrl' : 'dataUrl'
     const dbPath = this.getDbPath()
     const wxid = this.getMyWxid()
 
     this.log('getVideoInfo 开始', { videoMd5: normalizedMd5, dbPath, wxid })
+    this.debugTrace('getVideoInfo 输入', {
+      input: videoMd5,
+      normalized: normalizedMd5,
+      includePoster,
+      posterFormat,
+      dbPath,
+      wxid,
+      lookupContext: options?.lookupContext
+    })
 
     if (!dbPath || !wxid || !normalizedMd5) {
       this.log('getVideoInfo: 参数缺失', { hasDbPath: !!dbPath, hasWxid: !!wxid, hasVideoMd5: !!normalizedMd5 })
@@ -652,18 +1058,38 @@ class VideoService {
     if (pending) return pending
 
     const task = (async (): Promise<VideoInfo> => {
-      const realVideoMd5 = await this.queryVideoFileName(normalizedMd5) || normalizedMd5
+      const realVideoMd5 = await this.queryVideoFileName(normalizedMd5, options?.lookupContext) || normalizedMd5
       const videoBaseDir = this.resolveVideoBaseDir(dbPath, wxid)
+      this.debugTrace('getVideoInfo 定位参数', {
+        requestedId: normalizedMd5,
+        resolvedId: realVideoMd5,
+        videoBaseDir
+      })
 
       if (!existsSync(videoBaseDir)) {
+        this.debugTrace('视频目录不存在', { videoBaseDir })
         const miss = { exists: false }
         this.writeTimedCache(this.videoInfoCache, cacheKey, miss, this.videoInfoCacheTtlMs, this.maxCacheEntries)
         return miss
       }
 
+      const direct = this.resolveByKnownVideoName(videoBaseDir, realVideoMd5, options?.lookupContext, includePoster, posterFormat)
+      if (direct) {
+        this.debugTrace('已知文件名直达命中', { resolvedId: realVideoMd5, videoUrl: direct.videoUrl })
+        const withPoster = await this.ensurePoster(direct, includePoster, posterFormat)
+        this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
+        return withPoster
+      }
+
       const index = this.getOrBuildVideoIndex(videoBaseDir)
       const indexed = this.getVideoInfoFromIndex(index, realVideoMd5, includePoster, posterFormat)
       if (indexed) {
+        this.debugTrace('视频索引命中', {
+          resolvedId: realVideoMd5,
+          videoUrl: indexed.videoUrl,
+          coverUrl: indexed.coverUrl,
+          thumbUrl: indexed.thumbUrl
+        })
         const withPoster = await this.ensurePoster(indexed, includePoster, posterFormat)
         this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
         return withPoster
@@ -671,7 +1097,27 @@ class VideoService {
 
       const fallback = this.fallbackScanVideo(videoBaseDir, realVideoMd5, includePoster, posterFormat)
       if (fallback) {
+        this.debugTrace('视频目录扫描命中', {
+          resolvedId: realVideoMd5,
+          videoUrl: fallback.videoUrl,
+          coverUrl: fallback.coverUrl,
+          thumbUrl: fallback.thumbUrl
+        })
         const withPoster = await this.ensurePoster(fallback, includePoster, posterFormat)
+        this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
+        return withPoster
+      }
+
+      const hashMatched = await this.resolveByContentHash(
+        videoBaseDir,
+        normalizedMd5,
+        options?.lookupContext,
+        includePoster,
+        posterFormat
+      )
+      if (hashMatched) {
+        this.debugTrace('内容MD5兜底命中', { inputMd5: normalizedMd5, videoUrl: hashMatched.videoUrl })
+        const withPoster = await this.ensurePoster(hashMatched, includePoster, posterFormat)
         this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
         return withPoster
       }
@@ -679,6 +1125,12 @@ class VideoService {
       const miss = { exists: false }
       this.writeTimedCache(this.videoInfoCache, cacheKey, miss, this.videoInfoCacheTtlMs, this.maxCacheEntries)
       this.log('getVideoInfo: 未找到视频', { inputMd5: normalizedMd5, resolvedMd5: realVideoMd5 })
+      this.debugTrace('视频查找失败', {
+        inputId: normalizedMd5,
+        resolvedId: realVideoMd5,
+        videoBaseDir,
+        tip: '请检查 message_resource/hardlink 与本地 msg/video 是否一致'
+      })
       return miss
     })()
 

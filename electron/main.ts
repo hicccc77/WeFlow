@@ -2024,7 +2024,11 @@ function registerIpcHandlers() {
   })
 
   // 视频相关
-  ipcMain.handle('video:getVideoInfo', async (_, videoMd5: string, options?: { includePoster?: boolean; posterFormat?: 'dataUrl' | 'fileUrl' }) => {
+  ipcMain.handle('video:getVideoInfo', async (_, videoMd5: string, options?: {
+    includePoster?: boolean
+    posterFormat?: 'dataUrl' | 'fileUrl'
+    lookupContext?: { sessionId?: string; localId?: number; createTime?: number }
+  }) => {
     try {
       const result = await videoService.getVideoInfo(videoMd5, options)
       return { success: true, ...result }

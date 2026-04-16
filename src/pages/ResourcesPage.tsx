@@ -790,7 +790,15 @@ function ResourcesPage() {
         attemptedVideoPosterKeysRef.current.add(itemKey)
         return
       }
-      const info = await window.electronAPI.video.getVideoInfo(md5, { includePoster: true, posterFormat: 'fileUrl' })
+      const info = await window.electronAPI.video.getVideoInfo(md5, {
+        includePoster: true,
+        posterFormat: 'fileUrl',
+        lookupContext: {
+          sessionId: item.sessionId,
+          localId: item.localId,
+          createTime: item.createTime
+        }
+      })
       if (!info.success || !info.exists) {
         attemptedVideoPosterKeysRef.current.add(itemKey)
         return
@@ -1164,7 +1172,14 @@ function ResourcesPage() {
       return
     }
 
-    const info = await window.electronAPI.video.getVideoInfo(md5, { includePoster: false })
+    const info = await window.electronAPI.video.getVideoInfo(md5, {
+      includePoster: false,
+      lookupContext: {
+        sessionId: item.sessionId,
+        localId: item.localId,
+        createTime: item.createTime
+      }
+    })
     if (!info.success || !info.exists || !info.videoUrl) {
       showAlert(info.error || '未找到视频文件', '无法播放')
       return
