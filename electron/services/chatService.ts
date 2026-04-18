@@ -3473,7 +3473,7 @@ class ChatService {
     this.sessionStatsCacheService.clearScope(this.sessionStatsCacheScope)
   }
 
-  private collectSessionIdsFromPayload(payload: unknown): Set<string> {
+  private _collectSessionIdsFromPayload(payload: unknown): Set<string> {
     const ids = new Set<string>()
     const walk = (value: unknown, keyHint?: string) => {
       if (Array.isArray(value)) {
@@ -3521,9 +3521,9 @@ class ChatService {
     let ids = new Set<string>()
     if (maybeJson) {
       try {
-        ids = this.collectSessionIdsFromPayload(JSON.parse(maybeJson))
+        ids = this._collectSessionIdsFromPayload(JSON.parse(maybeJson))
       } catch {
-        ids = this.collectSessionIdsFromPayload(maybeJson)
+        ids = this._collectSessionIdsFromPayload(maybeJson)
       }
     }
 
