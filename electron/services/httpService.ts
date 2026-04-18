@@ -234,7 +234,9 @@ class HttpService {
 
   broadcastMessagePush(payload: Record<string, unknown>): void {
     if (!this.running || this.messagePushClients.size === 0) return
-    const eventBody = `event: message.new\ndata: ${JSON.stringify(payload)}\n\n`
+    // 支持动态事件类型：默认是 message.new，防撤回消息使用 message.revoke
+    const eventType = String(payload.event || 'message.new')
+    const eventBody = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`
 
     for (const client of Array.from(this.messagePushClients)) {
       try {
