@@ -109,6 +109,7 @@ class HttpService {
   private messagePushClients: Set<http.ServerResponse> = new Set()
   private messagePushHeartbeatTimer: ReturnType<typeof setInterval> | null = null
   private connectionMutex: boolean = false
+  private messagePushConnectedAt: number = 0
 
   constructor() {
     this.configService = ConfigService.getInstance()
@@ -169,7 +170,7 @@ class HttpService {
   /**
    * 停止 HTTP 服务
    */
-  async stop(): Promise<void> {
+  async   stop(): Promise<void> {
     return new Promise((resolve) => {
       if (this.server) {
         for (const client of this.messagePushClients) {
@@ -178,6 +179,7 @@ class HttpService {
           } catch {}
         }
         this.messagePushClients.clear()
+        this.messagePushConnectedAt = 0
         if (this.messagePushHeartbeatTimer) {
           clearInterval(this.messagePushHeartbeatTimer)
           this.messagePushHeartbeatTimer = null
@@ -230,6 +232,10 @@ class HttpService {
 
   getMessagePushStreamUrl(): string {
     return `http://${this.host}:${this.port}/api/v1/push/messages`
+  }
+
+  getMessagePushConnectedAt(): number {
+    return this.messagePushConnectedAt
   }
 
   broadcastMessagePush(payload: Record<string, unknown>): void {
@@ -447,6 +453,9 @@ class HttpService {
     res.write(`event: ready\ndata: ${JSON.stringify({ success: true, stream: this.getMessagePushStreamUrl() })}\n\n`)
 
     this.messagePushClients.add(res)
+    if (this.messagePushConnectedAt === 0) {
+      this.messagePushConnectedAt = Math.floor(Date.now() / 1000)
+    }
 
     const cleanup = () => {
       this.messagePushClients.delete(res)

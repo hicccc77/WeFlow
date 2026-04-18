@@ -49,13 +49,13 @@ class MessagePushService {
   private readonly configService: ConfigService
   private readonly sessionBaseline = new Map<string, SessionBaseline>()
   private readonly recentMessageKeys = new Map<string, number>()
+  private readonly revokedServerIds = new Set<string>()
   private readonly groupNicknameCache = new Map<string, { nicknames: Record<string, string>; updatedAt: number }>()
   private readonly pushAvatarCacheDir: string
   private readonly pushAvatarDataCache = new Map<string, string>()
   private readonly debounceMs = 350
   private readonly recentMessageTtlMs = 10 * 60 * 1000
   private readonly groupNicknameCacheTtlMs = 5 * 60 * 1000
-  private readonly appStartTime = Math.floor(Date.now() / 1000)
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private processing = false
   private rerunRequested = false
@@ -65,6 +65,10 @@ class MessagePushService {
   constructor() {
     this.configService = ConfigService.getInstance()
     this.pushAvatarCacheDir = path.join(this.configService.getCacheBasePath(), 'push-avatar-files')
+  }
+
+  private getSseConnectedAt(): number {
+    return httpService.getMessagePushConnectedAt()
   }
 
   start(): void {
@@ -117,12 +121,15 @@ class MessagePushService {
     // 兜底：如果 payload 中包含消息相关的字段（localType、content、localId 等），
     // 说明是消息表变化，尝试提取 sessionId 并检测防撤回
     if (payload && this.hasMessageFields(payload)) {
-      console.log(`[MessagePushService] hasMessageFields=true, payload: ${JSON.stringify(payload)}`)
-      const sessionId = this.extractSessionIdFromPayload(payload)
-      console.log(`[MessagePushService] hasMessageFields=true, sessionId=${sessionId}`)
-      if (sessionId) {
-        console.log(`[MessagePushService] 调用 handleSessionChangeForAntiRevoke (兜底路径)`)
-        void this.handleSessionChangeForAntiRevoke(payload)
+      const sessionIds = chatService.collectSessionIdsFromPayload(payload)
+      console.log(`[MessagePushService] hasMessageFields=true，提取到 ${sessionIds.size} 个 sessionId`)
+      if (sessionIds.size > 0) {
+        // 精确检测受影响的会话
+        void (async () => {
+          const results = await Promise.all([...sessionIds].map(sessionId => this.queryAntiRevokeInSession(sessionId)))
+          const foundCount = results.filter(Boolean).length
+          console.log(`[MessagePushService] 兜底防撤回检测完成，共 ${foundCount} 个会话有防撤回消息`)
+        })()
       }
       this.scheduleSync()
       return
@@ -157,44 +164,21 @@ class MessagePushService {
            normalized === 'msgqueue'
   }
 
-  private extractSessionIdFromPayload(payload: Record<string, unknown> | null): string | null {
-    if (!payload) {
-      console.log(`[MessagePushService] extractSessionIdFromPayload: payload 为空`)
-      return null
-    }
-
-    const sessionId = String(
-      payload.sessionId ||
-      payload.talker ||
-      payload.username ||
-      payload.susername ||
-      payload.wxid ||
-      payload.fromUsername ||
-      payload.toUsername ||
-      payload.from ||
-      payload.to ||
-      payload.chatName ||
-      payload.chatId ||
-      payload.conversationId ||
-      ''
-    ).trim()
-
-    if (!sessionId || sessionId.length < 3) {
-      console.log(`[MessagePushService] extractSessionIdFromPayload: sessionId="${sessionId}" 太短或为空`)
-      return null
-    }
-
-    if (/^\d+$/.test(sessionId)) {
-      console.log(`[MessagePushService] extractSessionIdFromPayload: sessionId="${sessionId}" 是纯数字`)
-      return null
-    }
-
-    console.log(`[MessagePushService] extractSessionIdFromPayload: 提取到 sessionId="${sessionId}"`)
-    return sessionId
-  }
-
   private async handleSessionChangeForAntiRevoke(payload: Record<string, unknown> | null): Promise<void> {
-    console.log(`[MessagePushService] handleSessionChangeForAntiRevoke: Session 表变化，立即检查所有最近会话`)
+    // 先尝试从 payload 中精确提取受影响的会话 ID，避免全量扫描
+    if (payload) {
+      const sessionIds = chatService.collectSessionIdsFromPayload(payload)
+      if (sessionIds.size > 0) {
+        console.log(`[MessagePushService] handleSessionChangeForAntiRevoke: 精确检测 ${sessionIds.size} 个会话: ${[...sessionIds].join(', ')}`)
+        const results = await Promise.all([...sessionIds].map(sessionId => this.queryAntiRevokeInSession(sessionId)))
+        const foundCount = results.filter(Boolean).length
+        console.log(`[MessagePushService] handleSessionChangeForAntiRevoke: 完成，共 ${foundCount} 个会话有防撤回消息`)
+        return
+      }
+    }
+
+    // 无法精确提取时，退化为全量扫描（仅在确实需要时）
+    console.log(`[MessagePushService] handleSessionChangeForAntiRevoke: 无法精确提取，退化为全量扫描`)
 
     const sessionsResult = await chatService.getSessions()
     if (!sessionsResult.success || !sessionsResult.sessions || sessionsResult.sessions.length === 0) {
@@ -231,12 +215,20 @@ class MessagePushService {
 
     console.log(`[MessagePushService] queryAntiRevokeInSession: 查到 ${newMessagesResult.messages.length} 条消息`)
 
+    const sseConnectedAt = this.getSseConnectedAt()
+
     for (const message of newMessagesResult.messages) {
       const messageKey = String(message.messageKey || '').trim()
       if (!messageKey) continue
 
       const localType = Number(message.localType || 0)
       const content = String(message.rawContent || message.content || '').trim()
+      const createTime = Number(message.createTime || 0)
+
+      // SSE 连接前的历史撤回不推送
+      if (sseConnectedAt > 0 && createTime < sseConnectedAt) {
+        continue
+      }
 
       console.log(`[MessagePushService] 检查消息: localType=${localType}, content="${content.substring(0, 50)}"`)
 
@@ -265,21 +257,21 @@ class MessagePushService {
       return
     }
 
-    const sessionId = this.extractSessionIdFromPayload(payload)
-    if (!sessionId) {
+    const sessionIds = chatService.collectSessionIdsFromPayload(payload)
+    if (sessionIds.size === 0) {
       console.log(`[MessagePushService] handleMessageTableChange: 无法提取 sessionId，走 debounce`)
       this.scheduleSync()
       return
     }
-
-    console.log(`[MessagePushService] handleMessageTableChange: sessionId=${sessionId}`)
 
     const content = String(payload.content || payload.rawContent || '').trim()
     const localType = Number(payload.localType || payload.type || 0)
     const isAntiRevokeMessage = this.isAntiRevokeInjectMessage(localType, content)
 
     if (isAntiRevokeMessage) {
-      await this.pushAntiRevokeMessageDirect(sessionId, payload)
+      for (const sessionId of sessionIds) {
+        await this.pushAntiRevokeMessageDirect(sessionId, payload)
+      }
     } else {
       this.scheduleSync()
     }
@@ -334,6 +326,11 @@ class MessagePushService {
     const serverId = message.serverId ? String(message.serverId) : undefined
     const sessionType = this.getSessionTypeFromId(sessionId)
 
+    if (!this.shouldPushPayload(sessionId)) {
+      console.log(`[MessagePushService] pushAntiRevokeMessageFromMessage: sessionId=${sessionId} 被过滤，跳过`)
+      return
+    }
+
     console.log(`[MessagePushService] pushAntiRevokeMessageFromMessage: 准备推送撤回事件, messageKey=${messageKey}, revokeMessageKey=${revokeMessageKey}`)
 
     const revokePayload: MessageRevokePayload = {
@@ -351,6 +348,9 @@ class MessagePushService {
     console.log(`[MessagePushService] pushAntiRevokeMessageFromMessage: 调用 broadcastMessagePush`)
     httpService.broadcastMessagePush(revokePayload as unknown as Record<string, unknown>)
     this.rememberMessageKey(revokeMessageKey)
+    if (serverId) {
+      this.revokedServerIds.add(serverId)
+    }
     console.log(`[MessagePushService] pushAntiRevokeMessageFromMessage: broadcastMessagePush 完成`)
   }
 
@@ -415,6 +415,9 @@ class MessagePushService {
 
     httpService.broadcastMessagePush(revokePayload as unknown as Record<string, unknown>)
     this.rememberMessageKey(revokeMessageKey)
+    if (serverId) {
+      this.revokedServerIds.add(serverId)
+    }
   }
 
   private getSessionTypeFromId(sessionId: string): MessagePushPayload['sessionType'] {
@@ -444,6 +447,7 @@ class MessagePushService {
   private resetRuntimeState(): void {
     this.sessionBaseline.clear()
     this.recentMessageKeys.clear()
+    this.revokedServerIds.clear()
     this.groupNicknameCache.clear()
     this.baselineReady = false
     if (this.debounceTimer) {
@@ -567,7 +571,12 @@ class MessagePushService {
   }
 
   private async pushSessionMessages(session: ChatSession, previous: SessionBaseline | undefined): Promise<void> {
-    const since = previous ? Math.max(0, Number(previous.lastTimestamp || 0) - 1) : this.appStartTime
+    const sseConnectedAt = this.getSseConnectedAt()
+    // SSE 未连接时（sseConnectedAt === 0），不推送任何消息
+    if (sseConnectedAt === 0) {
+      return
+    }
+    const since = previous ? Math.max(0, Number(previous.lastTimestamp || 0) - 1) : sseConnectedAt
     const newMessagesResult = await chatService.getNewMessages(session.username, since, 1000)
     if (!newMessagesResult.success || !newMessagesResult.messages || newMessagesResult.messages.length === 0) {
       return
@@ -582,7 +591,14 @@ class MessagePushService {
         continue
       }
 
-      if (Number(message.createTime || 0) < this.appStartTime) {
+      // SSE 连接前的历史消息不推送
+      if (Number(message.createTime || 0) < sseConnectedAt) {
+        continue
+      }
+
+      // 已被撤回的消息（防撤回注入后，原消息仍在 DB 中）不推送
+      const serverId = message.serverId ? String(message.serverId) : undefined
+      if (serverId && this.revokedServerIds.has(serverId)) {
         continue
       }
 

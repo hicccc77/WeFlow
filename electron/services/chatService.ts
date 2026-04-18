@@ -2241,6 +2241,10 @@ class ChatService {
     }
   }
 
+  collectSessionIdsFromPayload(payload: unknown): Set<string> {
+    return this._collectSessionIdsFromPayload(payload)
+  }
+
   private normalizeMessageOrder(messages: Message[]): Message[] {
     if (messages.length < 2) return messages
     const first = messages[0]
