@@ -849,6 +849,8 @@ export interface ElectronAPI {
           initiatedChats: number
           receivedChats: number
           initiativeRate: number
+          topInitiatedFriend?: string
+          topInitiatedCount?: number
         } | null
         responseSpeed: {
           avgResponseTime: number

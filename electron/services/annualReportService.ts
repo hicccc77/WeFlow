@@ -59,6 +59,8 @@ export interface AnnualReportData {
     initiatedChats: number
     receivedChats: number
     initiativeRate: number
+    topInitiatedFriend?: string
+    topInitiatedCount?: number
   } | null
   responseSpeed: {
     avgResponseTime: number
@@ -1346,16 +1348,27 @@ class AnnualReportService {
       let socialInitiative: AnnualReportData['socialInitiative'] = null
       let totalInitiated = 0
       let totalReceived = 0
-      for (const stats of conversationStarts.values()) {
+      let topInitiatedSessionId = ''
+      let topInitiatedCount = 0
+      for (const [sessionId, stats] of conversationStarts.entries()) {
         totalInitiated += stats.initiated
         totalReceived += stats.received
+        if (stats.initiated > topInitiatedCount) {
+          topInitiatedCount = stats.initiated
+          topInitiatedSessionId = sessionId
+        }
       }
       const totalConversations = totalInitiated + totalReceived
       if (totalConversations > 0) {
+        const topInitiatedInfo = topInitiatedSessionId ? contactInfoMap.get(topInitiatedSessionId) : null
         socialInitiative = {
           initiatedChats: totalInitiated,
           receivedChats: totalReceived,
-          initiativeRate: Math.round((totalInitiated / totalConversations) * 1000) / 10
+          initiativeRate: Math.round((totalInitiated / totalConversations) * 1000) / 10,
+          topInitiatedFriend: topInitiatedCount > 0
+            ? (topInitiatedInfo?.displayName || topInitiatedSessionId)
+            : undefined,
+          topInitiatedCount: topInitiatedCount > 0 ? topInitiatedCount : undefined
         }
       }
 

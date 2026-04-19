@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Calendar, Loader2, Sparkles, Users } from 'lucide-react'
 import {
@@ -25,6 +25,8 @@ type YearsLoadPayload = {
   nativeTimedOut?: boolean
 }
 
+const REPORT_LAUNCH_DELAY_MS = 420
+
 const formatLoadElapsed = (ms: number) => {
   const totalSeconds = Math.max(0, ms) / 1000
   if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`
@@ -50,7 +52,10 @@ function AnnualReportPage() {
   const [hasSwitchedStrategy, setHasSwitchedStrategy] = useState(false)
   const [nativeTimedOut, setNativeTimedOut] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isRouteTransitioning, setIsRouteTransitioning] = useState(false)
+  const [launchingYearLabel, setLaunchingYearLabel] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const launchTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -186,21 +191,37 @@ function AnnualReportPage() {
     }
   }, [])
 
-  const handleGenerateReport = async () => {
-    if (selectedYear === null) return
-    setIsGenerating(true)
-    try {
-      const yearParam = selectedYear === 'all' ? 0 : selectedYear
-      navigate(`/annual-report/view?year=${yearParam}`)
-    } catch (e) {
-      console.error('生成报告失败:', e)
-    } finally {
-      setIsGenerating(false)
+  useEffect(() => {
+    return () => {
+      if (launchTimerRef.current !== null) {
+        window.clearTimeout(launchTimerRef.current)
+      }
     }
+  }, [])
+
+  const handleGenerateReport = () => {
+    if (selectedYear === null || isRouteTransitioning) return
+    const yearParam = selectedYear === 'all' ? 0 : selectedYear
+    const yearLabel = selectedYear === 'all' ? '全部时间' : `${selectedYear}年`
+    setIsGenerating(true)
+    setIsRouteTransitioning(true)
+    setLaunchingYearLabel(yearLabel)
+    if (launchTimerRef.current !== null) {
+      window.clearTimeout(launchTimerRef.current)
+    }
+    launchTimerRef.current = window.setTimeout(() => {
+      try {
+        navigate(`/annual-report/view?year=${yearParam}`)
+      } catch (e) {
+        console.error('生成报告失败:', e)
+        setIsGenerating(false)
+        setIsRouteTransitioning(false)
+      }
+    }, REPORT_LAUNCH_DELAY_MS)
   }
 
   const handleGenerateDualReport = () => {
-    if (selectedPairYear === null) return
+    if (selectedPairYear === null || isRouteTransitioning) return
     const yearParam = selectedPairYear === 'all' ? 0 : selectedPairYear
     navigate(`/dual-report?year=${yearParam}`)
   }
@@ -251,7 +272,7 @@ function AnnualReportPage() {
   )
 
   return (
-    <div className="annual-report-page">
+    <div className={`annual-report-page ${isRouteTransitioning ? 'report-route-transitioning' : ''}`}>
       <Sparkles size={32} className="header-icon" />
       <h1 className="page-title">年度报告</h1>
       <p className="page-desc">选择年份，回顾你在微信里的点点滴滴</p>
@@ -270,8 +291,11 @@ function AnnualReportPage() {
               {yearOptions.map(option => (
                 <div
                   key={option}
-                  className={`year-card ${option === 'all' ? 'all-time' : ''} ${selectedYear === option ? 'selected' : ''}`}
-                  onClick={() => setSelectedYear(option)}
+                  className={`year-card ${option === 'all' ? 'all-time' : ''} ${selectedYear === option ? 'selected' : ''} ${isRouteTransitioning ? 'disabled' : ''}`}
+                  onClick={() => {
+                    if (isRouteTransitioning) return
+                    setSelectedYear(option)
+                  }}
                 >
                   <span className="year-number">{option === 'all' ? '全部' : option}</span>
                   <span className="year-label">{option === 'all' ? '时间' : '年'}</span>
@@ -281,14 +305,14 @@ function AnnualReportPage() {
           </div>
 
           <button
-            className="generate-btn"
+            className={`generate-btn ${isRouteTransitioning ? 'is-pending' : ''}`}
             onClick={handleGenerateReport}
-            disabled={!selectedYear || isGenerating}
+            disabled={!selectedYear || isGenerating || isRouteTransitioning}
           >
             {isGenerating ? (
               <>
                 <Loader2 size={20} className="spin" />
-                <span>正在生成...</span>
+                <span>{isRouteTransitioning ? '正在进入报告...' : '正在生成...'}</span>
               </>
             ) : (
               <>
@@ -316,8 +340,11 @@ function AnnualReportPage() {
               {yearOptions.map(option => (
                 <div
                   key={`pair-${option}`}
-                  className={`year-card ${option === 'all' ? 'all-time' : ''} ${selectedPairYear === option ? 'selected' : ''}`}
-                  onClick={() => setSelectedPairYear(option)}
+                  className={`year-card ${option === 'all' ? 'all-time' : ''} ${selectedPairYear === option ? 'selected' : ''} ${isRouteTransitioning ? 'disabled' : ''}`}
+                  onClick={() => {
+                    if (isRouteTransitioning) return
+                    setSelectedPairYear(option)
+                  }}
                 >
                   <span className="year-number">{option === 'all' ? '全部' : option}</span>
                   <span className="year-label">{option === 'all' ? '时间' : '年'}</span>
@@ -327,9 +354,9 @@ function AnnualReportPage() {
           </div>
 
           <button
-            className="generate-btn secondary"
+            className={`generate-btn secondary ${isRouteTransitioning ? 'is-pending' : ''}`}
             onClick={handleGenerateDualReport}
-            disabled={!selectedPairYear}
+            disabled={!selectedPairYear || isRouteTransitioning}
           >
             <Users size={20} />
             <span>选择好友并生成报告</span>
@@ -337,6 +364,16 @@ function AnnualReportPage() {
           <p className="section-hint">从聊天排行中选择好友生成双人报告</p>
         </section>
       </div>
+
+      {isRouteTransitioning && (
+        <div className="report-launch-overlay" role="status" aria-live="polite">
+          <div className="launch-core">
+            <Loader2 size={30} className="spin" />
+            <p className="launch-title">正在进入{launchingYearLabel}年度报告</p>
+            <p className="launch-subtitle">正在整理你的聊天记忆...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
