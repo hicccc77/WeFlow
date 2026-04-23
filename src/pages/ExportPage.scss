@@ -1920,10 +1920,11 @@
   --contacts-main-col-width: calc(var(--contacts-avatar-col-width) + var(--contacts-column-gap) + var(--contacts-name-text-width));
   --contacts-left-sticky-width: calc(var(--contacts-select-col-width) + var(--contacts-main-col-width) + var(--contacts-column-gap));
   --contacts-message-col-width: 120px;
+  --contacts-latest-time-col-width: 150px;
   --contacts-media-col-width: 72px;
   --contacts-action-col-width: 140px;
   --contacts-actions-sticky-width: 240px;
-  --contacts-table-min-width: 1240px;
+  --contacts-table-min-width: 1400px;
   overflow: hidden;
   border: none;
   border-radius: 12px;
@@ -2172,6 +2173,59 @@
     overflow: hidden;
     text-overflow: ellipsis;
     box-sizing: border-box;
+  }
+
+  .contacts-list-header-latest-time {
+    width: var(--contacts-latest-time-col-width);
+    min-width: var(--contacts-latest-time-col-width);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+  }
+
+  // 可排序的表头按钮通用样式
+  .contacts-list-header-sortable {
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    gap: 4px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary) 10%, transparent);
+      color: var(--primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 1px;
+    }
+
+    &.is-active {
+      color: var(--primary);
+    }
+  }
+
+  .contacts-list-header-sort-icon {
+    color: inherit;
+    flex-shrink: 0;
+
+    &.muted {
+      color: var(--text-tertiary);
+      opacity: 0.6;
+    }
   }
 
   .contacts-list-header-media {
@@ -2506,6 +2560,37 @@
     flex-shrink: 0;
     text-align: center;
     box-sizing: border-box;
+  }
+
+  .row-latest-time {
+    width: var(--contacts-latest-time-col-width);
+    min-width: var(--contacts-latest-time-col-width);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  .row-latest-time-value {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.2;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+
+    &.muted {
+      color: var(--text-tertiary);
+    }
   }
 
   .row-media-metric {
@@ -5058,6 +5143,7 @@
     --contacts-name-text-width: 10em;
     --contacts-main-col-width: calc(44px + 10px + var(--contacts-name-text-width));
     --contacts-message-col-width: 104px;
+    --contacts-latest-time-col-width: 128px;
     --contacts-media-col-width: 62px;
     --contacts-action-col-width: 140px;
   }
@@ -5083,6 +5169,10 @@
 
   .table-wrap .row-message-count {
     min-width: var(--contacts-message-col-width);
+  }
+
+  .table-wrap .row-latest-time {
+    min-width: var(--contacts-latest-time-col-width);
   }
 
   .table-wrap .row-media-metric {
