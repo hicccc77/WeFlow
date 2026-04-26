@@ -5192,6 +5192,7 @@ function ExportPage() {
       exportConcurrency: sourceOptions.exportConcurrency,
       fileNamingMode: exportDefaultFileNamingMode,
       sessionLayout,
+      exportWriteLayout: writeLayout,
       sessionNameWithTypePrefix,
       dateRange: sourceOptions.useAllTime
         ? null
@@ -6008,9 +6009,10 @@ function ExportPage() {
         }
     return {
       ...task.template.optionTemplate,
+      exportWriteLayout: task.template.optionTemplate.exportWriteLayout || writeLayout,
       dateRange
     }
-  }, [])
+  }, [writeLayout])
 
   const enqueueAutomationTask = useCallback((
     task: ExportAutomationTask,

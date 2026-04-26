@@ -112,6 +112,7 @@ export interface ExportOptions {
   excelCompactColumns?: boolean
   txtColumns?: string[]
   sessionLayout?: 'shared' | 'per-session'
+  exportWriteLayout?: 'A' | 'B' | 'C'
   sessionNameWithTypePrefix?: boolean
   displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
   exportConcurrency?: number
@@ -271,7 +272,7 @@ async function parallelLimit<T, R>(
 
 class ExportService {
   private configService: ConfigService
-  private runtimeConfig: { dbPath?: string; decryptKey?: string; myWxid?: string } | null = null
+  private runtimeConfig: { dbPath?: string; decryptKey?: string; myWxid?: string; imageXorKey?: unknown; imageAesKey?: string } | null = null
   private contactCache: LRUCache<string, { displayName: string; avatarUrl?: string }>
   private inlineEmojiCache: LRUCache<string, string>
   private htmlStyleCache: string | null = null
@@ -287,6 +288,8 @@ class ExportService {
   private mediaExportTelemetry: MediaExportTelemetry | null = null
   private mediaRunSourceDedupMap = new Map<string, string>()
   private mediaRunMissingImageKeys = new Set<string>()
+  private activeChatImagePipelineCount = 0
+  private chatImagePipelineWaiters: Array<() => void> = []
   private mediaFileCacheCleanupPending: Promise<void> | null = null
   private mediaFileCacheLastCleanupAt = 0
   private readonly mediaFileCacheCleanupIntervalMs = 30 * 60 * 1000
@@ -320,8 +323,22 @@ class ExportService {
     return error
   }
 
-  setRuntimeConfig(config: { dbPath?: string; decryptKey?: string; myWxid?: string } | null): void {
+  setRuntimeConfig(config: { dbPath?: string; decryptKey?: string; myWxid?: string; imageXorKey?: unknown; imageAesKey?: string } | null): void {
     this.runtimeConfig = config
+    imageDecryptService.setRuntimeConfig({
+      dbPath: config?.dbPath,
+      myWxid: config?.myWxid,
+      imageXorKey: config?.imageXorKey,
+      imageAesKey: config?.imageAesKey
+    })
+  }
+
+  private getConfiguredDbPath(): string {
+    return String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()
+  }
+
+  private getConfiguredMyWxid(): string {
+    return String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
   }
 
   private normalizeSessionIds(sessionIds: string[]): string[] {
@@ -354,6 +371,33 @@ class ExportService {
     return { start, end }
   }
 
+  private normalizeMaxFileSizeMb(value: unknown): number | undefined {
+    const raw = Number(value)
+    if (!Number.isFinite(raw) || raw <= 0) return undefined
+    return Math.floor(raw)
+  }
+
+  private normalizeExportOptionsForRun(options: ExportOptions): ExportOptions {
+    const normalizedDateRange = this.normalizeExportDateRange(options.dateRange)
+    const normalizedMaxFileSizeMb = this.normalizeMaxFileSizeMb(options.maxFileSizeMb)
+    const normalizedWriteLayout = this.resolveExportWriteLayout(options)
+    return {
+      ...options,
+      dateRange: normalizedDateRange,
+      maxFileSizeMb: normalizedMaxFileSizeMb,
+      exportWriteLayout: normalizedWriteLayout
+    }
+  }
+
+  private resolveExportWriteLayout(options?: Pick<ExportOptions, 'exportWriteLayout'> | null): 'A' | 'B' | 'C' {
+    const optionLayout = options?.exportWriteLayout
+    if (optionLayout === 'A' || optionLayout === 'B' || optionLayout === 'C') return optionLayout
+    const rawWriteLayout = this.configService.get('exportWriteLayout')
+    return rawWriteLayout === 'A' || rawWriteLayout === 'B' || rawWriteLayout === 'C'
+      ? rawWriteLayout
+      : 'B'
+  }
+
   private getExportStatsDateRangeToken(dateRange?: { start: number; end: number } | null): string {
     const normalized = this.normalizeExportDateRange(dateRange)
     if (!normalized) return 'all'
@@ -370,8 +414,8 @@ class ExportService {
     const normalizedIds = this.normalizeSessionIds(sessionIds).sort()
     const senderToken = String(options.senderUsername || '').trim()
     const dateToken = this.getExportStatsDateRangeToken(options.dateRange)
-    const dbPath = String(this.configService.get('dbPath') || '').trim()
-    const wxidToken = String(cleanedWxid || this.cleanAccountDirName(String(this.configService.get('myWxid') || '')) || '').trim()
+    const dbPath = this.getConfiguredDbPath()
+    const wxidToken = String(cleanedWxid || this.cleanAccountDirName(this.getConfiguredMyWxid()) || '').trim()
     return `${dbPath}::${wxidToken}::${dateToken}::${senderToken}::${normalizedIds.join('\u001f')}`
   }
 
@@ -710,6 +754,20 @@ class ExportService {
     this.mediaExportTelemetry = null
     this.mediaRunSourceDedupMap.clear()
     this.mediaRunMissingImageKeys.clear()
+  }
+
+  private async runWithChatImagePipelineLimit<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.activeChatImagePipelineCount >= 2) {
+      await new Promise<void>((resolve) => this.chatImagePipelineWaiters.push(resolve))
+    }
+    this.activeChatImagePipelineCount += 1
+    try {
+      return await fn()
+    } finally {
+      this.activeChatImagePipelineCount = Math.max(0, this.activeChatImagePipelineCount - 1)
+      const next = this.chatImagePipelineWaiters.shift()
+      if (next) next()
+    }
   }
 
   private getMediaTelemetrySnapshot(): Partial<ExportProgress> {
@@ -1577,8 +1635,8 @@ class ExportService {
   }
 
   private resolveStrictEmoticonDbPath(): string | null {
-    const dbPath = String(this.configService.get('dbPath') || '').trim()
-    const rawWxid = String(this.configService.get('myWxid') || '').trim()
+    const dbPath = this.getConfiguredDbPath()
+    const rawWxid = this.getConfiguredMyWxid()
     const cleanedWxid = this.cleanAccountDirName(rawWxid)
     const token = `${dbPath}::${rawWxid}::${cleanedWxid}`
     if (token === this.emoticonDbPathCacheToken) {
@@ -1823,8 +1881,8 @@ class ExportService {
   }
 
   private async ensureConnected(): Promise<{ success: boolean; cleanedWxid?: string; error?: string }> {
-    const wxid = String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
-    const dbPath = String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()
+    const wxid = this.getConfiguredMyWxid()
+    const dbPath = this.getConfiguredDbPath()
     const decryptKey = String(this.runtimeConfig?.decryptKey || this.configService.get('decryptKey') || '').trim()
     if (!wxid) return { success: false, error: '请先在设置页面配置微信ID' }
     if (!dbPath) return { success: false, error: '请先在设置页面配置数据库路径' }
@@ -4092,44 +4150,79 @@ class ExportService {
 
       const tryResolveImagePath = async (imageMd5?: string, imageDatName?: string): Promise<string | null> => {
         if (!imageMd5 && !imageDatName) return null
+        return this.runWithChatImagePipelineLimit(async () => {
+          const pickResolvedImagePath = (result: any): string | null => {
+            if (!result?.success) return null
+            const resolved = String(result.localPath || '').trim()
+            return resolved || null
+          }
 
-        const decryptResult = await imageDecryptService.decryptImage({
-          sessionId,
-          imageMd5,
-          imageDatName,
-          createTime: msg.createTime,
-          force: true,  // 导出优先高清，失败再回退缩略图
-          preferFilePath: true,
-          hardlinkOnly: true,
-          disableUpdateCheck: true,
-          allowCacheIndex: !imageMd5,
-          suppressEvents: true
+          const resolveCachedPath = async (candidateMd5?: string, candidateDatName?: string): Promise<string | null> => {
+            const cachedResult = await imageDecryptService.resolveCachedImage({
+              sessionId,
+              imageMd5: candidateMd5,
+              imageDatName: candidateDatName,
+              createTime: msg.createTime,
+              preferFilePath: true,
+              hardlinkOnly: true,
+              disableUpdateCheck: true,
+              allowCacheIndex: true,
+              suppressEvents: true
+            })
+            return pickResolvedImagePath(cachedResult)
+          }
+
+          const cachedPath = await resolveCachedPath(imageMd5, imageDatName)
+          if (cachedPath) {
+            return cachedPath
+          }
+
+          const decryptResult = await imageDecryptService.decryptImage({
+            sessionId,
+            imageMd5,
+            imageDatName,
+            createTime: msg.createTime,
+            force: false,
+            preferFilePath: true,
+            hardlinkOnly: true,
+            allowCacheIndex: true
+          })
+          const decryptedPath = pickResolvedImagePath(decryptResult)
+          if (decryptedPath) return decryptedPath
+
+          const localId = Number(msg?.localId || 0)
+          if (Number.isFinite(localId) && localId > 0) {
+            const fallback = await chatService.getImageData(sessionId, String(localId))
+            if (fallback.success && fallback.data) {
+              const buffer = Buffer.from(fallback.data, 'base64')
+              const mime = this.detectMimeType(buffer) || 'image/jpeg'
+              return `data:${mime};base64,${fallback.data}`
+            }
+          }
+
+          if (decryptResult.failureKind === 'decrypt_failed') {
+            console.log(`[Export] 图片解密失败 (localId=${msg.localId}): imageMd5=${imageMd5 || ''}, imageDatName=${imageDatName || ''}, error=${decryptResult.error || '未知'}`)
+          } else {
+            console.log(`[Export] 图片本地无数据 (localId=${msg.localId}): imageMd5=${imageMd5 || ''}, imageDatName=${imageDatName || ''}, error=${decryptResult.error || '未知'}`)
+          }
+
+          const thumbResult = await imageDecryptService.resolveCachedImage({
+            sessionId,
+            imageMd5,
+            imageDatName,
+            createTime: msg.createTime,
+            preferFilePath: true,
+            hardlinkOnly: true,
+            disableUpdateCheck: true,
+            allowCacheIndex: true,
+            suppressEvents: true
+          })
+          if (thumbResult.success && thumbResult.localPath) {
+            console.log(`[Export] 使用缩略图替代 (localId=${msg.localId}): ${thumbResult.localPath}`)
+            return thumbResult.localPath
+          }
+          return null
         })
-        if (decryptResult.success && decryptResult.localPath) {
-          return decryptResult.localPath
-        }
-
-        if (decryptResult.failureKind === 'decrypt_failed') {
-          console.log(`[Export] 图片解密失败 (localId=${msg.localId}): imageMd5=${imageMd5 || ''}, imageDatName=${imageDatName || ''}, error=${decryptResult.error || '未知'}`)
-        } else {
-          console.log(`[Export] 图片本地无数据 (localId=${msg.localId}): imageMd5=${imageMd5 || ''}, imageDatName=${imageDatName || ''}, error=${decryptResult.error || '未知'}`)
-        }
-
-        const thumbResult = await imageDecryptService.resolveCachedImage({
-          sessionId,
-          imageMd5,
-          imageDatName,
-          createTime: msg.createTime,
-          preferFilePath: true,
-          disableUpdateCheck: true,
-          allowCacheIndex: !imageMd5,
-          suppressEvents: true
-        })
-        if (thumbResult.success && thumbResult.localPath) {
-          console.log(`[Export] 使用缩略图替代 (localId=${msg.localId}): ${thumbResult.localPath}`)
-          return thumbResult.localPath
-        }
-        return null
       }
 
       // 使用消息对象中已提取的字段，先尝试快速导出。
@@ -4235,11 +4328,10 @@ class ExportService {
         const imageMd5 = String(msg?.imageMd5 || '').trim().toLowerCase()
         if (imageMd5) {
           imageMd5Set.add(imageMd5)
-        } else {
-          const imageDatName = String(msg?.imageDatName || '').trim().toLowerCase()
-          if (md5Pattern.test(imageDatName)) {
-            imageMd5Set.add(imageDatName)
-          }
+        }
+        const imageDatName = String(msg?.imageDatName || '').trim().toLowerCase()
+        if (md5Pattern.test(imageDatName)) {
+          imageMd5Set.add(imageDatName)
         }
       }
 
@@ -4487,16 +4579,89 @@ class ExportService {
    */
   private extractImageDatName(content: string): string | undefined {
     if (!content) return undefined
-    // 尝试从 cdnthumburl 或其他字段提取
-    const urlMatch = /cdnthumburl[^>]*>([^<]+)/i.exec(content)
-    if (urlMatch) {
-      const urlParts = urlMatch[1].split('/')
-      const last = urlParts[urlParts.length - 1]
-      if (last && last.includes('_')) {
-        return last.split('_')[0]
-      }
+    const candidate =
+      this.extractXmlValue(content, 'imgname') ||
+      this.extractXmlValue(content, 'cdnmidimgurl') ||
+      this.extractXmlValue(content, 'cdnthumburl') ||
+      this.extractXmlAttribute(content, 'img', 'imgname') ||
+      this.extractXmlAttribute(content, 'img', 'cdnmidimgurl') ||
+      this.extractXmlAttribute(content, 'img', 'cdnthumburl')
+    return this.normalizeImageDatNameToken(candidate)
+  }
+
+  private normalizeImageDatNameToken(value: unknown): string | undefined {
+    let text = String(value ?? '').trim()
+    if (!text) return undefined
+    text = text.replace(/&amp;/g, '&')
+    try {
+      if (text.includes('%')) text = decodeURIComponent(text)
+    } catch { }
+
+    const datLike = /([0-9a-fA-F]{8,})(?:\.t)?\.dat/i.exec(text)
+    if (datLike?.[1]) return datLike[1].toLowerCase()
+
+    const base = text
+      .split(/[?#]/, 1)[0]
+      .replace(/^.*[\\/]/, '')
+      .replace(/\.(?:t\.)?dat$/i, '')
+      .trim()
+    if (!base) return undefined
+
+    const cdnToken = base.includes('_') ? base.split('_')[0] : base
+    const exact = /^([a-fA-F0-9]{16,64})$/.exec(cdnToken)
+    if (exact?.[1]) return exact[1].toLowerCase()
+
+    const preferred32 = /([a-fA-F0-9]{32})(?![a-fA-F0-9])/i.exec(cdnToken)
+    if (preferred32?.[1]) return preferred32[1].toLowerCase()
+    const fallback = /([a-fA-F0-9]{16,64})(?![a-fA-F0-9])/i.exec(cdnToken)
+    return fallback?.[1]?.toLowerCase()
+  }
+
+  private extractImageDatNameFromPackedRaw(raw: unknown): string | undefined {
+    const buffer = this.decodePackedInfoBuffer(raw)
+    if (!buffer || buffer.length === 0) return undefined
+    const printable: number[] = []
+    for (const byte of buffer) {
+      printable.push(byte >= 0x20 && byte <= 0x7e ? byte : 0x20)
     }
-    return undefined
+    const text = Buffer.from(printable).toString('utf-8')
+    const datLike = /([0-9a-fA-F]{8,})(?:\.t)?\.dat/i.exec(text)
+    if (datLike?.[1]) return datLike[1].toLowerCase()
+    const fallback = /([0-9a-fA-F]{16,})/.exec(text)
+    return fallback?.[1]?.toLowerCase()
+  }
+
+  private extractImageDatNameFromRow(row: Record<string, any>, content?: string): string | undefined {
+    const byColumn = this.normalizeImageDatNameToken(this.getRowField(row, [
+      'image_path',
+      'imagePath',
+      'image_dat_name',
+      'imageDatName',
+      'img_path',
+      'imgPath',
+      'img_name',
+      'imgName'
+    ]))
+    if (byColumn) return byColumn
+
+    const packedRaw = this.getRowField(row, [
+      'packed_info_data',
+      'packedInfoData',
+      'packed_info_blob',
+      'packedInfoBlob',
+      'packed_info',
+      'packedInfo',
+      'BytesExtra',
+      'bytes_extra',
+      'WCDB_CT_packed_info',
+      'reserved0',
+      'Reserved0',
+      'WCDB_CT_Reserved0'
+    ])
+    const byPacked = this.extractImageDatNameFromPackedRaw(packedRaw)
+    if (byPacked) return byPacked
+
+    return this.extractImageDatName(content || '')
   }
 
   /**
@@ -4699,8 +4864,8 @@ class ExportService {
   }
 
   private resolveFileAttachmentSearchRoots(): FileAttachmentSearchRoot[] {
-    const dbPath = String(this.configService.get('dbPath') || '').trim()
-    const rawWxid = String(this.configService.get('myWxid') || '').trim()
+    const dbPath = this.getConfiguredDbPath()
+    const rawWxid = this.getConfiguredMyWxid()
     const cleanedWxid = this.cleanAccountDirName(rawWxid)
     if (!dbPath) return []
 
@@ -5050,10 +5215,7 @@ class ExportService {
     const exportMediaEnabled = options.exportMedia === true &&
       Boolean(options.exportImages || options.exportVoices || options.exportVideos || options.exportEmojis || options.exportFiles)
     const outputDir = path.dirname(outputPath)
-    const rawWriteLayout = this.configService.get('exportWriteLayout')
-    const writeLayout = rawWriteLayout === 'A' || rawWriteLayout === 'B' || rawWriteLayout === 'C'
-      ? rawWriteLayout
-      : 'A'
+    const writeLayout = this.resolveExportWriteLayout(options)
     // A: type-first layout, text exports are placed under `texts/`, media is placed at sibling type directories.
     if (writeLayout === 'A' && path.basename(outputDir) === 'texts') {
       return {
@@ -5229,7 +5391,7 @@ class ExportService {
         : await wcdbService.openMessageCursor(
           sessionId,
           batchSize,
-          true,
+          false,
           beginTime,
           endTime
         )
@@ -5417,7 +5579,7 @@ class ExportService {
           if (collectMode === 'full' || collectMode === 'media-fast') {
             // 优先复用游标返回的字段，缺失时再回退到 XML 解析。
             imageMd5 = String(row.image_md5 || row.imageMd5 || '').trim() || undefined
-            imageDatName = String(row.image_dat_name || row.imageDatName || '').trim() || undefined
+            imageDatName = localType === 3 ? this.extractImageDatNameFromRow(row, content) : undefined
             videoMd5 = this.extractVideoFileNameFromRow(row, content)
             xmlType = rowFileHints.xmlType
             fileName = rowFileHints.fileName
@@ -5439,7 +5601,7 @@ class ExportService {
             if (localType === 3 && content) {
               // 图片消息
               imageMd5 = imageMd5 || this.extractImageMd5(content)
-              imageDatName = imageDatName || this.extractImageDatName(content)
+              imageDatName = imageDatName || this.extractImageDatNameFromRow(row, content)
             } else if (localType === 43 && content) {
               // 视频消息
               videoMd5 = videoMd5 || this.extractVideoFileNameFromRow(row, content)
@@ -5587,7 +5749,49 @@ class ExportService {
       }
     }
 
+    if (rows.length > 1) {
+      rows.sort((a, b) => {
+        const timeDelta = (a.createTime || 0) - (b.createTime || 0)
+        if (timeDelta !== 0) return timeDelta
+        return (a.localId || 0) - (b.localId || 0)
+      })
+    }
+
     return { rows, memberSet, firstTime, lastTime }
+  }
+
+  private async getRecentWcdbCursorLogSummary(sessionId: string): Promise<string | undefined> {
+    try {
+      const logResult = await wcdbService.getLogs()
+      if (!logResult.success || !Array.isArray(logResult.logs)) return undefined
+      const sid = String(sessionId || '').trim()
+      const interesting = logResult.logs
+        .filter((line) => {
+          const text = String(line || '')
+          if (sid && text.includes(sid)) return true
+          return text.includes('QueryMessageBatch') ||
+            text.includes('InitExportCursorHeap') ||
+            text.includes('cursor_init') ||
+            text.includes('fetch_message_batch') ||
+            text.includes('open_message_cursor')
+        })
+        .slice(-8)
+      if (interesting.length === 0) return undefined
+      return interesting.join(' | ')
+    } catch {
+      return undefined
+    }
+  }
+
+  private async buildNoMessagesError(
+    sessionId: string,
+    collected: { error?: string },
+    fallback = '该会话在指定时间范围内没有消息'
+  ): Promise<string> {
+    if (collected.error) return collected.error
+    const nativeLogSummary = await this.getRecentWcdbCursorLogSummary(sessionId)
+    if (!nativeLogSummary) return fallback
+    return `${fallback}；WCDB日志：${nativeLogSummary}`
   }
 
   private async backfillMediaFieldsFromMessageDetail(
@@ -5608,7 +5812,7 @@ class ExportService {
         return !msg.xmlType || !msg.fileName || !msg.fileMd5 || !msg.fileSize || !msg.fileExt
       }
       if (!targetMediaTypes.has(msg.localType)) return false
-      if (msg.localType === 3) return !msg.imageMd5 && !msg.imageDatName
+      if (msg.localType === 3) return !msg.imageMd5 || !msg.imageDatName
       if (msg.localType === 47) return !msg.emojiMd5
       if (msg.localType === 43) return !msg.videoMd5
       return false
@@ -5639,7 +5843,7 @@ class ExportService {
 
         if (msg.localType === 3) {
           const imageMd5 = (String(row.image_md5 || row.imageMd5 || '').trim() || this.extractImageMd5(content) || '').toLowerCase()
-          const imageDatName = (String(row.image_dat_name || row.imageDatName || '').trim() || this.extractImageDatName(content) || '').toLowerCase()
+          const imageDatName = this.extractImageDatNameFromRow(row, content) || ''
           if (imageMd5) msg.imageMd5 = imageMd5
           if (imageDatName) msg.imageDatName = imageDatName
           return
@@ -6111,7 +6315,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
 
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
@@ -6149,7 +6353,7 @@ class ExportService {
 
       // 如果没有消息,不创建文件
       if (totalMessages === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, allMessages, control)
@@ -6649,7 +6853,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
 
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
@@ -6687,7 +6891,7 @@ class ExportService {
 
       // 如果没有消息,不创建文件
       if (totalMessages === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
@@ -7380,7 +7584,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
 
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
@@ -7423,7 +7627,7 @@ class ExportService {
 
       // 如果没有消息,不创建文件
       if (totalMessages === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
@@ -8264,7 +8468,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
 
@@ -8301,7 +8505,7 @@ class ExportService {
 
       // 如果没有消息,不创建文件
       if (totalMessages === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
@@ -8662,7 +8866,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
 
@@ -8697,7 +8901,7 @@ class ExportService {
       )
       let totalMessages = collected.rows.length
       if (totalMessages === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
@@ -9113,7 +9317,7 @@ class ExportService {
 
       const cleanedMyWxid = conn.cleanedWxid
       const isGroup = sessionId.includes('@chatroom')
-      const rawMyWxid = String(this.configService.get('myWxid') || '').trim()
+      const rawMyWxid = this.getConfiguredMyWxid()
       const sessionInfo = await this.getContactInfo(sessionId)
       const myInfo = await this.getContactInfo(cleanedMyWxid)
       const contactCache = new Map<string, { success: boolean; contact?: any; error?: string }>()
@@ -9152,7 +9356,7 @@ class ExportService {
 
       // 如果没有消息,不创建文件
       if (collected.rows.length === 0) {
-        return { success: false, error: collected.error || '该会话在指定时间范围内没有消息' }
+        return { success: false, error: await this.buildNoMessagesError(sessionId, collected) }
       }
       const totalMessages = collected.rows.length
 
@@ -9948,6 +10152,7 @@ class ExportService {
     pendingSessionIds?: string[]
     successSessionIds?: string[]
     failedSessionIds?: string[]
+    failedSessionErrors?: Record<string, string>
     sessionOutputPaths?: Record<string, string>
     error?: string
   }> {
@@ -9955,6 +10160,7 @@ class ExportService {
     let failCount = 0
     const successSessionIds: string[] = []
     const failedSessionIds: string[] = []
+    const failedSessionErrors: Record<string, string> = {}
     const sessionOutputPaths: Record<string, string> = {}
     const progressEmitter = this.createProgressEmitter(onProgress)
     let attachMediaTelemetry = false
@@ -9972,9 +10178,10 @@ class ExportService {
       }
 
       this.resetMediaRuntimeState()
-      const effectiveOptions: ExportOptions = this.isMediaContentBatchExport(options)
-        ? { ...options, exportVoiceAsText: false }
-        : options
+      const normalizedOptions = this.normalizeExportOptionsForRun(options)
+      const effectiveOptions: ExportOptions = this.isMediaContentBatchExport(normalizedOptions)
+        ? { ...normalizedOptions, exportVoiceAsText: false }
+        : normalizedOptions
 
       const exportMediaEnabled = effectiveOptions.exportMedia === true &&
         Boolean(effectiveOptions.exportImages || effectiveOptions.exportVoices || effectiveOptions.exportVideos || effectiveOptions.exportEmojis || effectiveOptions.exportFiles)
@@ -9982,10 +10189,7 @@ class ExportService {
       if (exportMediaEnabled) {
         this.triggerMediaFileCacheCleanup()
       }
-      const rawWriteLayout = this.configService.get('exportWriteLayout')
-      const writeLayout = rawWriteLayout === 'A' || rawWriteLayout === 'B' || rawWriteLayout === 'C'
-        ? rawWriteLayout
-        : 'A'
+      const writeLayout = this.resolveExportWriteLayout(effectiveOptions)
       const exportBaseDir = writeLayout === 'A'
         ? path.join(outputDir, 'texts')
         : outputDir
@@ -10020,7 +10224,6 @@ class ExportService {
       const queue = [...sessionIds]
       let pauseRequested = false
       let stopRequested = false
-      const emptySessionIds = new Set<string>()
       const sessionMessageCountHints = new Map<string, number>()
       const sessionLatestTimestampHints = new Map<string, number>()
       const exportStatsCacheKey = this.buildExportStatsCacheKey(sessionIds, effectiveOptions, conn.cleanedWxid)
@@ -10033,17 +10236,12 @@ class ExportService {
           if (Number.isFinite(snapshot.lastTimestamp) && Number(snapshot.lastTimestamp) > 0) {
             sessionLatestTimestampHints.set(sessionId, Math.floor(Number(snapshot.lastTimestamp)))
           }
-          if (snapshot.totalCount <= 0) {
-            emptySessionIds.add(sessionId)
-          }
         }
       }
       const canUseSessionSnapshotHints = isTextContentBatchExport &&
         this.isUnboundedDateRange(effectiveOptions.dateRange) &&
         !String(effectiveOptions.senderUsername || '').trim()
-      const canFastSkipEmptySessions = !isTextContentBatchExport &&
-        this.isUnboundedDateRange(effectiveOptions.dateRange) &&
-        !String(effectiveOptions.senderUsername || '').trim()
+      const canFastSkipEmptySessions = false
       const canTrySkipUnchangedTextSessions = canUseSessionSnapshotHints
       const precheckSessionIds = canFastSkipEmptySessions
         ? sessionIds.filter((sessionId) => !sessionMessageCountHints.has(sessionId))
@@ -10081,9 +10279,6 @@ class ExportService {
                 const count = countsResult.counts[batchSessionId]
                 if (typeof count === 'number' && Number.isFinite(count) && count >= 0) {
                   sessionMessageCountHints.set(batchSessionId, Math.max(0, Math.floor(count)))
-                }
-                if (typeof count === 'number' && Number.isFinite(count) && count <= 0) {
-                  emptySessionIds.add(batchSessionId)
                 }
               }
             }
@@ -10154,6 +10349,7 @@ class ExportService {
           pendingSessionIds: [...queue],
           successSessionIds,
           failedSessionIds,
+          failedSessionErrors,
           sessionOutputPaths
         }
       }
@@ -10166,6 +10362,7 @@ class ExportService {
           pendingSessionIds: [...queue],
           successSessionIds,
           failedSessionIds,
+          failedSessionErrors,
           sessionOutputPaths
         }
       }
@@ -10176,46 +10373,6 @@ class ExportService {
           const sessionInfo = await this.getContactInfo(sessionId)
           const messageCountHint = sessionMessageCountHints.get(sessionId)
           const latestTimestampHint = sessionLatestTimestampHints.get(sessionId)
-
-          if (
-            isTextContentBatchExport &&
-            typeof messageCountHint === 'number' &&
-            messageCountHint <= 0
-          ) {
-            successCount++
-            successSessionIds.push(sessionId)
-            activeSessionRatios.delete(sessionId)
-            completedCount++
-            emitProgress({
-              current: computeAggregateCurrent(),
-              total: sessionIds.length,
-              currentSession: sessionInfo.displayName,
-              currentSessionId: sessionId,
-              phase: 'complete',
-              phaseLabel: '该会话没有消息，已跳过',
-              estimatedTotalMessages: 0,
-              exportedMessages: 0
-            }, { force: true })
-            return 'done'
-          }
-
-          if (emptySessionIds.has(sessionId)) {
-            successCount++
-            successSessionIds.push(sessionId)
-            activeSessionRatios.delete(sessionId)
-            completedCount++
-            emitProgress({
-              current: computeAggregateCurrent(),
-              total: sessionIds.length,
-              currentSession: sessionInfo.displayName,
-              currentSessionId: sessionId,
-              phase: 'complete',
-              phaseLabel: '该会话没有消息，已跳过',
-              estimatedTotalMessages: 0,
-              exportedMessages: 0
-            }, { force: true })
-            return 'done'
-          }
 
           const sessionProgress = (progress: ExportProgress) => {
             const phaseTotal = Number.isFinite(progress.total) && progress.total > 0 ? progress.total : 100
@@ -10339,6 +10496,7 @@ class ExportService {
           } else {
             failCount++
             failedSessionIds.push(sessionId)
+            failedSessionErrors[sessionId] = result.error || '导出失败'
             console.error(`导出 ${sessionId} 失败:`, result.error)
           }
 
@@ -10433,6 +10591,7 @@ class ExportService {
           pendingSessionIds,
           successSessionIds,
           failedSessionIds,
+          failedSessionErrors,
           sessionOutputPaths
         }
       }
@@ -10445,6 +10604,7 @@ class ExportService {
           pendingSessionIds,
           successSessionIds,
           failedSessionIds,
+          failedSessionErrors,
           sessionOutputPaths
         }
       }
@@ -10458,7 +10618,20 @@ class ExportService {
       }, { force: true })
       progressEmitter.flush()
 
-      return { success: true, successCount, failCount, successSessionIds, failedSessionIds, sessionOutputPaths }
+      const allFailed = successCount === 0 && failCount > 0
+      const failureSummary = allFailed
+        ? Object.values(failedSessionErrors).slice(0, 3).join('；') || '所有会话导出失败'
+        : undefined
+      return {
+        success: !allFailed,
+        successCount,
+        failCount,
+        successSessionIds,
+        failedSessionIds,
+        failedSessionErrors,
+        sessionOutputPaths,
+        error: failureSummary
+      }
     } catch (e) {
       progressEmitter.flush()
       return { success: false, successCount, failCount, error: String(e) }

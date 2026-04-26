@@ -1101,6 +1101,7 @@ export interface ElectronAPI {
       pendingSessionIds?: string[]
       successSessionIds?: string[]
       failedSessionIds?: string[]
+      failedSessionErrors?: Record<string, string>
       sessionOutputPaths?: Record<string, string>
       error?: string
     }>
@@ -1269,6 +1270,7 @@ export interface ExportOptions {
   txtColumns?: string[]
   fileNamingMode?: 'classic' | 'date-range'
   sessionLayout?: 'shared' | 'per-session'
+  exportWriteLayout?: 'A' | 'B' | 'C'
   sessionNameWithTypePrefix?: boolean
   displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
   exportConcurrency?: number

@@ -81,6 +81,7 @@ export class ImageDecryptService {
   private pending = new Map<string, Promise<DecryptResult>>()
   private updateFlags = new Map<string, boolean>()
   private nativeLogged = false
+  private runtimeConfig: { dbPath?: string; myWxid?: string; imageXorKey?: unknown; imageAesKey?: string } | null = null
   private datNameScanMissAt = new Map<string, number>()
   private readonly datNameScanMissTtlMs = 1200
   private readonly accountDirCache = new Map<string, string>()
@@ -97,6 +98,32 @@ export class ImageDecryptService {
   private shouldCheckImageUpdate(payload?: { disableUpdateCheck?: boolean; suppressEvents?: boolean }): boolean {
     if (payload?.disableUpdateCheck === true) return false
     return this.shouldEmitImageEvents(payload)
+  }
+
+  setRuntimeConfig(config: { dbPath?: string; myWxid?: string; imageXorKey?: unknown; imageAesKey?: string } | null): void {
+    this.runtimeConfig = config
+  }
+
+  private getConfiguredDbPath(): string {
+    return String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()
+  }
+
+  private getConfiguredMyWxid(): string {
+    return String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
+  }
+
+  private getConfiguredImageKeys(): { xorKey: unknown; aesKey: string } {
+    const runtimeImageXorKey = this.runtimeConfig?.imageXorKey
+    const hasRuntimeXorKey = runtimeImageXorKey !== undefined && runtimeImageXorKey !== null && String(runtimeImageXorKey).trim() !== ''
+    const runtimeAesKey = String(this.runtimeConfig?.imageAesKey || '').trim()
+    if (hasRuntimeXorKey || runtimeAesKey) {
+      const fallback = this.configService.getImageKeysForCurrentWxid()
+      return {
+        xorKey: hasRuntimeXorKey ? runtimeImageXorKey : fallback.xorKey,
+        aesKey: runtimeAesKey || fallback.aesKey
+      }
+    }
+    return this.configService.getImageKeysForCurrentWxid()
   }
 
   private logInfo(message: string, meta?: Record<string, unknown>): void {
@@ -266,8 +293,8 @@ export class ImageDecryptService {
     )
     if (normalizedList.length === 0) return
 
-    const wxid = this.configService.get('myWxid')
-    const dbPath = this.configService.get('dbPath')
+    const wxid = this.getConfiguredMyWxid()
+    const dbPath = this.getConfiguredDbPath()
     if (!wxid || !dbPath) return
 
     const accountDir = this.resolveAccountDir(dbPath, wxid)
@@ -294,8 +321,8 @@ export class ImageDecryptService {
     this.logInfo('开始解密图片', { md5: payload.imageMd5, datName: payload.imageDatName, force: payload.force, hardlinkOnly: payload.hardlinkOnly === true })
     this.emitDecryptProgress(payload, cacheKey, 'locating', 14, 'running')
     try {
-      const wxid = this.configService.get('myWxid')
-      const dbPath = this.configService.get('dbPath')
+      const wxid = this.getConfiguredMyWxid()
+      const dbPath = this.getConfiguredDbPath()
       if (!wxid || !dbPath) {
         this.logError('配置缺失', undefined, { wxid: !!wxid, dbPath: !!dbPath })
         this.emitDecryptProgress(payload, cacheKey, 'failed', 100, 'error', '配置缺失')
@@ -404,7 +431,7 @@ export class ImageDecryptService {
       }
 
       // 优先使用当前 wxid 对应的密钥，找不到则回退到全局配置
-      const imageKeys = this.configService.getImageKeysForCurrentWxid()
+      const imageKeys = this.getConfiguredImageKeys()
       const xorKeyRaw = imageKeys.xorKey
       // 支持十六进制格式（如 0x53）和十进制格式
       let xorKey: number
@@ -427,7 +454,7 @@ export class ImageDecryptService {
       const aesKeyText = typeof aesKeyRaw === 'string' ? aesKeyRaw.trim() : ''
       const aesKeyForNative = aesKeyText || undefined
 
-      this.logInfo('开始解密DAT文件(仅Rust原生)', { datPath, xorKey, hasAesKey: Boolean(aesKeyForNative) })
+      this.logInfo('开始解密DAT文件', { datPath, xorKey, hasAesKey: Boolean(aesKeyForNative) })
       this.emitDecryptProgress(payload, cacheKey, 'decrypting', 58, 'running')
       const nativeResult = this.tryDecryptDatWithNative(datPath, xorKey, aesKeyForNative)
       if (!nativeResult) {
@@ -527,8 +554,8 @@ export class ImageDecryptService {
   }
 
   private resolveCurrentAccountDir(): string | null {
-    const wxid = this.configService.get('myWxid')
-    const dbPath = this.configService.get('dbPath')
+    const wxid = this.getConfiguredMyWxid()
+    const dbPath = this.getConfiguredDbPath()
     if (!wxid || !dbPath) return null
     return this.resolveAccountDir(dbPath, wxid)
   }
@@ -1551,7 +1578,117 @@ export class ImageDecryptService {
         })
       }
     }
-    return result
+    if (result) return result
+    const fallback = this.tryDecryptDatWithJs(datPath, xorKey, aesKey)
+    if (fallback) {
+      this.logInfo('JS DAT 解密 fallback 已启用', { datPath, ext: fallback.ext })
+    }
+    return fallback
+  }
+
+  private tryDecryptDatWithJs(
+    datPath: string,
+    xorKey: number,
+    aesKey?: string
+  ): { data: Buffer; ext: string; isWxgf: boolean } | null {
+    try {
+      const encrypted = readFileSync(datPath)
+      const directExt = this.detectImageExtension(encrypted)
+      if (directExt) return { data: encrypted, ext: directExt, isWxgf: false }
+
+      const candidates: Buffer[] = []
+      const aesKeyText = String(aesKey || '').trim()
+      const datVersion = this.getDatVersion(encrypted)
+      if (datVersion === 2 && aesKeyText.length >= 16) {
+        try {
+          candidates.push(this.decryptDatV4WithJs(encrypted, xorKey, Buffer.from(aesKeyText, 'ascii').subarray(0, 16)))
+        } catch { }
+      }
+      if (datVersion !== 2) {
+        candidates.push(this.decryptDatV3WithJs(encrypted, xorKey))
+      }
+
+      for (const candidate of candidates) {
+        const ext = this.detectImageExtension(candidate)
+        if (ext) return { data: candidate, ext, isWxgf: false }
+      }
+    } catch (error) {
+      this.logError('JS DAT 解密 fallback 失败', error, { datPath })
+    }
+    return null
+  }
+
+  private decryptDatV3WithJs(data: Buffer, xorKey: number): Buffer {
+    const output = Buffer.allocUnsafe(data.length)
+    for (let i = 0; i < data.length; i += 1) {
+      output[i] = data[i] ^ xorKey
+    }
+    return output
+  }
+
+  private decryptDatV4WithJs(data: Buffer, xorKey: number, aesKey: Buffer): Buffer {
+    if (data.length < 0x0f) {
+      throw new Error('dat file too small')
+    }
+    const header = data.subarray(0, 0x0f)
+    const payload = data.subarray(0x0f)
+    const aesSize = this.readInt32LeSafe(header, 6)
+    const xorSize = this.readInt32LeSafe(header, 10)
+    const remainder = ((aesSize % 16) + 16) % 16
+    const alignedAesSize = aesSize + (16 - remainder)
+    if (alignedAesSize > payload.length) throw new Error('invalid aes size')
+
+    const aesData = payload.subarray(0, alignedAesSize)
+
+    let plainAes = Buffer.alloc(0)
+    if (aesData.length > 0) {
+      const decipher = crypto.createDecipheriv('aes-128-ecb', aesKey, Buffer.alloc(0))
+      decipher.setAutoPadding(false)
+      plainAes = this.strictRemovePkcs7Padding(Buffer.concat([decipher.update(aesData), decipher.final()]))
+    }
+
+    const remaining = payload.subarray(alignedAesSize)
+    if (xorSize < 0 || xorSize > remaining.length) throw new Error('invalid xor size')
+
+    let rawData = Buffer.alloc(0)
+    let decodedXor = Buffer.alloc(0)
+    if (xorSize > 0) {
+      const rawLength = remaining.length - xorSize
+      if (rawLength < 0) throw new Error('invalid raw size')
+      rawData = remaining.subarray(0, rawLength)
+      const xorData = remaining.subarray(rawLength)
+      decodedXor = Buffer.allocUnsafe(xorData.length)
+      for (let i = 0; i < xorData.length; i += 1) {
+        decodedXor[i] = xorData[i] ^ xorKey
+      }
+    } else {
+      rawData = remaining
+    }
+    return Buffer.concat([plainAes, rawData, decodedXor])
+  }
+
+  private getDatVersion(data: Buffer): number {
+    if (data.length < 6) return 0
+    const sigV1 = Buffer.from([0x07, 0x08, 0x56, 0x31, 0x08, 0x07])
+    const sigV2 = Buffer.from([0x07, 0x08, 0x56, 0x32, 0x08, 0x07])
+    if (data.subarray(0, 6).equals(sigV1)) return 1
+    if (data.subarray(0, 6).equals(sigV2)) return 2
+    return 0
+  }
+
+  private readInt32LeSafe(buffer: Buffer, offset: number): number {
+    if (offset < 0 || offset + 4 > buffer.length) throw new Error('invalid int32 offset')
+    return buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16) | (buffer[offset + 3] << 24)
+  }
+
+  private strictRemovePkcs7Padding(data: Buffer): Buffer {
+    if (data.length === 0) throw new Error('empty decrypted data')
+    const pad = data[data.length - 1]
+    if (pad <= 0 || pad > 16 || pad > data.length) throw new Error('invalid pkcs7 padding')
+    for (let i = data.length - pad; i < data.length; i += 1) {
+      if (data[i] !== pad) throw new Error('invalid pkcs7 padding')
+    }
+    return data.subarray(0, data.length - pad)
   }
 
   private detectImageExtension(buffer: Buffer): string | null {

@@ -23,7 +23,6 @@ import { KeyServiceMac } from './services/keyServiceMac'
 import { voiceTranscribeService } from './services/voiceTranscribeService'
 import { videoService } from './services/videoService'
 import { snsService, isVideoUrl } from './services/snsService'
-import { contactExportService } from './services/contactExportService'
 import { windowsHelloService } from './services/windowsHelloService'
 import { exportCardDiagnosticsService } from './services/exportCardDiagnosticsService'
 import { cloudControlService } from './services/cloudControlService'
@@ -3046,7 +3045,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('export:exportSessions', async (event, sessionIds: string[], outputDir: string, options: ExportOptions, controlOptions?: { taskId?: string }) => {
     const taskId = normalizeExportTaskId(controlOptions?.taskId)
-    const taskControl = taskId ? exportTaskControlService.createControl(taskId, outputDir) : undefined
+    if (taskId) exportTaskControlService.createControl(taskId, outputDir)
     if (taskId) activeExportTasks.add(taskId)
     const PROGRESS_FORWARD_INTERVAL_MS = 180
     let pendingProgress: ExportProgress | null = null
@@ -3091,17 +3090,13 @@ function registerIpcHandlers() {
       queueProgress(progress)
     }
 
-    const runMainFallback = async (reason: string) => {
-      console.warn(`[fallback-export-main] ${reason}`)
-      return exportService.exportSessions(sessionIds, outputDir, options, onProgress, taskControl)
-    }
-
     const cfg = configService || new ConfigService()
     configService = cfg
     const logEnabled = cfg.get('logEnabled')
     const dbPath = String(cfg.get('dbPath') || '').trim()
     const decryptKey = String(cfg.get('decryptKey') || '').trim()
     const myWxid = String(cfg.get('myWxid') || '').trim()
+    const imageKeys = cfg.getImageKeysForCurrentWxid()
     const resourcesPath = app.isPackaged
       ? join(process.resourcesPath, 'resources')
       : join(app.getAppPath(), 'resources')
@@ -3119,6 +3114,8 @@ function registerIpcHandlers() {
             dbPath,
             decryptKey,
             myWxid,
+            imageXorKey: imageKeys.xorKey,
+            imageAesKey: imageKeys.aesKey,
             resourcesPath,
             userDataPath,
             logEnabled
@@ -3153,6 +3150,20 @@ function registerIpcHandlers() {
         worker.on('message', (msg: any) => {
           if (msg && msg.type === 'export:progress') {
             onProgress(msg.data as ExportProgress)
+            return
+          }
+          if (msg && msg.type === 'export:createdFiles' && taskId) {
+            const filePaths = Array.isArray(msg.filePaths) ? msg.filePaths : []
+            for (const filePath of filePaths) {
+              exportTaskControlService.recordCreatedFile(taskId, String(filePath || ''))
+            }
+            return
+          }
+          if (msg && msg.type === 'export:createdDirs' && taskId) {
+            const dirPaths = Array.isArray(msg.dirPaths) ? msg.dirPaths : []
+            for (const dirPath of dirPaths) {
+              exportTaskControlService.recordCreatedDir(taskId, String(dirPath || ''))
+            }
             return
           }
           if (msg && msg.type === 'export:createdFile' && taskId) {
@@ -3191,7 +3202,21 @@ function registerIpcHandlers() {
       const result = await runWorker()
       return await finalizeExportTaskControlResult(taskId, result)
     } catch (error) {
-      const result = await runMainFallback(error instanceof Error ? error.message : String(error))
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`[export-worker] ${errorMessage}`)
+      const normalizedSessionIds = Array.isArray(sessionIds) ? sessionIds : []
+      const failedSessionErrors: Record<string, string> = {}
+      for (const sessionId of normalizedSessionIds) {
+        failedSessionErrors[sessionId] = errorMessage
+      }
+      const result = {
+        success: false,
+        successCount: 0,
+        failCount: normalizedSessionIds.length,
+        failedSessionIds: normalizedSessionIds,
+        failedSessionErrors,
+        error: `导出 Worker 执行失败: ${errorMessage}`
+      }
       return await finalizeExportTaskControlResult(taskId, result)
     } finally {
       if (taskId) activeExportTasks.delete(taskId)
@@ -3203,12 +3228,136 @@ function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('export:exportSession', async (_, sessionId: string, outputPath: string, options: ExportOptions) => {
-    return exportService.exportSessionToChatLab(sessionId, outputPath, options)
+  ipcMain.handle('export:exportSession', async (event, sessionId: string, outputPath: string, options: ExportOptions) => {
+    const cfg = configService || new ConfigService()
+    configService = cfg
+    const imageKeys = cfg.getImageKeysForCurrentWxid()
+    const workerPath = join(__dirname, 'exportWorker.js')
+
+    try {
+      return await new Promise<any>((resolve) => {
+        const worker = new Worker(workerPath, {
+          workerData: {
+            mode: 'single',
+            sessionId,
+            outputPath,
+            options,
+            dbPath: String(cfg.get('dbPath') || '').trim(),
+            decryptKey: String(cfg.get('decryptKey') || '').trim(),
+            myWxid: String(cfg.get('myWxid') || '').trim(),
+            imageXorKey: imageKeys.xorKey,
+            imageAesKey: imageKeys.aesKey,
+            resourcesPath: app.isPackaged ? join(process.resourcesPath, 'resources') : join(app.getAppPath(), 'resources'),
+            userDataPath: app.getPath('userData'),
+            logEnabled: cfg.get('logEnabled')
+          }
+        })
+
+        let settled = false
+        const finalize = (value: any) => {
+          if (settled) return
+          settled = true
+          worker.removeAllListeners()
+          void worker.terminate()
+          resolve(value)
+        }
+        const fail = (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          console.error(`[export-worker-single] ${errorMessage}`)
+          finalize({ success: false, error: `导出 Worker 执行失败: ${errorMessage}` })
+        }
+
+        worker.on('message', (msg: any) => {
+          if (msg && msg.type === 'export:progress') {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('export:progress', msg.data)
+            }
+            return
+          }
+          if (msg && msg.type === 'export:result') {
+            finalize(msg.data)
+            return
+          }
+          if (msg && msg.type === 'export:error') {
+            fail(String(msg.error || '导出 Worker 执行失败'))
+          }
+        })
+        worker.on('error', fail)
+        worker.on('exit', (code) => {
+          if (settled) return
+          if (code === 0) {
+            finalize({ success: false, error: '导出 Worker 未返回结果' })
+          } else {
+            fail(`导出 Worker 异常退出: ${code}`)
+          }
+        })
+      })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`[export-worker-single] ${errorMessage}`)
+      return { success: false, error: `导出 Worker 启动失败: ${errorMessage}` }
+    }
   })
 
   ipcMain.handle('export:exportContacts', async (_, outputDir: string, options: any) => {
-    return contactExportService.exportContacts(outputDir, options)
+    const cfg = configService || new ConfigService()
+    configService = cfg
+    const workerPath = join(__dirname, 'exportWorker.js')
+
+    try {
+      return await new Promise<any>((resolve) => {
+        const worker = new Worker(workerPath, {
+          workerData: {
+            mode: 'contacts',
+            outputDir,
+            options,
+            dbPath: String(cfg.get('dbPath') || '').trim(),
+            decryptKey: String(cfg.get('decryptKey') || '').trim(),
+            myWxid: String(cfg.get('myWxid') || '').trim(),
+            resourcesPath: app.isPackaged ? join(process.resourcesPath, 'resources') : join(app.getAppPath(), 'resources'),
+            userDataPath: app.getPath('userData'),
+            logEnabled: cfg.get('logEnabled')
+          }
+        })
+
+        let settled = false
+        const finalize = (value: any) => {
+          if (settled) return
+          settled = true
+          worker.removeAllListeners()
+          void worker.terminate()
+          resolve(value)
+        }
+        const fail = (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          console.error(`[export-worker-contacts] ${errorMessage}`)
+          finalize({ success: false, error: `导出 Worker 执行失败: ${errorMessage}` })
+        }
+
+        worker.on('message', (msg: any) => {
+          if (msg && msg.type === 'export:result') {
+            finalize(msg.data)
+            return
+          }
+          if (msg && msg.type === 'export:error') {
+            fail(String(msg.error || '导出 Worker 执行失败'))
+          }
+        })
+        worker.on('error', fail)
+        worker.on('exit', (code) => {
+          if (settled) return
+          if (code === 0) {
+            finalize({ success: false, error: '导出 Worker 未返回结果' })
+          } else {
+            fail(`导出 Worker 异常退出: ${code}`)
+          }
+        })
+      })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`[export-worker-contacts] ${errorMessage}`)
+      return { success: false, error: `导出 Worker 启动失败: ${errorMessage}` }
+    }
   })
 
   // 数据分析相关
