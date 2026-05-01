@@ -56,7 +56,7 @@
     "electron-builder": "^26.8.1",
     "sass": "^1.98.0",
     "sharp": "^0.34.5",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite": "^7.0.0",
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6"
