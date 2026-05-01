@@ -96,7 +96,13 @@
       "gatekeeperAssess": false,
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.plist",
-      "icon": "resources/icons/macos/icon.icns"
+      "icon": "resources/icons/macos/icon.icns",
+      "extraFiles": [
+        {
+          "from": "resources/wcdb/macos/",
+          "to": "."
+        }
+      ]
     },
     "win": {
       "target": [
