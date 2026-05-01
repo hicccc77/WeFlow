@@ -35,7 +35,7 @@
     "jszip": "^3.10.1",
     "koffi": "^2.9.0",
     "lucide-react": "^1.7.0",
-    "react": "^19.2.3",
+    "react": "^19.2.5",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.0",
