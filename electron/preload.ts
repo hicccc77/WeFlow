@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('app:updateAvailable', (_, info) => callback(info))
       return () => ipcRenderer.removeAllListeners('app:updateAvailable')
     },
+    getPlatform: () => process.platform,
   },
 
   // 日志

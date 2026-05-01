@@ -348,8 +348,10 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
   const validatePath = (path: string): string | null => {
     if (!path) return null
-    // 检测中文字符和其他可能有问题的特殊字符
-    if (/[\u4e00-\u9fa5]/.test(path)) {
+    // 仅针对非 Windows 平台恢复中文路径校验
+    // Windows 端已通过 wcdbCore 的 Junction Point 修复，无需拦截
+    const isWindows = window.electronAPI.app.getPlatform() === 'win32'
+    if (!isWindows && /[\u4e00-\u9fa5]/.test(path)) {
       return DB_PATH_CHINESE_ERROR
     }
     return null

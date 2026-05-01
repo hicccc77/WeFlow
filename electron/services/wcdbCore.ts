@@ -1,5 +1,5 @@
 import { join, dirname, basename } from 'path'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync, symlinkSync, rmdirSync, linkSync } from 'fs'
 import { tmpdir } from 'os'
 import * as fzstd from 'fzstd'
 import { expandHomePath } from '../utils/pathUtils'
@@ -23,6 +23,9 @@ export class WcdbCore {
   private currentKey: string | null = null
   private currentWxid: string | null = null
   private currentDbStoragePath: string | null = null
+  private kernel32: any = null
+  private dbJunctionPath: string | null = null
+  private dbJunctionTarget: string | null = null
 
   // 函数引用
   private wcdbInitProtection: any = null
@@ -136,6 +139,57 @@ export class WcdbCore {
   private lastResolvedLogPath: string | null = null
   private lastCursorForceReopenAt = 0
   private readonly cursorForceReopenCooldownMs = 15000
+
+  private resolveShortPath(longPath: string): string | null {
+    if (process.platform !== 'win32' || !this.kernel32?.GetShortPathNameW) return longPath
+    try {
+      const buf = Buffer.alloc(520) // MAX_PATH * 2 for UTF-16
+      const len = this.kernel32.GetShortPathNameW(longPath, buf, 260)
+      if (len > 0 && len < 260) {
+        return buf.toString('utf16le', 0, len * 2)
+      }
+    } catch (e) {
+      this.writeLog(`[wcdbCore] resolveShortPath failed: ${String(e)}`, true)
+    }
+    return null
+  }
+
+  /**
+   * 为包含非 ASCII 字符的路径创建 Windows Junction Point
+   */
+  private ensureDbJunction(dbBasePath: string): string {
+    if (process.platform !== 'win32') return dbBasePath
+    if (!/[^\x00-\x7F]/.test(dbBasePath)) return dbBasePath
+    try {
+      const mountPoint = join(tmpdir(), 'weflow_db_junc')
+      if (this.dbJunctionPath === mountPoint && this.dbJunctionTarget === dbBasePath && existsSync(mountPoint)) {
+        return mountPoint
+      }
+      if (existsSync(mountPoint)) {
+        try { rmdirSync(mountPoint) } catch {}
+      }
+      symlinkSync(dbBasePath, mountPoint, 'junction')
+      this.dbJunctionPath = mountPoint
+      this.dbJunctionTarget = dbBasePath
+      this.writeLog(`[wcdbCore] junction created: ${mountPoint} -> ${dbBasePath}`, true)
+      return mountPoint
+    } catch (e) {
+      this.writeLog(`[wcdbCore] junction failed: ${String(e)}`, true)
+      return dbBasePath
+    }
+  }
+
+  private cleanupDbJunction() {
+    if (process.platform !== 'win32' || !this.dbJunctionPath) return
+    try {
+      if (existsSync(this.dbJunctionPath)) rmdirSync(this.dbJunctionPath)
+      this.writeLog(`[wcdbCore] junction removed: ${this.dbJunctionPath}`, true)
+    } catch (e) {
+      this.writeLog(`[wcdbCore] junction removal failed: ${String(e)}`, true)
+    }
+    this.dbJunctionPath = null
+    this.dbJunctionTarget = null
+  }
 
   setPaths(resourcesPath: string, userDataPath: string): void {
     this.resourcesPath = resourcesPath
@@ -713,6 +767,15 @@ export class WcdbCore {
         }
       }
 
+      if (process.platform === 'win32') {
+        try {
+          this.kernel32 = this.koffi.load('kernel32.dll')
+          this.kernel32.GetShortPathNameW = this.kernel32.func('uint32 __stdcall GetShortPathNameW(const char16* longPath, _Out_ char16* shortPath, uint32 bufferSize)')
+        } catch (e) {
+          this.writeLog(`[bootstrap] failed to load kernel32 for short paths: ${String(e)}`, true)
+        }
+      }
+
       this.writeLog(`[bootstrap] koffi.load begin path=${dllPath}`, true)
       this.lib = this.koffi.load(dllPath)
       this.writeLog('[bootstrap] koffi.load ok', true)
@@ -1219,13 +1282,6 @@ export class WcdbCore {
       try {
         this.wcdbCloudInit = this.lib.func('int32 wcdb_cloud_init(int32 intervalSeconds)')
       } catch {
-        this.wcdbCloudInit = null
-      }
-
-      // wcdb_status wcdb_cloud_report(const char* stats_json)
-      try {
-        this.wcdbCloudReport = this.lib.func('int32 wcdb_cloud_report(const char* statsJson)')
-      } catch {
         this.wcdbCloudReport = null
       }
 
@@ -1262,14 +1318,6 @@ export class WcdbCore {
    */
   async testConnection(dbPath: string, hexKey: string, wxid: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
     try {
-      // 如果当前已经有相同参数的活动连接，直接返回成功
-      if (this.handle !== null &&
-        this.currentPath === dbPath &&
-        this.currentKey === hexKey &&
-        this.currentWxid === wxid) {
-        return { success: true, sessionCount: 0 }
-      }
-
       // 记录当前活动连接，用于在测试结束后恢复（避免影响聊天页等正在使用的连接）
       const hadActiveConnection = this.handle !== null
       const prevPath = this.currentPath
@@ -1284,8 +1332,9 @@ export class WcdbCore {
         }
       }
 
-      // 构建 db_storage 目录路径
-      const dbStoragePath = this.resolveDbStoragePath(dbPath, wxid)
+      // 构建 db_storage 目录路径（使用 junction 确保 DLL 获得全 ASCII 路径）
+      const effectiveTestPath = this.ensureDbJunction(dbPath)
+      const dbStoragePath = this.resolveDbStoragePath(effectiveTestPath, wxid)
       this.writeLog(`testConnection dbPath=${dbPath} wxid=${wxid} dbStorage=${dbStoragePath || 'null'}`)
 
       if (!dbStoragePath || !existsSync(dbStoragePath)) {
@@ -1294,15 +1343,16 @@ export class WcdbCore {
 
       // 递归查找 session.db
       const sessionDbPath = this.findSessionDb(dbStoragePath)
-      this.writeLog(`testConnection sessionDb=${sessionDbPath || 'null'}`)
-
       if (!sessionDbPath) {
         return { success: false, error: this.formatInitProtectionError(-3002) }
       }
 
       // 分配输出参数内存
       const handleOut = [0]
-      const result = this.wcdbOpenAccount(sessionDbPath, hexKey, handleOut)
+      // 为了兼容 Junction 和中文路径，仅在必要时转为 8.3 短路径
+      const isAlreadyAscii = sessionDbPath && !/[^\x00-\x7F]/.test(sessionDbPath);
+      const finalSessionPath = isAlreadyAscii ? sessionDbPath : (this.resolveShortPath(sessionDbPath) || sessionDbPath);
+      const result = this.wcdbOpenAccount(finalSessionPath, hexKey, handleOut)
 
       if (result !== 0) {
         await this.printLogs()
@@ -1321,6 +1371,7 @@ export class WcdbCore {
         this.wcdbShutdown()
         this.handle = null
         this.currentPath = null
+        this.cleanupDbJunction()
         this.currentKey = null
         this.currentWxid = null
         this.initialized = false
@@ -1339,9 +1390,8 @@ export class WcdbCore {
 
       return { success: true, sessionCount: 0 }
     } catch (e) {
-      console.error('测试连接异常:', e)
-      this.writeLog(`testConnection exception: ${String(e)}`)
-      return { success: false, error: this.formatInitProtectionError(-3004) }
+      console.error('测试数据库连接异常:', e)
+      return { success: false, error: String(e) }
     }
   }
 
@@ -1560,7 +1610,8 @@ export class WcdbCore {
         if (!initOk) return false
       }
 
-      const dbStoragePath = this.resolveDbStoragePath(dbPath, wxid)
+      const effectiveDbPath = this.ensureDbJunction(dbPath)
+      const dbStoragePath = this.resolveDbStoragePath(effectiveDbPath, wxid)
       this.writeLog(`open dbPath=${dbPath} wxid=${wxid} dbStorage=${dbStoragePath || 'null'}`, true)
 
       if (!dbStoragePath || !existsSync(dbStoragePath)) {
@@ -1579,8 +1630,26 @@ export class WcdbCore {
         return false
       }
 
+      // [核心修复] 解决朋友圈 -3 错误：微信 DLL 逻辑会从 session.db 所在目录找 sns.db
+      if (process.platform === 'win32') {
+        try {
+          const snsDbSource = join(dbStoragePath, 'sns', 'sns.db');
+          const sessionDir = join(dbStoragePath, 'session');
+          const snsDbTarget = join(sessionDir, 'sns.db');
+          if (existsSync(snsDbSource) && existsSync(sessionDir) && !existsSync(snsDbTarget)) {
+            this.writeLog(`[wcdbCore] creating sns.db hardlink for compat: ${snsDbTarget} -> ${snsDbSource}`, true);
+            linkSync(snsDbSource, snsDbTarget);
+          }
+        } catch (linkErr) {
+          this.writeLog(`[wcdbCore] sns.db link failed: ${String(linkErr)}`, true);
+        }
+      }
+
       const handleOut = [0]
-      const result = this.wcdbOpenAccount(sessionDbPath, hexKey, handleOut)
+      // 为了兼容 Junction 和中文路径，仅在必要时转为 8.3 短路径
+      const isAlreadyAscii = sessionDbPath && !/[^\x00-\x7F]/.test(sessionDbPath);
+      const finalSessionPath = isAlreadyAscii ? sessionDbPath : (this.resolveShortPath(sessionDbPath) || sessionDbPath);
+      const result = this.wcdbOpenAccount(finalSessionPath, hexKey, handleOut)
 
       if (result !== 0) {
         console.error('打开数据库失败:', result)
@@ -1607,15 +1676,10 @@ export class WcdbCore {
         try {
           this.wcdbSetMyWxid(this.handle, wxid)
         } catch (e) {
-          // 静默失败
+          console.error('设置 wxid 失败:', e)
         }
       }
-      if (this.isLogEnabled()) {
-        this.startLogPolling()
-      }
-      this.writeLog(`open ok handle=${handle}`, true)
-      await this.dumpDbStatus('open')
-      await this.runPostOpenDiagnostics(dbPath, dbStoragePath, sessionDbPath, wxid)
+      this.startLogPolling()
       return true
     } catch (e) {
       console.error('打开数据库异常:', e)
@@ -1642,6 +1706,7 @@ export class WcdbCore {
       }
       this.handle = null
       this.currentPath = null
+      this.cleanupDbJunction()
       this.currentKey = null
       this.currentWxid = null
       this.currentDbStoragePath = null

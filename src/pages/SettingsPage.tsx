@@ -1180,7 +1180,8 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
 
   const validatePath = (path: string): string | null => {
     if (!path) return null
-    if (/[\u4e00-\u9fa5]/.test(path)) {
+    const isWindows = window.electronAPI.app.getPlatform() === 'win32'
+    if (!isWindows && /[\u4e00-\u9fa5]/.test(path)) {
       return '路径包含中文字符，请迁移至全英文目录'
     }
     return null

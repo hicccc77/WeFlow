@@ -1,7 +1,7 @@
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { join } from 'path'
-import { readFile, writeFile, rm } from 'fs/promises'
+import { readFile, writeFile, rm, mkdir } from 'fs/promises'
 import { app } from 'electron'
 import { createHash } from 'crypto'
 
@@ -404,7 +404,10 @@ class AnalyticsService {
 
   private async saveCacheToFile(data: any) {
     try {
-      await writeFile(this.getCacheFilePath(), JSON.stringify(data))
+      const filePath = this.getCacheFilePath()
+      const dir = require('path').dirname(filePath)
+      await mkdir(dir, { recursive: true })
+      await writeFile(filePath, JSON.stringify(data))
     } catch (e) {
       console.error('保存统计缓存失败:', e)
     }
