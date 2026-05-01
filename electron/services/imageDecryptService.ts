@@ -187,8 +187,7 @@ export class ImageDecryptService {
       }
     }
 
-    const accountDir = this.resolveCurrentAccountDir()
-    if (accountDir) {
+    for (const accountDir of this.resolveCurrentAccountDirs()) {
       const datPath = await this.resolveDatPath(
         accountDir,
         payload.imageMd5,
@@ -202,27 +201,26 @@ export class ImageDecryptService {
           allowDatNameScanFallback: payload.allowCacheIndex !== false
         }
       )
-      if (datPath) {
-        const existing = this.findCachedOutputByDatPath(datPath, payload.sessionId, false)
-        if (existing) {
-          const upgraded = !this.isHdPath(existing)
-            ? await this.tryPromoteThumbnailCache(payload, cacheKey, existing)
-            : null
-          const finalPath = upgraded || existing
-          this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, finalPath)
-          const localPath = this.resolveLocalPathForPayload(finalPath, payload.preferFilePath)
-          const isNonHd = !this.isHdPath(finalPath)
-          const hasUpdate = isNonHd ? (this.updateFlags.get(cacheKey) ?? false) : false
-          if (isNonHd) {
-            if (this.shouldCheckImageUpdate(payload)) {
-              this.triggerUpdateCheck(payload, cacheKey, finalPath)
-            }
-          } else {
-            this.updateFlags.delete(cacheKey)
+      if (!datPath) continue
+      const existing = this.findCachedOutputByDatPath(datPath, payload.sessionId, false)
+      if (existing) {
+        const upgraded = !this.isHdPath(existing)
+          ? await this.tryPromoteThumbnailCache(payload, cacheKey, existing)
+          : null
+        const finalPath = upgraded || existing
+        this.cacheResolvedPaths(cacheKey, payload.imageMd5, payload.imageDatName, finalPath)
+        const localPath = this.resolveLocalPathForPayload(finalPath, payload.preferFilePath)
+        const isNonHd = !this.isHdPath(finalPath)
+        const hasUpdate = isNonHd ? (this.updateFlags.get(cacheKey) ?? false) : false
+        if (isNonHd) {
+          if (this.shouldCheckImageUpdate(payload)) {
+            this.triggerUpdateCheck(payload, cacheKey, finalPath)
           }
-          this.emitCacheResolved(payload, cacheKey, this.resolveEmitPath(finalPath, payload.preferFilePath))
-          return { success: true, localPath, hasUpdate }
+        } else {
+          this.updateFlags.delete(cacheKey)
         }
+        this.emitCacheResolved(payload, cacheKey, this.resolveEmitPath(finalPath, payload.preferFilePath))
+        return { success: true, localPath, hasUpdate }
       }
     }
     this.logInfo('未找到缓存', { md5: payload.imageMd5, datName: payload.imageDatName })
@@ -297,17 +295,19 @@ export class ImageDecryptService {
     const dbPath = this.getConfiguredDbPath()
     if (!wxid || !dbPath) return
 
-    const accountDir = this.resolveAccountDir(dbPath, wxid)
-    if (!accountDir) return
+    const accountDirs = this.resolveAccountDirs(dbPath, wxid)
+    if (accountDirs.length === 0) return
 
     try {
-      for (const md5 of normalizedList) {
-        if (!this.looksLikeMd5(md5)) continue
-        const selectedPath = this.selectBestDatPathByBase(accountDir, md5, undefined, undefined, true)
-        if (!selectedPath) continue
-        this.cacheDatPath(accountDir, md5, selectedPath)
-        const fileName = basename(selectedPath).toLowerCase()
-        if (fileName) this.cacheDatPath(accountDir, fileName, selectedPath)
+      for (const accountDir of accountDirs) {
+        for (const md5 of normalizedList) {
+          if (!this.looksLikeMd5(md5)) continue
+          const selectedPath = this.selectBestDatPathByBase(accountDir, md5, undefined, undefined, true)
+          if (!selectedPath) continue
+          this.cacheDatPath(accountDir, md5, selectedPath)
+          const fileName = basename(selectedPath).toLowerCase()
+          if (fileName) this.cacheDatPath(accountDir, fileName, selectedPath)
+        }
       }
     } catch {
       // ignore preload failures
@@ -329,36 +329,60 @@ export class ImageDecryptService {
         return { success: false, error: '未配置账号或数据库路径', failureKind: 'not_found' }
       }
 
-      const accountDir = this.resolveAccountDir(dbPath, wxid)
-      if (!accountDir) {
+      const accountDirs = this.resolveAccountDirs(dbPath, wxid)
+      if (accountDirs.length === 0) {
         this.logError('未找到账号目录', undefined, { dbPath, wxid })
         this.emitDecryptProgress(payload, cacheKey, 'failed', 100, 'error', '账号目录缺失')
         return { success: false, error: '未找到账号目录', failureKind: 'not_found' }
       }
 
+      let accountDir = accountDirs[0]
       let datPath: string | null = null
       let usedHdAttempt = false
       let fallbackToThumbnail = false
 
-      // force=true 时先尝试高清；若高清缺失则回退到缩略图，避免直接失败。
-      if (payload.force) {
-        usedHdAttempt = true
-        datPath = await this.resolveDatPath(
-          accountDir,
-          payload.imageMd5,
-          payload.imageDatName,
-          payload.sessionId,
-          payload.createTime,
-          {
-            allowThumbnail: false,
-            skipResolvedCache: false,
-            hardlinkOnly: payload.hardlinkOnly === true,
-            allowDatNameScanFallback: payload.allowCacheIndex !== false
-          }
-        )
-        if (!datPath) {
+      for (const candidateAccountDir of accountDirs) {
+        // force=true 时先尝试高清；若高清缺失则回退到缩略图，避免直接失败。
+        if (payload.force) {
+          usedHdAttempt = true
           datPath = await this.resolveDatPath(
-            accountDir,
+            candidateAccountDir,
+            payload.imageMd5,
+            payload.imageDatName,
+            payload.sessionId,
+            payload.createTime,
+            {
+              allowThumbnail: false,
+              skipResolvedCache: false,
+              hardlinkOnly: payload.hardlinkOnly === true,
+              allowDatNameScanFallback: payload.allowCacheIndex !== false
+            }
+          )
+          if (!datPath) {
+            datPath = await this.resolveDatPath(
+              candidateAccountDir,
+              payload.imageMd5,
+              payload.imageDatName,
+              payload.sessionId,
+              payload.createTime,
+              {
+                allowThumbnail: true,
+                skipResolvedCache: false,
+                hardlinkOnly: payload.hardlinkOnly === true,
+                allowDatNameScanFallback: payload.allowCacheIndex !== false
+              }
+            )
+            fallbackToThumbnail = Boolean(datPath)
+            if (fallbackToThumbnail) {
+              this.logInfo('高清缺失，回退解密缩略图', {
+                md5: payload.imageMd5,
+                datName: payload.imageDatName
+              })
+            }
+          }
+        } else {
+          datPath = await this.resolveDatPath(
+            candidateAccountDir,
             payload.imageMd5,
             payload.imageDatName,
             payload.sessionId,
@@ -370,28 +394,11 @@ export class ImageDecryptService {
               allowDatNameScanFallback: payload.allowCacheIndex !== false
             }
           )
-          fallbackToThumbnail = Boolean(datPath)
-          if (fallbackToThumbnail) {
-            this.logInfo('高清缺失，回退解密缩略图', {
-              md5: payload.imageMd5,
-              datName: payload.imageDatName
-            })
-          }
         }
-      } else {
-        datPath = await this.resolveDatPath(
-          accountDir,
-          payload.imageMd5,
-          payload.imageDatName,
-          payload.sessionId,
-          payload.createTime,
-          {
-            allowThumbnail: true,
-            skipResolvedCache: false,
-            hardlinkOnly: payload.hardlinkOnly === true,
-            allowDatNameScanFallback: payload.allowCacheIndex !== false
-          }
-        )
+        if (datPath) {
+          accountDir = candidateAccountDir
+          break
+        }
       }
 
       if (!datPath) {
@@ -514,43 +521,63 @@ export class ImageDecryptService {
   }
 
   private resolveAccountDir(dbPath: string, wxid: string): string | null {
+    return this.resolveAccountDirs(dbPath, wxid)[0] || null
+  }
+
+  private resolveAccountDirs(dbPath: string, wxid: string): string[] {
+    const rawWxid = wxid.trim()
     const cleanedWxid = this.cleanAccountDirName(wxid)
     const normalized = dbPath.replace(/[\\/]+$/, '')
-    const cacheKey = `${normalized}|${cleanedWxid.toLowerCase()}`
+    const cacheKey = `${normalized}|${rawWxid.toLowerCase()}|${cleanedWxid.toLowerCase()}`
     const cached = this.accountDirCache.get(cacheKey)
-    if (cached && existsSync(cached)) return cached
     if (cached && !existsSync(cached)) {
       this.accountDirCache.delete(cacheKey)
     }
 
-    const direct = join(normalized, cleanedWxid)
-    if (existsSync(direct)) {
-      this.accountDirCache.set(cacheKey, direct)
-      return direct
+    const candidates: string[] = []
+    const addCandidate = (dirPath: string): void => {
+      if (!dirPath || candidates.includes(dirPath)) return
+      if (!existsSync(dirPath) || !this.isAccountDir(dirPath)) return
+      candidates.push(dirPath)
     }
+    if (cached && existsSync(cached)) addCandidate(cached)
 
     if (this.isAccountDir(normalized)) {
-      this.accountDirCache.set(cacheKey, normalized)
-      return normalized
-    }
+      addCandidate(normalized)
+    } else {
+      if (rawWxid) addCandidate(join(normalized, rawWxid))
 
-    try {
-      const entries = readdirSync(normalized)
-      const lowerWxid = cleanedWxid.toLowerCase()
-      for (const entry of entries) {
-        const entryPath = join(normalized, entry)
-        if (!this.isDirectory(entryPath)) continue
-        const lowerEntry = entry.toLowerCase()
-        if (lowerEntry === lowerWxid || lowerEntry.startsWith(`${lowerWxid}_`)) {
-          if (this.isAccountDir(entryPath)) {
-            this.accountDirCache.set(cacheKey, entryPath)
-            return entryPath
+      try {
+        const entries = readdirSync(normalized)
+        const lowerRawWxid = rawWxid.toLowerCase()
+        const lowerWxid = cleanedWxid.toLowerCase()
+        const sortedEntries = entries.slice().sort((a, b) => {
+          const lowerA = a.toLowerCase()
+          const lowerB = b.toLowerCase()
+          if (lowerRawWxid && lowerA === lowerRawWxid) return -1
+          if (lowerRawWxid && lowerB === lowerRawWxid) return 1
+          const aIsSuffixed = lowerA.startsWith(`${lowerWxid}_`)
+          const bIsSuffixed = lowerB.startsWith(`${lowerWxid}_`)
+          if (aIsSuffixed !== bIsSuffixed) return aIsSuffixed ? -1 : 1
+          return lowerA.localeCompare(lowerB)
+        })
+        for (const entry of sortedEntries) {
+          const lowerEntry = entry.toLowerCase()
+          if (
+            (lowerRawWxid && lowerEntry === lowerRawWxid) ||
+            lowerEntry === lowerWxid ||
+            lowerEntry.startsWith(`${lowerWxid}_`)
+          ) {
+            addCandidate(join(normalized, entry))
           }
         }
-      }
-    } catch { }
+      } catch { }
 
-    return null
+      if (cleanedWxid) addCandidate(join(normalized, cleanedWxid))
+    }
+
+    if (candidates[0]) this.accountDirCache.set(cacheKey, candidates[0])
+    return candidates
   }
 
   private resolveCurrentAccountDir(): string | null {
@@ -558,6 +585,13 @@ export class ImageDecryptService {
     const dbPath = this.getConfiguredDbPath()
     if (!wxid || !dbPath) return null
     return this.resolveAccountDir(dbPath, wxid)
+  }
+
+  private resolveCurrentAccountDirs(): string[] {
+    const wxid = this.getConfiguredMyWxid()
+    const dbPath = this.getConfiguredDbPath()
+    if (!wxid || !dbPath) return []
+    return this.resolveAccountDirs(dbPath, wxid)
   }
 
   /**
@@ -696,8 +730,8 @@ export class ImageDecryptService {
     const wxid = this.configService.get('myWxid')
     const dbPath = this.configService.get('dbPath')
     if (!wxid || !dbPath) return false
-    const accountDir = this.resolveAccountDir(dbPath, wxid)
-    if (!accountDir) return false
+    const accountDirs = this.resolveAccountDirs(dbPath, wxid)
+    if (accountDirs.length === 0) return false
 
     const lookupBases = this.collectLookupBasesForScan(payload.imageMd5, payload.imageDatName, true)
     if (lookupBases.length === 0) return false
@@ -705,27 +739,29 @@ export class ImageDecryptService {
     let currentTier = this.getCachedPathTier(cachedPath)
     let bestDatPath: string | null = null
     let bestDatTier = -1
-    for (const baseMd5 of lookupBases) {
-      const candidate = this.selectBestDatPathByBase(accountDir, baseMd5, payload.sessionId, payload.createTime, true)
-      if (!candidate) continue
-      const candidateTier = this.getDatTier(candidate, baseMd5)
-      if (candidateTier <= 0) continue
-      if (!bestDatPath) {
-        bestDatPath = candidate
-        bestDatTier = candidateTier
-        continue
-      }
-      if (candidateTier > bestDatTier) {
-        bestDatPath = candidate
-        bestDatTier = candidateTier
-        continue
-      }
-      if (candidateTier === bestDatTier) {
-        const candidateSize = this.fileSizeSafe(candidate)
-        const bestSize = this.fileSizeSafe(bestDatPath)
-        if (candidateSize > bestSize) {
+    for (const accountDir of accountDirs) {
+      for (const baseMd5 of lookupBases) {
+        const candidate = this.selectBestDatPathByBase(accountDir, baseMd5, payload.sessionId, payload.createTime, true)
+        if (!candidate) continue
+        const candidateTier = this.getDatTier(candidate, baseMd5)
+        if (candidateTier <= 0) continue
+        if (!bestDatPath) {
           bestDatPath = candidate
           bestDatTier = candidateTier
+          continue
+        }
+        if (candidateTier > bestDatTier) {
+          bestDatPath = candidate
+          bestDatTier = candidateTier
+          continue
+        }
+        if (candidateTier === bestDatTier) {
+          const candidateSize = this.fileSizeSafe(candidate)
+          const bestSize = this.fileSizeSafe(bestDatPath)
+          if (candidateSize > bestSize) {
+            bestDatPath = candidate
+            bestDatTier = candidateTier
+          }
         }
       }
     }
@@ -743,17 +779,18 @@ export class ImageDecryptService {
     if (!this.isImageFile(cachedPath)) return null
     if (this.isHdPath(cachedPath)) return null
 
-    const accountDir = this.resolveCurrentAccountDir()
-    if (!accountDir) return null
-
-    const hdDatPath = await this.resolveDatPath(
-      accountDir,
-      payload.imageMd5,
-      payload.imageDatName,
-      payload.sessionId,
-      payload.createTime,
-      { allowThumbnail: false, skipResolvedCache: true, hardlinkOnly: true, allowDatNameScanFallback: false }
-    )
+    let hdDatPath: string | null = null
+    for (const accountDir of this.resolveCurrentAccountDirs()) {
+      hdDatPath = await this.resolveDatPath(
+        accountDir,
+        payload.imageMd5,
+        payload.imageDatName,
+        payload.sessionId,
+        payload.createTime,
+        { allowThumbnail: false, skipResolvedCache: true, hardlinkOnly: true, allowDatNameScanFallback: false }
+      )
+      if (hdDatPath) break
+    }
     if (!hdDatPath) return null
 
     const existingHd = this.findCachedOutputByDatPath(hdDatPath, payload.sessionId, true)

@@ -119,35 +119,110 @@ class VideoService {
   }
 
   private getScopeKey(dbPath: string, wxid: string): string {
-    return `${dbPath}::${this.cleanWxid(wxid)}`.toLowerCase()
+    return `${dbPath}::${wxid}::${this.cleanWxid(wxid)}`.toLowerCase()
   }
 
   private resolveVideoBaseDir(dbPath: string, wxid: string): string {
+    return this.resolveVideoBaseDirs(dbPath, wxid)[0] || join(dbPath, wxid, 'msg', 'video')
+  }
+
+  private resolveVideoBaseDirs(dbPath: string, wxid: string): string[] {
+    const normalizedDbPath = String(dbPath || '').replace(/[\\/]+$/, '')
+    const rawWxid = String(wxid || '').trim()
     const cleanedWxid = this.cleanWxid(wxid)
-    const dbPathLower = dbPath.toLowerCase()
-    const wxidLower = wxid.toLowerCase()
+    const dbPathLower = normalizedDbPath.toLowerCase()
+    const wxidLower = rawWxid.toLowerCase()
     const cleanedWxidLower = cleanedWxid.toLowerCase()
     const dbPathContainsWxid = dbPathLower.includes(wxidLower) || dbPathLower.includes(cleanedWxidLower)
-    if (dbPathContainsWxid) {
-      return join(dbPath, 'msg', 'video')
+    const candidates: string[] = []
+    const addCandidate = (dirPath: string): void => {
+      if (!dirPath || candidates.includes(dirPath)) return
+      candidates.push(dirPath)
     }
-    return join(dbPath, wxid, 'msg', 'video')
+
+    if (dbPathContainsWxid) {
+      addCandidate(join(normalizedDbPath, 'msg', 'video'))
+      return candidates
+    }
+
+    if (rawWxid) addCandidate(join(normalizedDbPath, rawWxid, 'msg', 'video'))
+
+    try {
+      const entries = readdirSync(normalizedDbPath, { withFileTypes: true })
+      const sortedEntries = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => {
+          const lowerA = a.toLowerCase()
+          const lowerB = b.toLowerCase()
+          if (wxidLower && lowerA === wxidLower) return -1
+          if (wxidLower && lowerB === wxidLower) return 1
+          const aIsSuffixed = lowerA.startsWith(`${cleanedWxidLower}_`)
+          const bIsSuffixed = lowerB.startsWith(`${cleanedWxidLower}_`)
+          if (aIsSuffixed !== bIsSuffixed) return aIsSuffixed ? -1 : 1
+          return lowerA.localeCompare(lowerB)
+        })
+      for (const entry of sortedEntries) {
+        const lowerEntry = entry.toLowerCase()
+        if (
+          (wxidLower && lowerEntry === wxidLower) ||
+          lowerEntry === cleanedWxidLower ||
+          lowerEntry.startsWith(`${cleanedWxidLower}_`)
+        ) {
+          addCandidate(join(normalizedDbPath, entry, 'msg', 'video'))
+        }
+      }
+    } catch { }
+
+    if (cleanedWxid) {
+      addCandidate(join(normalizedDbPath, cleanedWxid, 'msg', 'video'))
+    }
+    return candidates
   }
 
   private getHardlinkDbPaths(dbPath: string, wxid: string, cleanedWxid: string): string[] {
-    const dbPathLower = dbPath.toLowerCase()
-    const wxidLower = wxid.toLowerCase()
+    const normalizedDbPath = String(dbPath || '').replace(/[\\/]+$/, '')
+    const dbPathLower = normalizedDbPath.toLowerCase()
+    const wxidLower = String(wxid || '').trim().toLowerCase()
     const cleanedWxidLower = cleanedWxid.toLowerCase()
     const dbPathContainsWxid = dbPathLower.includes(wxidLower) || dbPathLower.includes(cleanedWxidLower)
 
     if (dbPathContainsWxid) {
-      return [join(dbPath, 'db_storage', 'hardlink', 'hardlink.db')]
+      return [join(normalizedDbPath, 'db_storage', 'hardlink', 'hardlink.db')]
     }
 
-    return [
-      join(dbPath, wxid, 'db_storage', 'hardlink', 'hardlink.db'),
-      join(dbPath, cleanedWxid, 'db_storage', 'hardlink', 'hardlink.db')
-    ]
+    const paths: string[] = []
+    const addPath = (p: string): void => {
+      if (p && !paths.includes(p)) paths.push(p)
+    }
+
+    if (wxid) addPath(join(normalizedDbPath, wxid, 'db_storage', 'hardlink', 'hardlink.db'))
+    try {
+      const entries = readdirSync(normalizedDbPath, { withFileTypes: true })
+      const sortedEntries = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => {
+          const lowerA = a.toLowerCase()
+          const lowerB = b.toLowerCase()
+          const aIsSuffixed = lowerA.startsWith(`${cleanedWxidLower}_`)
+          const bIsSuffixed = lowerB.startsWith(`${cleanedWxidLower}_`)
+          if (aIsSuffixed !== bIsSuffixed) return aIsSuffixed ? -1 : 1
+          return lowerA.localeCompare(lowerB)
+        })
+      for (const entry of sortedEntries) {
+        const lowerEntry = entry.toLowerCase()
+        if (
+          (wxidLower && lowerEntry === wxidLower) ||
+          lowerEntry === cleanedWxidLower ||
+          lowerEntry.startsWith(`${cleanedWxidLower}_`)
+        ) {
+          addPath(join(normalizedDbPath, entry, 'db_storage', 'hardlink', 'hardlink.db'))
+        }
+      }
+    } catch { }
+    if (cleanedWxid) addPath(join(normalizedDbPath, cleanedWxid, 'db_storage', 'hardlink', 'hardlink.db'))
+    return paths
   }
 
   /**
@@ -489,27 +564,24 @@ class VideoService {
 
     const task = (async (): Promise<VideoInfo> => {
       const realVideoMd5 = this.normalizeVideoLookupKey(normalizedMd5) || normalizedMd5
-      const videoBaseDir = this.resolveVideoBaseDir(dbPath, wxid)
+      const videoBaseDirs = this.resolveVideoBaseDirs(dbPath, wxid)
+      for (const videoBaseDir of videoBaseDirs) {
+        if (!existsSync(videoBaseDir)) continue
 
-      if (!existsSync(videoBaseDir)) {
-        const miss = { exists: false }
-        this.writeTimedCache(this.videoInfoCache, cacheKey, miss, this.videoInfoCacheTtlMs, this.maxCacheEntries)
-        return miss
-      }
+        const index = this.getOrBuildVideoIndex(videoBaseDir)
+        const indexed = this.getVideoInfoFromIndex(index, realVideoMd5, includePoster, posterFormat)
+        if (indexed) {
+          const withPoster = await this.ensurePoster(indexed, includePoster, posterFormat)
+          this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
+          return withPoster
+        }
 
-      const index = this.getOrBuildVideoIndex(videoBaseDir)
-      const indexed = this.getVideoInfoFromIndex(index, realVideoMd5, includePoster, posterFormat)
-      if (indexed) {
-        const withPoster = await this.ensurePoster(indexed, includePoster, posterFormat)
-        this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
-        return withPoster
-      }
-
-      const fallback = this.fallbackScanVideo(videoBaseDir, realVideoMd5, includePoster, posterFormat)
-      if (fallback) {
-        const withPoster = await this.ensurePoster(fallback, includePoster, posterFormat)
-        this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
-        return withPoster
+        const fallback = this.fallbackScanVideo(videoBaseDir, realVideoMd5, includePoster, posterFormat)
+        if (fallback) {
+          const withPoster = await this.ensurePoster(fallback, includePoster, posterFormat)
+          this.writeTimedCache(this.videoInfoCache, cacheKey, withPoster, this.videoInfoCacheTtlMs, this.maxCacheEntries)
+          return withPoster
+        }
       }
 
       const miss = { exists: false }
