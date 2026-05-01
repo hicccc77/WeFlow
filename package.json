@@ -34,7 +34,7 @@
     "jieba-wasm": "^2.2.0",
     "jszip": "^3.10.1",
     "koffi": "^2.9.0",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.8.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",
