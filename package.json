@@ -39,7 +39,7 @@
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.0",
-    "react-virtuoso": "^4.18.1",
+    "react-virtuoso": "^4.18.5",
     "remark-gfm": "^4.0.1",
     "sherpa-onnx-node": "^1.10.38",
     "silk-wasm": "^3.7.1",
