@@ -15,7 +15,7 @@ const MEDIA_HOST_HINTS = ['mmsns.qpic.cn', 'vweixinthumb', 'snstimeline', 'snsvi
 const isSnsVideoUrl = (url?: string): boolean => {
     if (!url) return false
     const lower = url.toLowerCase()
-    return (lower.includes('snsvideodownload') || lower.includes('.mp4') || lower.includes('video')) && !lower.includes('vweixinthumb')
+    return (lower.includes('snsvideodownload') || lower.includes('stodownload') || lower.includes('.mp4') || lower.includes('video')) && !lower.includes('vweixinthumb')
 }
 
 const decodeHtmlEntities = (text: string): string => {

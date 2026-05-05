@@ -8,14 +8,20 @@ interface SnsMedia {
     thumb: string
     md5?: string
     token?: string
+    thumbToken?: string
     key?: string
+    thumbKey?: string
     encIdx?: string
+    thumbEncIdx?: string
     livePhoto?: {
         url: string
         thumb: string
         token?: string
+        thumbToken?: string
         key?: string
+        thumbKey?: string
         encIdx?: string
+        thumbEncIdx?: string
     }
 }
 
@@ -29,7 +35,7 @@ interface SnsMediaGridProps {
 const isSnsVideoUrl = (url?: string): boolean => {
     if (!url) return false
     const lower = url.toLowerCase()
-    return (lower.includes('snsvideodownload') || lower.includes('.mp4') || lower.includes('video')) && !lower.includes('vweixinthumb')
+    return (lower.includes('snsvideodownload') || lower.includes('stodownload') || lower.includes('.mp4') || lower.includes('video')) && !lower.includes('vweixinthumb')
 }
 
 const extractVideoFrame = async (videoPath: string): Promise<string> => {
@@ -82,7 +88,6 @@ const extractVideoFrame = async (videoPath: string): Promise<string> => {
 }
 
 const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsMedia; postType?: number; onPreview: (src: string, isVideo?: boolean, liveVideoPath?: string) => void; onMediaDeleted?: () => void }) => {
-    const [error, setError] = useState(false)
     const [deleted, setDeleted] = useState(false)
     const [loading, setLoading] = useState(true)
     const markDeleted = () => { setDeleted(true); onMediaDeleted?.() }
@@ -99,6 +104,11 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
     const targetUrl = media.thumb || media.url
     // type 7 的朋友圈媒体不需要解密，直接使用原始 URL
     const skipDecrypt = postType === 7
+    const markFailed = (message?: unknown) => {
+        console.warn('[SnsMediaGrid] media load failed', message)
+        if (!isVideo && targetUrl) setThumbSrc(targetUrl)
+        setLoading(false)
+    }
 
     // 视频重试：失败时重试最多2次，耗尽才标记删除
     const videoRetryOrDelete = () => {
@@ -119,18 +129,29 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
         const load = async () => {
             try {
                 if (!isVideo) {
-                    // For images, we proxy to get the local path/base64
-                    const result = await window.electronAPI.sns.proxyImage({
-                        url: targetUrl,
-                        key: skipDecrypt ? undefined : media.key
-                    })
+                    // Newer SNS records may require thumbKey/thumbToken for thumbnails,
+                    // while older records may still need the main key or even the full image URL.
+                    const imageCandidates = [
+                        { url: targetUrl, key: skipDecrypt ? undefined : ((targetUrl === media.thumb ? media.thumbKey : media.key) || media.key) },
+                        { url: targetUrl, key: skipDecrypt ? undefined : media.key },
+                        { url: media.url || targetUrl, key: skipDecrypt ? undefined : media.key },
+                        { url: media.url || targetUrl, key: skipDecrypt ? undefined : media.thumbKey }
+                    ].filter((item, index, list) => (
+                        !!item.url && list.findIndex((candidate) => candidate.url === item.url && candidate.key === item.key) === index
+                    ))
+
+                    let result: { success: boolean; dataUrl?: string; videoPath?: string; error?: string } = { success: false, error: 'no candidate' }
+                    for (const candidate of imageCandidates) {
+                        result = await window.electronAPI.sns.proxyImage(candidate)
+                        if (result.success) break
+                    }
                     if (cancelled) return
 
                     if (result.success) {
                         if (result.dataUrl) setThumbSrc(result.dataUrl)
                         else if (result.videoPath) setThumbSrc(`file://${result.videoPath.replace(/\\/g, '/')}`)
                     } else {
-                        markDeleted()
+                        markFailed(result.error)
                     }
 
                     // Pre-load live photo video if needed
@@ -183,7 +204,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     if (isVideo) {
                         videoRetryOrDelete()
                     } else {
-                        markDeleted()
+                        markFailed(e)
                     }
                     setLoading(false)
                     setIsGeneratingCover(false)
@@ -305,7 +326,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     src={thumbSrc}
                     className="media-image"
                     loading="lazy"
-                    onError={() => { if (!loading && !isVideo) markDeleted() }}
+                    onError={() => { if (!loading && !isVideo) markFailed('image render error') }}
                     alt=""
                 />
             ) : null}

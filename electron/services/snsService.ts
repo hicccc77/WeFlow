@@ -14,8 +14,11 @@ export interface SnsLivePhoto {
     thumb: string
     md5?: string
     token?: string
+    thumbToken?: string
     key?: string
+    thumbKey?: string
     encIdx?: string
+    thumbEncIdx?: string
 }
 
 export interface SnsMedia {
@@ -23,8 +26,11 @@ export interface SnsMedia {
     thumb: string
     md5?: string
     token?: string
+    thumbToken?: string
     key?: string
+    thumbKey?: string
     encIdx?: string
+    thumbEncIdx?: string
     livePhoto?: SnsLivePhoto
 }
 
@@ -196,7 +202,7 @@ export const isVideoUrl = (url: string) => {
     if (!url) return false
     // 排除 vweixinthumb 域名 (缩略图)
     if (url.includes('vweixinthumb')) return false
-    return url.includes('snsvideodownload') || url.includes('video') || url.includes('.mp4')
+    return url.includes('snsvideodownload') || url.includes('stodownload') || url.includes('video') || url.includes('.mp4')
 }
 
 import { Isaac64 } from './isaac64'
@@ -703,10 +709,13 @@ class SnsService {
                 const item: SnsMedia = {
                     url: urlMatch ? urlMatch[1].trim() : '',
                     thumb: thumbMatch ? thumbMatch[1].trim() : '',
-                    token: urlToken || thumbToken,
-                    key: urlKey || thumbKey,
+                    token: urlToken,
+                    thumbToken,
+                    key: urlKey,
+                    thumbKey,
                     md5: urlMd5,
-                    encIdx: urlEncIdx || thumbEncIdx
+                    encIdx: urlEncIdx,
+                    thumbEncIdx
                 }
 
                 const livePhotoMatch = mx.match(/<livePhoto>([\s\S]*?)<\/livePhoto>/i)
@@ -717,20 +726,28 @@ class SnsService {
                     const lpThumb = lx.match(/<thumb[^>]*>([^<]+)<\/thumb>/i)
                     const lpThumbTag = lx.match(/<thumb([^>]*)>/i)
                     let lpToken: string | undefined, lpKey: string | undefined, lpEncIdx: string | undefined
+                    let lpThumbToken: string | undefined, lpThumbKey: string | undefined, lpThumbEncIdx: string | undefined
                     if (lpUrlTag?.[1]) {
                         const a = lpUrlTag[1]
                         lpToken = a.match(/token="([^"]+)"/i)?.[1]
                         lpKey = a.match(/key="([^"]+)"/i)?.[1]
                         lpEncIdx = a.match(/enc_idx="([^"]+)"/i)?.[1]
                     }
-                    if (!lpToken && lpThumbTag?.[1]) lpToken = lpThumbTag[1].match(/token="([^"]+)"/i)?.[1]
-                    if (!lpKey && lpThumbTag?.[1]) lpKey = lpThumbTag[1].match(/key="([^"]+)"/i)?.[1]
+                    if (lpThumbTag?.[1]) {
+                        const a = lpThumbTag[1]
+                        lpThumbToken = a.match(/token="([^"]+)"/i)?.[1]
+                        lpThumbKey = a.match(/key="([^"]+)"/i)?.[1]
+                        lpThumbEncIdx = a.match(/enc_idx="([^"]+)"/i)?.[1]
+                    }
                     item.livePhoto = {
                         url: lpUrl ? lpUrl[1].trim() : '',
                         thumb: lpThumb ? lpThumb[1].trim() : '',
                         token: lpToken,
+                        thumbToken: lpThumbToken,
                         key: lpKey,
-                        encIdx: lpEncIdx
+                        thumbKey: lpThumbKey,
+                        encIdx: lpEncIdx,
+                        thumbEncIdx: lpThumbEncIdx
                     }
                 }
                 media.push(item)
@@ -1179,22 +1196,49 @@ class SnsService {
                 this.parseLocationFromXml(rawXml)
             )
 
-            const fixedMedia = (post.media || []).map((m: any) => ({
-                url: fixSnsUrl(m.url, m.token, isVideoPost),
-                thumb: fixSnsUrl(m.thumb, m.token, false),
-                md5: m.md5,
-                token: m.token,
-                key: isVideoPost ? (videoKey || m.key) : m.key,
-                encIdx: m.encIdx || m.enc_idx,
-                livePhoto: m.livePhoto ? {
-                    ...m.livePhoto,
-                    url: fixSnsUrl(m.livePhoto.url, m.livePhoto.token, true),
-                    thumb: fixSnsUrl(m.livePhoto.thumb, m.livePhoto.token, false),
-                    token: m.livePhoto.token,
-                    key: videoKey || m.livePhoto.key || m.key,
-                    encIdx: m.livePhoto.encIdx || m.livePhoto.enc_idx
-                } : undefined
-            }))
+            const xmlMediaResult = this.parseMediaFromXml(rawXml)
+            const xmlMediaMap = new Map<string, SnsMedia>()
+            xmlMediaResult.media.forEach((item) => {
+                if (item.url) xmlMediaMap.set(item.url, item)
+                if (item.thumb) xmlMediaMap.set(item.thumb, item)
+            })
+
+            const fixedMedia = (post.media || []).map((m: any, idx: number) => {
+                const xmlMatch = xmlMediaMap.get(m.url) || xmlMediaMap.get(m.thumb) || xmlMediaResult.media[idx]
+                const resolvedUrl = m.url || xmlMatch?.url || ''
+                const resolvedThumb = m.thumb || xmlMatch?.thumb || ''
+                const resolvedToken = m.token || xmlMatch?.token
+                const resolvedThumbToken = m.thumbToken || xmlMatch?.thumbToken || resolvedToken
+                const resolvedKey = isVideoPost ? (videoKey || m.key || xmlMatch?.key || xmlMediaResult.videoKey) : (m.key || xmlMatch?.key)
+                const resolvedThumbKey = m.thumbKey || xmlMatch?.thumbKey || resolvedKey
+                const resolvedEncIdx = m.encIdx || m.enc_idx || xmlMatch?.encIdx
+                const resolvedThumbEncIdx = m.thumbEncIdx || m.thumb_enc_idx || xmlMatch?.thumbEncIdx || resolvedEncIdx
+                const liveXml = xmlMatch?.livePhoto
+                const livePhoto = m.livePhoto || liveXml
+
+                return {
+                    url: fixSnsUrl(resolvedUrl, resolvedToken, isVideoPost),
+                    thumb: fixSnsUrl(resolvedThumb, resolvedThumbToken, false),
+                    md5: m.md5 || xmlMatch?.md5,
+                    token: resolvedToken,
+                    thumbToken: resolvedThumbToken,
+                    key: resolvedKey,
+                    thumbKey: resolvedThumbKey,
+                    encIdx: resolvedEncIdx,
+                    thumbEncIdx: resolvedThumbEncIdx,
+                    livePhoto: livePhoto ? {
+                        ...livePhoto,
+                        url: fixSnsUrl(livePhoto.url || liveXml?.url || '', livePhoto.token || liveXml?.token, true),
+                        thumb: fixSnsUrl(livePhoto.thumb || liveXml?.thumb || '', livePhoto.thumbToken || liveXml?.thumbToken || livePhoto.token || liveXml?.token, false),
+                        token: livePhoto.token || liveXml?.token,
+                        thumbToken: livePhoto.thumbToken || liveXml?.thumbToken,
+                        key: videoKey || livePhoto.key || liveXml?.key || resolvedKey,
+                        thumbKey: livePhoto.thumbKey || liveXml?.thumbKey || livePhoto.key || liveXml?.key || resolvedThumbKey,
+                        encIdx: livePhoto.encIdx || liveXml?.encIdx,
+                        thumbEncIdx: livePhoto.thumbEncIdx || liveXml?.thumbEncIdx
+                    } : undefined
+                }
+            })
 
             //数据服务已返回完整评论数据（含 emojis、refNickname）
             // 如果数据服务评论缺少表情包信息，回退到从 rawXml 重新解析

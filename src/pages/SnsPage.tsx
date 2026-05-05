@@ -24,6 +24,7 @@ import {
 const SNS_PAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const SNS_PAGE_CACHE_POST_LIMIT = 200
 const SNS_PAGE_CACHE_SCOPE_FALLBACK = '__default__'
+const SNS_PAGE_CACHE_SCHEMA_VERSION = 'v2'
 const CONTACT_COUNT_SORT_DEBOUNCE_MS = 200
 const CONTACT_COUNT_BATCH_SIZE = 10
 
@@ -528,7 +529,7 @@ export default function SnsPage() {
     const ensureSnsCacheScopeKey = useCallback(async () => {
         if (cacheScopeKeyRef.current) return cacheScopeKeyRef.current
         const wxid = (await configService.getMyWxid())?.trim() || SNS_PAGE_CACHE_SCOPE_FALLBACK
-        const scopeKey = `sns_page:${wxid}`
+        const scopeKey = `sns_page:${SNS_PAGE_CACHE_SCHEMA_VERSION}:${wxid}`
         cacheScopeKeyRef.current = scopeKey
         return scopeKey
     }, [])
