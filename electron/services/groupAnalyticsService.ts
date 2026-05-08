@@ -1,5 +1,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import https from 'https'
+import http from 'http'
+import { URL } from 'url'
 import ExcelJS from 'exceljs'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
@@ -61,6 +64,38 @@ export interface GroupMemberMessagesPage {
   messages: Message[]
   hasMore: boolean
   nextCursor: number
+}
+
+export interface GroupDailyReportTopic {
+  category: 'product' | 'technology' | 'business' | 'operations' | 'other'
+  title: string
+  timeRange: string
+  summary: string
+  takeaway: string
+  actionItem: string
+  keywords: string[]
+  messageCount: number
+  speakerNames: string[]
+}
+
+export interface GroupDailyReportData {
+  group: GroupChatInfo
+  generatedAt: number
+  startTime: number
+  endTime: number
+  totalMessages: number
+  newMessageCount: number
+  memberCount: number
+  activeMemberCount: number
+  topSpeakers: GroupMessageRank[]
+  activeHours: Array<{ hour: number; count: number }>
+  mediaStats: GroupMediaStats
+  overview: string
+  topics: GroupDailyReportTopic[]
+  summaryEngine: {
+    type: 'ai' | 'local'
+    model: string
+  }
 }
 
 interface GroupMemberContactInfo {
@@ -805,6 +840,390 @@ class GroupAnalyticsService {
     return normalized > 10000000000 ? Math.floor(normalized / 1000) : normalized
   }
 
+  private formatReportClock(timestamp: number): string {
+    if (!timestamp) return '--:--'
+    const date = new Date(timestamp * 1000)
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+
+  private stripReportText(content: string): string {
+    return String(content || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/^\s*([a-zA-Z0-9_@-]{4,}):(?!\/\/)\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  private extractReportTokens(text: string): string[] {
+    const stopwords = new Set([
+      '这个', '那个', '就是', '可以', '还是', '不是', '没有', '已经', '感觉', '因为', '所以', '然后', '现在',
+      '今天', '明天', '昨天', '一下', '一个', '我们', '你们', '他们', '大家', '什么', '怎么', '如果', '但是',
+      'the', 'and', 'for', 'with', 'that', 'this', 'you', 'are', 'not', 'from', 'have', 'will', 'can'
+    ])
+    const tokens = text.match(/[a-zA-Z][a-zA-Z0-9_-]{2,}|[\u4e00-\u9fa5]{2,8}/g) || []
+    return tokens
+      .map(token => token.trim())
+      .filter(token => token.length >= 2 && !stopwords.has(token.toLowerCase()))
+      .slice(0, 80)
+  }
+
+  private getReportCategoryDefinitions(): Array<{
+    key: GroupDailyReportTopic['category']
+    label: string
+    keywords: string[]
+    titleFallback: string
+    actionVerb: string
+  }> {
+    return [
+      {
+        key: 'product',
+        label: '产品体验',
+        keywords: ['产品', '功能', '体验', '用户', '需求', '场景', '界面', '交互', '小程序', '工具', '插件', '入口', '流程', '使用', '导出', '报告', '日报'],
+        titleFallback: '产品需求与体验问题',
+        actionVerb: '沉淀为产品需求池'
+      },
+      {
+        key: 'technology',
+        label: '技术实现',
+        keywords: ['技术', '接口', 'API', '模型', 'Agent', 'Claude', 'OpenAI', 'token', '数据库', '微信记录', '企微', '插件', '架构', '部署', '代码', '工具链', '自动化', 'Bot', 'CLI'],
+        titleFallback: '技术路径与实现方案',
+        actionVerb: '形成技术验证清单'
+      },
+      {
+        key: 'business',
+        label: '商业化',
+        keywords: ['商业', '付费', '客户', '价格', '定价', '价值', '转化', '增长', '销售', '市场', '私域', '获客', 'SaaS', '交付', '变现', '创业', '服务', '金融', '投资', '股票', '基金', '加密', '币', '收益', '资产', '融资'],
+        titleFallback: '商业化价值与转化机会',
+        actionVerb: '验证目标客户与付费场景'
+      },
+      {
+        key: 'operations',
+        label: '运营行动',
+        keywords: ['运营', '群', '社群', '活动', '分享', '内容', '课程', '共创', '报名', '反馈', '公告', '计划', '行动', '复盘', '指标', '数据'],
+        titleFallback: '社群运营与后续行动',
+        actionVerb: '拆解为社群运营动作'
+      }
+    ]
+  }
+
+  private scoreReportRelevance(text: string): number {
+    const normalized = text.toLowerCase()
+    let score = 0
+    for (const category of this.getReportCategoryDefinitions()) {
+      for (const keyword of category.keywords) {
+        if (normalized.includes(keyword.toLowerCase())) score += 2
+      }
+    }
+    if (/[？?]|怎么|如何|为啥|为什么|能否|是否|需要|建议|方案|问题|痛点|机会|价值|验证/.test(text)) score += 3
+    if (text.length >= 12) score += 1
+    if (/哈哈|[哈]{2,}|笑死|表情|收到|早上好|晚上好|辛苦|谢谢|OK|ok|嗯嗯|好的|可以的/.test(text) && text.length < 18) score -= 4
+    return score
+  }
+
+  private buildCategorySummary(
+    categoryLabel: string,
+    keywords: string[],
+    messageCount: number,
+    speakerNames: string[]
+  ): { summary: string; takeaway: string; actionItem: string } {
+    const focus = keywords.length > 0 ? keywords.slice(0, 4).join('、') : categoryLabel
+    const speakers = speakerNames.length > 0 ? `主要由 ${speakerNames.slice(0, 3).join('、')} 推动` : '多人参与讨论'
+    return {
+      summary: `${categoryLabel}方向出现 ${messageCount} 条有效讨论，${speakers}，核心焦点是 ${focus}。`,
+      takeaway: `可提炼为一个明确问题：${focus} 如何从讨论进入可验证的方案或决策。`,
+      actionItem: `建议下一步：围绕 ${focus} 补齐目标用户、约束条件、成功指标和负责人。`
+    }
+  }
+
+  private buildReportTitle(categoryLabel: string, keywords: string[], fallback: string): string {
+    if (keywords.length >= 2) return `${categoryLabel}：${keywords.slice(0, 2).join(' / ')}`
+    if (keywords.length === 1) return `${categoryLabel}：${keywords[0]}`
+    return fallback
+  }
+
+  private buildApiUrl(baseUrl: string, apiPath: string): string {
+    const base = baseUrl.replace(/\/+$/, '')
+    const suffix = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
+    return `${base}${suffix}`
+  }
+
+  private callOpenAICompatibleApi(
+    apiBaseUrl: string,
+    apiKey: string,
+    model: string,
+    messages: Array<{ role: string; content: string }>,
+    maxTokens: number
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const endpoint = this.buildApiUrl(apiBaseUrl, '/chat/completions')
+      let urlObj: URL
+      try {
+        urlObj = new URL(endpoint)
+      } catch {
+        reject(new Error(`无效的 API URL: ${endpoint}`))
+        return
+      }
+
+      const body = JSON.stringify({
+        model,
+        messages,
+        max_tokens: Math.max(1800, Math.min(6000, Math.floor(maxTokens || 3600))),
+        temperature: 0.25,
+        stream: false
+      })
+      const requestFn = urlObj.protocol === 'https:' ? https.request : http.request
+      const req = requestFn({
+        hostname: urlObj.hostname,
+        port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body).toString(),
+          Authorization: `Bearer ${apiKey}`
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data)
+            const content = parsed?.choices?.[0]?.message?.content
+            if (typeof content === 'string' && content.trim()) {
+              resolve(content.trim())
+              return
+            }
+            reject(new Error(`API 返回格式异常: ${data.slice(0, 240)}`))
+          } catch {
+            reject(new Error(`API JSON 解析失败: ${data.slice(0, 240)}`))
+          }
+        })
+      })
+      req.setTimeout(45_000, () => {
+        req.destroy()
+        reject(new Error('API 请求超时'))
+      })
+      req.on('error', reject)
+      req.write(body)
+      req.end()
+    })
+  }
+
+  private extractJsonObject(text: string): any | null {
+    const raw = String(text || '').trim()
+    if (!raw) return null
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
+    const candidate = fenced || raw
+    const direct = this.tryParseJson(candidate)
+    if (direct) return direct
+    const objectStart = candidate.indexOf('{')
+    const objectEnd = candidate.lastIndexOf('}')
+    const arrayStart = candidate.indexOf('[')
+    const arrayEnd = candidate.lastIndexOf(']')
+    const starts: Array<{ start: number; end: number }> = []
+    if (objectStart >= 0 && objectEnd > objectStart) starts.push({ start: objectStart, end: objectEnd })
+    if (arrayStart >= 0 && arrayEnd > arrayStart) starts.push({ start: arrayStart, end: arrayEnd })
+    starts.sort((a, b) => a.start - b.start)
+    const span = starts[0]
+    if (!span) return null
+    return this.tryParseJson(candidate.slice(span.start, span.end + 1))
+  }
+
+  private tryParseJson(raw: string): any | null {
+    try {
+      const parsed = JSON.parse(String(raw || '').trim())
+      if (typeof parsed === 'string') return this.tryParseJson(parsed)
+      return parsed
+    } catch {
+      return null
+    }
+  }
+
+  private looksLikeReportJson(text: unknown): boolean {
+    const raw = String(text || '').trim()
+    if (!raw) return false
+    return (
+      raw.startsWith('{') ||
+      raw.startsWith('[') ||
+      /"overview"\s*:|"topics"\s*:|"summary"\s*:|"category"\s*:|"title"\s*:/.test(raw)
+    )
+  }
+
+  private async repairAiReportJson(
+    apiBaseUrl: string,
+    apiKey: string,
+    model: string,
+    rawContent: string,
+    maxTokens: number
+  ): Promise<any | null> {
+    try {
+      const repaired = await this.callOpenAICompatibleApi(apiBaseUrl, apiKey, model, [
+        {
+          role: 'system',
+          content: '你只负责修复 JSON。输出必须是可被 JSON.parse 解析的 JSON 对象，不要 Markdown，不要解释。'
+        },
+        {
+          role: 'user',
+          content: [
+            '把下面内容修复为严格 JSON，字段保持为 overview 和 topics。',
+            'topics 中每项保留 category、title、timeRange、summary、takeaway、actionItem、keywords、messageCount、speakerNames。',
+            '如果原文有截断或缺字段，请基于已有文本补齐为自然中文，但不要输出 JSON 以外的文字。',
+            '',
+            rawContent
+          ].join('\n')
+        }
+      ], Math.max(maxTokens, 2400))
+      return this.extractJsonObject(repaired)
+    } catch (e) {
+      console.warn('[GroupDailyReport] AI JSON repair failed:', e)
+      return null
+    }
+  }
+
+  private normalizeAiReportTopics(value: unknown, beginTimestamp: number, endTimestamp: number): GroupDailyReportTopic[] {
+    const categories = new Set<GroupDailyReportTopic['category']>(['product', 'technology', 'business', 'operations', 'other'])
+    const source = typeof value === 'string' ? this.tryParseJson(value) : value
+    const items = Array.isArray(source)
+      ? source
+      : Array.isArray((source as any)?.topics)
+        ? (source as any).topics
+        : Array.isArray((source as any)?.items)
+          ? (source as any).items
+          : Array.isArray((source as any)?.data)
+            ? (source as any).data
+            : []
+    return items
+      .map((item: any): GroupDailyReportTopic | null => {
+        if (!item || typeof item !== 'object') return null
+        const category = categories.has(item.category) ? item.category as GroupDailyReportTopic['category'] : 'other'
+        const title = String(item.title || '').trim()
+        const summary = String(item.summary || item.description || item.detail || item.content || '').trim()
+        const takeaway = String(item.takeaway || item.conclusion || item.value || item.note || '').trim()
+        const actionItem = String(item.actionItem || item.action || item.nextStep || item.next_step || '').trim()
+        if (!title || !summary) return null
+        if (this.looksLikeReportJson(title) || this.looksLikeReportJson(summary)) return null
+        return {
+          category,
+          title,
+          timeRange: String(item.timeRange || `${this.formatReportClock(beginTimestamp)}~${this.formatReportClock(endTimestamp)}`).trim(),
+          summary,
+          takeaway: takeaway || '该议题值得继续跟进，建议补充更多上下文后形成明确判断。',
+          actionItem: actionItem || '建议下一步：明确负责人、目标用户、验证指标和时间点。',
+          keywords: Array.isArray(item.keywords) ? item.keywords.map((keyword: unknown) => String(keyword).trim()).filter(Boolean).slice(0, 6) : [],
+          messageCount: Number.isFinite(Number(item.messageCount)) ? Math.max(0, Math.floor(Number(item.messageCount))) : 0,
+          speakerNames: Array.isArray(item.speakerNames) ? item.speakerNames.map((name: unknown) => String(name).trim()).filter(Boolean).slice(0, 5) : []
+        }
+      })
+      .filter((item): item is GroupDailyReportTopic => Boolean(item))
+      .slice(0, 5)
+  }
+
+  private buildTopicsFromAiPlainText(text: string, beginTimestamp: number, endTimestamp: number): GroupDailyReportTopic[] {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map(line => line.replace(/^[-*#\d.\s、)）]+/, '').trim())
+      .filter(Boolean)
+    if (lines.length === 0) return []
+
+    const chunks: string[] = []
+    let current = ''
+    for (const line of lines) {
+      if (chunks.length < 5 && /^(产品|技术|商业|运营|社群|工具|AI|Agent|WeFlow|微信|企微|客户|总结|报告)/i.test(line) && current) {
+        chunks.push(current.trim())
+        current = line
+      } else {
+        current = current ? `${current} ${line}` : line
+      }
+    }
+    if (current) chunks.push(current.trim())
+
+    return chunks.slice(0, 5).map((chunk, index) => {
+      const titleSource = chunk.split(/[。.!！？?]/)[0] || chunk
+      const title = titleSource.length > 18 ? `${titleSource.slice(0, 18)}...` : titleSource
+      return {
+        category: 'other',
+        title,
+        timeRange: `${this.formatReportClock(beginTimestamp)}~${this.formatReportClock(endTimestamp)}`,
+        summary: chunk.length > 120 ? `${chunk.slice(0, 118)}...` : chunk,
+        takeaway: '该议题已从群聊中提炼为可继续跟进的讨论点。',
+        actionItem: '建议下一步：补齐负责人、验证目标和下一次复盘时间。',
+        keywords: [],
+        messageCount: 0,
+        speakerNames: []
+      }
+    })
+  }
+
+  private async generateAiDailyReportTopics(
+    groupName: string,
+    messages: Array<{ senderName: string; createTime: number; text: string }>,
+    beginTimestamp: number,
+    endTimestamp: number
+  ): Promise<{ topics: GroupDailyReportTopic[]; overview?: string; model?: string } | null> {
+    const apiBaseUrl = String(this.configService.get('aiModelApiBaseUrl') || '').trim()
+    const apiKey = String(this.configService.get('aiModelApiKey') || '').trim()
+    const model = String(this.configService.get('aiModelApiModel') || '').trim() || 'gpt-4o-mini'
+    const maxTokens = Number(this.configService.get('aiModelApiMaxTokens') || 3600)
+    if (!apiBaseUrl || !apiKey || messages.length === 0) {
+      const rawKey = (this.configService as any).store?.get?.('aiModelApiKey')
+      const encryptedButUnreadable = typeof rawKey === 'string' && rawKey.startsWith('safe:') && !apiKey
+      console.warn(
+        `[GroupDailyReport] AI skipped: base=${apiBaseUrl ? 'set' : 'empty'} key=${apiKey ? 'set' : encryptedButUnreadable ? 'encrypted-unreadable' : 'empty'} samples=${messages.length} model=${model}`
+      )
+      return null
+    }
+
+    const lines = messages
+      .slice(0, 360)
+      .map(item => `${this.formatReportClock(item.createTime)} @${item.senderName}: ${item.text}`)
+      .join('\n')
+    const prompt = [
+      `你是社群产品顾问，请为微信群「${groupName}」生成群洞察日报。`,
+      '参考“群洞察日报”的写法：每条主题像新闻摘要，包含主题标题、时间段、主要参与者、发生了什么、最后用一句灰色结论条总结价值。',
+      '只总结高价值讨论，忽略寒暄、表情、无上下文短回复和纯闲聊；不要泛泛而谈，要尽量保留 @谁 提出了什么、@谁 回复/补充了什么。',
+      '优先围绕这些方向：产品体验、技术实现、商业化、社群运营/行动项；如果群聊里出现明确工具、功能、接口、客户、定价、交付、增长等线索，必须提炼。',
+      '请输出严格 JSON，不要 Markdown，不要解释。',
+      'JSON 格式：{"overview":"一句话说明群聊主要围绕什么展开","topics":[{"category":"product|technology|business|operations|other","title":"像截图一样的主题标题，不超过18字","timeRange":"HH:mm~HH:mm","summary":"用 @成员 形式写 1-2 句，说明谁提出/反馈/补充了什么","takeaway":"一句灰色结论条风格的价值总结","actionItem":"下一步行动，包含验证方向或负责人建议","keywords":["词1","词2"],"messageCount":数字,"speakerNames":["人名"]}]}',
+      '优先按产品、技术、运营、商业化、金融/投资等业务维度归纳；如果聊天内容没有这些方向，不要硬套标签，必须改为按真实聊天主题自动分类总结。',
+      '自动分类时可以使用“工具使用讨论、资源分享、问题求助、项目进展、观点争论、生活闲聊、群运营”等贴合聊天内容的主题名。',
+      '必须尽量输出 4-6 个主题。即使同一大方向内有多个子问题，也要拆成多个主题。',
+      '如果材料确实不足 4 个主题，也至少输出 3 个最真实的聊天主题；不要为了凑产品/技术/商业化而编造不存在的信息。',
+      '',
+      '群聊记录：',
+      lines
+    ].join('\n')
+
+    try {
+      const content = await this.callOpenAICompatibleApi(apiBaseUrl, apiKey, model, [
+        { role: 'system', content: '你擅长把社群聊天提炼成产品、技术、商业化和运营决策洞察。' },
+        { role: 'user', content: prompt }
+      ], maxTokens)
+      let parsed = this.extractJsonObject(content)
+      const jsonLikeContent = this.looksLikeReportJson(content)
+      if (!parsed && jsonLikeContent) {
+        parsed = await this.repairAiReportJson(apiBaseUrl, apiKey, model, content, maxTokens)
+      }
+      const topics = this.normalizeAiReportTopics(parsed?.topics || parsed, beginTimestamp, endTimestamp)
+      const normalizedTopics = topics.length > 0
+        ? topics
+        : jsonLikeContent
+          ? []
+          : this.buildTopicsFromAiPlainText(content, beginTimestamp, endTimestamp)
+      if (normalizedTopics.length === 0) return null
+      return {
+        topics: normalizedTopics,
+        overview: typeof parsed?.overview === 'string'
+          ? parsed.overview.trim()
+          : (typeof parsed?.summary === 'string' ? parsed.summary.trim() : undefined),
+        model
+      }
+    } catch (e) {
+      console.warn('[GroupDailyReport] AI summary failed, fallback to local:', e)
+      return null
+    }
+  }
+
   private extractRowSenderUsername(row: Record<string, any>, myWxid?: string): string {
     const isSendRaw = row.computed_is_send ?? row.is_send ?? row.isSend ?? row.WCDB_CT_is_send
     if (isSendRaw != null && parseInt(isSendRaw, 10) === 1 && myWxid) {
@@ -1495,6 +1914,356 @@ class GroupAnalyticsService {
       const total = mediaCounts.reduce((sum, item) => sum + item.count, 0)
 
       return { success: true, data: { typeCounts: mediaCounts, total } }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async generateGroupDailyReport(
+    chatroomId: string,
+    startTime?: number,
+    endTime?: number
+  ): Promise<{ success: boolean; data?: GroupDailyReportData; error?: string }> {
+    try {
+      const conn = await this.ensureConnected()
+      if (!conn.success) return { success: false, error: conn.error }
+
+      const normalizedChatroomId = String(chatroomId || '').trim()
+      if (!normalizedChatroomId) return { success: false, error: '群聊ID不能为空' }
+
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const defaultStart = nowSeconds - 24 * 60 * 60
+      const beginTimestamp = this.normalizeCursorTimestamp(startTime || defaultStart)
+      const endTimestamp = this.normalizeCursorTimestamp(endTime || nowSeconds) || nowSeconds
+
+      const groupChatsResult = await this.getGroupChats()
+      if (!groupChatsResult.success || !groupChatsResult.data) {
+        return { success: false, error: groupChatsResult.error || '获取群聊信息失败' }
+      }
+      const group = groupChatsResult.data.find(item => item.username === normalizedChatroomId) || {
+        username: normalizedChatroomId,
+        displayName: normalizedChatroomId,
+        memberCount: 0
+      }
+
+      const [rankingResult, hoursResult, mediaResult, statsResult] = await Promise.all([
+        this.getGroupMessageRanking(normalizedChatroomId, 8, beginTimestamp, endTimestamp),
+        this.getGroupActiveHours(normalizedChatroomId, beginTimestamp, endTimestamp),
+        this.getGroupMediaStats(normalizedChatroomId, beginTimestamp, endTimestamp),
+        wcdbService.getGroupStats(normalizedChatroomId, beginTimestamp, endTimestamp)
+      ])
+
+      const messages: Array<{
+        senderUsername: string
+        senderName: string
+        createTime: number
+        text: string
+      }> = []
+      const senderUsernames = new Set<string>()
+      const seenReportMessages = new Set<string>()
+      const pushReportMessage = (item: {
+        senderUsername?: string
+        senderName?: string
+        createTime?: number
+        text?: string
+      }): void => {
+        const text = this.stripReportText(String(item.text || ''))
+        if (!text || text.length < 2) return
+        const createTime = Number.isFinite(Number(item.createTime)) ? Math.floor(Number(item.createTime)) : 0
+        const senderUsername = String(item.senderUsername || '').trim()
+        const key = `${createTime}:${senderUsername}:${text}`
+        if (seenReportMessages.has(key)) return
+        seenReportMessages.add(key)
+        if (senderUsername) senderUsernames.add(senderUsername)
+        messages.push({
+          senderUsername,
+          senderName: String(item.senderName || senderUsername || '群成员').trim(),
+          createTime,
+          text
+        })
+      }
+      const cursorResult = await this.openMemberMessageCursor(normalizedChatroomId, 1200, true, beginTimestamp, endTimestamp)
+      if (!cursorResult.success || !cursorResult.cursor) {
+        console.warn('[GroupDailyReport] message cursor unavailable, fallback to stats only:', cursorResult.error)
+      } else {
+        const myWxid = String(this.configService.get('myWxid') || '').trim()
+        const cursor = cursorResult.cursor
+        try {
+          while (messages.length < 500) {
+            const batch = await wcdbService.fetchMessageBatch(cursor)
+            if (!batch.success) {
+              console.warn('[GroupDailyReport] message batch failed, fallback to partial messages:', batch.error)
+              break
+            }
+            const rows = Array.isArray(batch.rows) ? batch.rows as Record<string, any>[] : []
+            if (rows.length === 0) break
+
+            for (const row of rows) {
+              const localType = parseInt(row.Type || row.type || row.local_type || row.msg_type || '0', 10)
+              if (![1, 49, 10000, 10002, 244813135921].includes(localType)) continue
+
+              const senderUsername = this.extractRowSenderUsername(row, myWxid)
+              const createTime = parseInt(row.CreateTime || row.create_time || row.createTime || row.msg_time || '0', 10)
+              const parsedMessage = this.parseSingleMessageRow(row)
+              const rawText = String(
+                parsedMessage?.parsedContent ||
+                parsedMessage?.content ||
+                parsedMessage?.rawContent ||
+                (parsedMessage as any)?.linkTitle ||
+                row.StrContent ||
+                row.message_content ||
+                row.content ||
+                row.msg_content ||
+                ''
+              )
+              pushReportMessage({
+                senderUsername,
+                senderName: senderUsername || '群成员',
+                createTime,
+                text: rawText
+              })
+              if (messages.length >= 500) break
+            }
+            if (!batch.hasMore) break
+          }
+        } finally {
+          await wcdbService.closeMessageCursor(cursor)
+        }
+      }
+
+      if (messages.length === 0) {
+        try {
+          const fallbackMessagesResult = await chatService.getMessages(
+            normalizedChatroomId,
+            0,
+            500,
+            beginTimestamp,
+            endTimestamp,
+            true
+          )
+          if (fallbackMessagesResult.success && Array.isArray(fallbackMessagesResult.messages)) {
+            for (const message of fallbackMessagesResult.messages) {
+              pushReportMessage({
+                senderUsername: message.senderUsername,
+                senderName: message.senderDisplayName || message.senderUsername || '群成员',
+                createTime: message.createTime,
+                text: message.parsedContent ||
+                  message.content ||
+                  message.rawContent ||
+                  (message as any).linkTitle ||
+                  (message as any).appMsgDesc ||
+                  ''
+              })
+            }
+            console.log(`[GroupDailyReport] fallback chatService messages=${fallbackMessagesResult.messages.length} textSamples=${messages.length}`)
+          } else {
+            console.warn('[GroupDailyReport] fallback chatService failed:', fallbackMessagesResult.error)
+          }
+        } catch (e) {
+          console.warn('[GroupDailyReport] fallback chatService exception:', e)
+        }
+      }
+
+      const nameLookup = senderUsernames.size > 0
+        ? await wcdbService.getDisplayNames(Array.from(senderUsernames))
+        : { success: true, map: {} as Record<string, string> }
+      for (const item of messages) {
+        if (item.senderUsername && nameLookup.success && nameLookup.map?.[item.senderUsername]) {
+          item.senderName = nameLookup.map[item.senderUsername]
+        }
+      }
+
+      let relevantMessages = messages
+        .map(message => ({ ...message, relevanceScore: this.scoreReportRelevance(message.text) }))
+        .filter(message => message.relevanceScore > 0)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore || a.createTime - b.createTime)
+      if (relevantMessages.length === 0) {
+        relevantMessages = messages
+          .map(message => {
+            const text = message.text || ''
+            const fallbackScore =
+              (/[？?]|怎么|如何|为什么|能否|是否|方案|问题|建议|需求/.test(text) ? 3 : 0) +
+              (text.length >= 20 ? 2 : 0) +
+              (text.length >= 40 ? 2 : 0)
+            return { ...message, relevanceScore: fallbackScore }
+          })
+          .filter(message => message.relevanceScore > 0)
+          .sort((a, b) => b.relevanceScore - a.relevanceScore || a.createTime - b.createTime)
+      }
+
+      let topics: GroupDailyReportTopic[] = []
+      let aiOverview = ''
+      let summaryEngine: GroupDailyReportData['summaryEngine'] = {
+        type: 'local',
+        model: '本地规则引擎（AI Key 未解密或模型调用失败）'
+      }
+      const aiResult = await this.generateAiDailyReportTopics(
+        group.displayName || group.username,
+        relevantMessages.length > 0 ? relevantMessages : messages,
+        beginTimestamp,
+        endTimestamp
+      )
+      if (aiResult && aiResult.topics.length > 0) {
+        topics = aiResult.topics
+        aiOverview = aiResult.overview || ''
+        summaryEngine = {
+          type: 'ai',
+          model: aiResult.model || String(this.configService.get('aiModelApiModel') || 'AI 通用模型')
+        }
+      }
+
+      const categoryDefinitions = this.getReportCategoryDefinitions()
+      for (const category of categoryDefinitions) {
+        if (summaryEngine.type === 'ai') break
+        const related = relevantMessages
+          .filter(item => {
+            const text = item.text.toLowerCase()
+            return category.keywords.some(keyword => text.includes(keyword.toLowerCase()))
+          })
+          .sort((a, b) => a.createTime - b.createTime)
+          .slice(0, 28)
+        if (related.length === 0) continue
+
+        const topicTokens = new Map<string, number>()
+        const speakerCounts = new Map<string, number>()
+        for (const item of related) {
+          speakerCounts.set(item.senderName, (speakerCounts.get(item.senderName) || 0) + 1)
+          for (const topicToken of this.extractReportTokens(item.text)) {
+            if (!category.keywords.some(keyword => topicToken.toLowerCase().includes(keyword.toLowerCase()) || keyword.toLowerCase().includes(topicToken.toLowerCase()))) {
+              continue
+            }
+            topicTokens.set(topicToken, (topicTokens.get(topicToken) || 0) + 1)
+          }
+        }
+        const keywords = Array.from(topicTokens.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([keyword]) => keyword)
+        const speakers = Array.from(speakerCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([speaker]) => speaker)
+        const firstTime = related[0]?.createTime || beginTimestamp
+        const lastTime = related[related.length - 1]?.createTime || firstTime
+        const { summary, takeaway, actionItem } = this.buildCategorySummary(category.label, keywords, related.length, speakers)
+
+        topics.push({
+          category: category.key,
+          title: this.buildReportTitle(category.label, keywords, category.titleFallback),
+          timeRange: `${this.formatReportClock(firstTime)}~${this.formatReportClock(lastTime)}`,
+          summary,
+          takeaway,
+          actionItem: `${category.actionVerb}：${actionItem.replace(/^建议下一步：/, '')}`,
+          keywords,
+          messageCount: related.length,
+          speakerNames: speakers
+        })
+      }
+
+      if (topics.length === 0 && (relevantMessages.length > 0 || messages.length > 0)) {
+        const sourceMessages = relevantMessages.length > 0 ? relevantMessages : messages
+        const tokenBuckets = new Map<string, typeof sourceMessages>()
+        for (const message of sourceMessages) {
+          const tokens = Array.from(new Set(this.extractReportTokens(message.text))).slice(0, 8)
+          for (const token of tokens) {
+            const bucket = tokenBuckets.get(token) || []
+            bucket.push(message)
+            tokenBuckets.set(token, bucket)
+          }
+        }
+        const used = new Set<string>()
+        const rankedBuckets = Array.from(tokenBuckets.entries())
+          .filter(([, bucket]) => bucket.length >= 2)
+          .sort((a, b) => b[1].length - a[1].length)
+          .slice(0, 5)
+        for (const [token, bucket] of rankedBuckets) {
+          const sampleMessages = bucket
+            .filter(item => {
+              const key = `${item.createTime}:${item.senderUsername}:${item.text}`
+              if (used.has(key)) return false
+              used.add(key)
+              return true
+            })
+            .slice(0, 12)
+            .sort((a, b) => a.createTime - b.createTime)
+          if (sampleMessages.length === 0) continue
+          const speakers = Array.from(new Set(sampleMessages.map(item => item.senderName))).slice(0, 4)
+          const keywords = [token]
+          const { summary, takeaway, actionItem } = this.buildCategorySummary('聊天主题', keywords, sampleMessages.length, speakers)
+          topics.push({
+            category: 'other',
+            title: this.buildReportTitle('聊天主题', keywords, '群聊主题讨论'),
+            timeRange: `${this.formatReportClock(sampleMessages[0].createTime)}~${this.formatReportClock(sampleMessages[sampleMessages.length - 1].createTime)}`,
+            summary,
+            takeaway,
+            actionItem,
+            keywords,
+            messageCount: sampleMessages.length,
+            speakerNames: speakers
+          })
+        }
+      }
+
+      const sessionData = statsResult.success && statsResult.data?.sessions
+        ? statsResult.data.sessions[normalizedChatroomId]
+        : null
+      const totalMessages = Number(sessionData?.total || mediaResult.data?.total || 0)
+      const activeMemberCount = sessionData?.senders ? Object.keys(sessionData.senders).length : (rankingResult.data?.length || 0)
+      const activeHours = Object.entries(hoursResult.data?.hourlyDistribution || {})
+        .map(([hour, count]) => ({ hour: Number(hour), count: Number(count) || 0 }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+
+      if (topics.length === 0) {
+        const topSpeakerNames = (rankingResult.data || [])
+          .slice(0, 3)
+          .map(item => item.member.displayName || item.member.username)
+          .filter(Boolean)
+        const activeHourText = activeHours.length > 0
+          ? activeHours.map(item => `${item.hour}点 ${item.count} 条`).join('、')
+          : '暂无明显峰值'
+        topics.push({
+          category: 'operations',
+          title: '运营行动：群活跃概览',
+          timeRange: `${this.formatReportClock(beginTimestamp)}~${this.formatReportClock(endTimestamp)}`,
+          summary: `当前时间段共有 ${totalMessages} 条发言，${activeMemberCount} 位成员参与，主要活跃时段为 ${activeHourText}。`,
+          takeaway: topSpeakerNames.length > 0
+            ? `可优先关注 ${topSpeakerNames.join('、')} 等高活跃成员的讨论方向。`
+            : '当前文本内容不足以抽取深度议题，但可继续积累样本后复盘。',
+          actionItem: '建议下一步：补充群内问题收集入口，并在高活跃时段引导产品、技术或商业化主题讨论。',
+          keywords: ['群活跃', '运营', '复盘'],
+          messageCount: totalMessages,
+          speakerNames: topSpeakerNames
+        })
+      }
+
+      const overview = aiOverview || (totalMessages > 0
+        ? `群聊在当前时间段内产生 ${totalMessages} 条发言，过滤闲聊后提炼出 ${topics.length} 个高价值议题，重点围绕 ${topics.slice(0, 3).map(item => item.title.replace(/^.+?：/, '')).join('、') || '产品、技术与商业化问题'} 展开。`
+        : '当前时间段暂无可汇总的群聊发言。')
+
+      console.log(
+        `[GroupDailyReport] generated chatroom=${normalizedChatroomId} total=${totalMessages} textSamples=${messages.length} relevant=${relevantMessages.length} topics=${topics.length} engine=${summaryEngine.type}:${summaryEngine.model}`
+      )
+
+      return {
+        success: true,
+        data: {
+          group,
+          generatedAt: nowSeconds,
+          startTime: beginTimestamp,
+          endTime: endTimestamp,
+          totalMessages,
+          newMessageCount: totalMessages,
+          memberCount: group.memberCount,
+          activeMemberCount,
+          topSpeakers: rankingResult.data || [],
+          activeHours,
+          mediaStats: mediaResult.data || { typeCounts: [], total: 0 },
+          overview,
+          topics,
+          summaryEngine
+        }
+      }
     } catch (e) {
       return { success: false, error: String(e) }
     }

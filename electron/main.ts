@@ -1,5 +1,5 @@
 ﻿import './preload-env'
-import { app, BrowserWindow, ipcMain, nativeTheme, session, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, session, Tray, Menu, nativeImage, clipboard } from 'electron'
 import { Worker } from 'worker_threads'
 import { randomUUID } from 'crypto'
 import { join, dirname } from 'path'
@@ -3463,6 +3463,35 @@ function registerIpcHandlers() {
     return groupAnalyticsService.getGroupMediaStats(chatroomId, startTime, endTime)
   })
 
+  ipcMain.handle('groupAnalytics:generateGroupDailyReport', async (_, chatroomId: string, startTime?: number, endTime?: number) => {
+    return groupAnalyticsService.generateGroupDailyReport(chatroomId, startTime, endTime)
+  })
+
+  ipcMain.handle('groupAnalytics:saveDailyReportImage', async (_, payload: { filePath: string; dataUrl: string }) => {
+    try {
+      const filePath = String(payload?.filePath || '').trim()
+      const dataUrl = String(payload?.dataUrl || '')
+      const match = dataUrl.match(/^data:image\/png;base64,(.+)$/)
+      if (!filePath) return { success: false, error: '保存路径不能为空' }
+      if (!match) return { success: false, error: '图片数据格式错误' }
+      await writeFile(filePath, Buffer.from(match[1], 'base64'))
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('groupAnalytics:copyDailyReportImage', async (_, dataUrl: string) => {
+    try {
+      const image = nativeImage.createFromDataURL(String(dataUrl || ''))
+      if (image.isEmpty()) return { success: false, error: '图片数据为空' }
+      clipboard.writeImage(image)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  })
+
   ipcMain.handle(
     'groupAnalytics:getGroupMemberAnalytics',
     async (_, chatroomId: string, memberUsername: string, startTime?: number, endTime?: number) => {
@@ -4294,4 +4323,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-

@@ -471,6 +471,27 @@ class ChatService {
     return cleaned
   }
 
+  private isUsableDecryptKey(value: string): boolean {
+    return /^[a-f0-9]{64}$/i.test(value.trim())
+  }
+
+  private resolveDecryptKeyForWxid(wxid: string): string {
+    const globalKey = String(this.configService.get('decryptKey') || '').trim()
+    if (this.isUsableDecryptKey(globalKey)) return globalKey
+
+    const cleanedWxid = this.cleanAccountDirName(wxid).toLowerCase()
+    const wxidConfigs = this.configService.get('wxidConfigs') || {}
+    for (const [configWxid, config] of Object.entries(wxidConfigs) as Array<[string, any]>) {
+      const normalizedConfigWxid = this.cleanAccountDirName(configWxid).toLowerCase()
+      if (normalizedConfigWxid !== cleanedWxid) continue
+
+      const scopedKey = String(config?.decryptKey || '').trim()
+      if (this.isUsableDecryptKey(scopedKey)) return scopedKey
+    }
+
+    return ''
+  }
+
   /**
    * 判断头像 URL 是否可用，过滤历史缓存里的错误 hex 数据。
    */
@@ -542,7 +563,7 @@ class ChatService {
       }
       const wxid = this.configService.get('myWxid')
       const dbPath = this.configService.get('dbPath')
-      const decryptKey = this.configService.get('decryptKey')
+      const decryptKey = wxid ? this.resolveDecryptKeyForWxid(wxid) : ''
       if (!wxid) {
         return { success: false, error: '请先在设置页面配置微信ID' }
       }

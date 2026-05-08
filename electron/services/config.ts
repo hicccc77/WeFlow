@@ -122,7 +122,6 @@ interface ConfigSchema {
 
 // 需要 safeStorage 加密的字段（普通模式）
 const ENCRYPTED_STRING_KEYS: Set<string> = new Set([
-  'decryptKey',
   'imageAesKey',
   'authPassword',
   'httpApiToken',
@@ -286,6 +285,15 @@ export class ConfigService {
   get<K extends keyof ConfigSchema>(key: K): ConfigSchema[K] {
     const raw = this.store.get(key)
 
+    if (key === 'decryptKey' && typeof raw === 'string') {
+      if (raw.startsWith(LOCK_PREFIX)) {
+        const cached = this.unlockedKeys.get(key as string)
+        return (cached !== undefined ? cached : '') as ConfigSchema[K]
+      }
+      if (raw.startsWith(SAFE_PREFIX)) return this.safeDecrypt(raw) as ConfigSchema[K]
+      return raw as ConfigSchema[K]
+    }
+
     if (ENCRYPTED_BOOL_KEYS.has(key)) {
       const str = typeof raw === 'string' ? raw : ''
       if (!str || !str.startsWith(SAFE_PREFIX)) return raw
@@ -436,7 +444,7 @@ export class ConfigService {
     const result: ConfigSchema['wxidConfigs'] = {}
     for (const [wxid, cfg] of Object.entries(configs)) {
       result[wxid] = { ...cfg }
-      if (cfg.decryptKey) result[wxid].decryptKey = this.safeEncrypt(cfg.decryptKey)
+      if (cfg.decryptKey) result[wxid].decryptKey = cfg.decryptKey
       if (cfg.imageAesKey) result[wxid].imageAesKey = this.safeEncrypt(cfg.imageAesKey)
       if (cfg.imageXorKey !== undefined) {
         (result[wxid] as any).imageXorKey = this.safeEncrypt(String(cfg.imageXorKey))
@@ -744,6 +752,7 @@ export class ConfigService {
 
     // 迁移敏感密钥字段（明文 → safe:）
     for (const key of LOCKABLE_STRING_KEYS) {
+      if (key === 'decryptKey') continue
       const raw: any = this.store.get(key as any)
       if (typeof raw === 'string' && raw && !raw.startsWith(SAFE_PREFIX) && !raw.startsWith(LOCK_PREFIX)) {
         this.store.set(key as any, this.safeEncrypt(raw) as any)
@@ -762,8 +771,7 @@ export class ConfigService {
       let changed = false
       for (const [_wxid, cfg] of Object.entries(wxidConfigs) as [string, any][]) {
         if (cfg.decryptKey && typeof cfg.decryptKey === 'string' && !cfg.decryptKey.startsWith(SAFE_PREFIX) && !cfg.decryptKey.startsWith(LOCK_PREFIX)) {
-          cfg.decryptKey = this.safeEncrypt(cfg.decryptKey)
-          changed = true
+          // Keep DB keys portable for local builds that are frequently re-signed.
         }
         if (cfg.imageAesKey && typeof cfg.imageAesKey === 'string' && !cfg.imageAesKey.startsWith(SAFE_PREFIX) && !cfg.imageAesKey.startsWith(LOCK_PREFIX)) {
           cfg.imageAesKey = this.safeEncrypt(cfg.imageAesKey)
@@ -861,4 +869,3 @@ export class ConfigService {
     this.unlockPassword = null
   }
 }
-

@@ -305,6 +305,10 @@ function Sidebar({ collapsed }: SidebarProps) {
     navigate('/account-management')
   }
 
+  const openAccountManagementFromCard = () => {
+    navigate('/account-management')
+  }
+
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(`${path}/`)
   }
@@ -426,6 +430,22 @@ function Sidebar({ collapsed }: SidebarProps) {
 
         <div className="sidebar-footer">
           <button
+            className={`nav-item ${isActive('/settings') ? 'active' : ''}`}
+            onClick={() => {
+              navigate('/settings', {
+                state: {
+                  backgroundLocation: location
+                }
+              })
+            }}
+            title={collapsed ? '设置' : undefined}
+            type="button"
+          >
+            <span className="nav-icon"><Settings size={20} /></span>
+            <span className="nav-label">设置</span>
+          </button>
+
+          <button
             className="nav-item"
             onClick={() => {
               if (authEnabled) {
@@ -469,13 +489,13 @@ function Sidebar({ collapsed }: SidebarProps) {
             <div
               className={`sidebar-user-card ${isAccountMenuOpen ? 'menu-open' : ''}`}
               title={collapsed ? `${userProfile.displayName}${(userProfile.alias) ? `\n${userProfile.alias}` : ''}` : undefined}
-              onClick={() => setIsAccountMenuOpen(prev => !prev)}
+              onClick={openAccountManagementFromCard}
               role="button"
               tabIndex={0}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
-                  setIsAccountMenuOpen(prev => !prev)
+                  openAccountManagementFromCard()
                 }
               }}
             >
@@ -487,7 +507,13 @@ function Sidebar({ collapsed }: SidebarProps) {
                 <div className="user-wxid">{userProfile.alias || DEFAULT_SUBTITLE}</div>
               </div>
               {!collapsed && (
-                <span className={`user-menu-caret ${isAccountMenuOpen ? 'open' : ''}`}>
+                <span
+                  className={`user-menu-caret ${isAccountMenuOpen ? 'open' : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setIsAccountMenuOpen(prev => !prev)
+                  }}
+                >
                   <ChevronUp size={14} />
                 </span>
               )}

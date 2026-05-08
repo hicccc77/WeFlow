@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, Medal, Search, X, ChevronLeft, Copy, Check, Download, ChevronDown, MessageSquare, Calendar, PieChart, Hash, Smile } from 'lucide-react'
+import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, Medal, Search, X, ChevronLeft, Copy, Check, Download, ChevronDown, MessageSquare, Calendar, PieChart, Hash, Smile, Wand2, Send, ImageDown } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import ReactECharts from 'echarts-for-react'
 import DateRangePicker from '../components/DateRangePicker'
 import ChatAnalysisHeader from '../components/ChatAnalysisHeader'
 import * as configService from '../services/config'
+import html2canvas from 'html2canvas'
 import type { Message } from '../types/models'
 import {
   finishBackgroundTask,
@@ -37,6 +38,44 @@ interface GroupMessageRank {
   messageCount: number
 }
 
+interface GroupDailyReportTopic {
+  category: 'product' | 'technology' | 'business' | 'operations' | 'other'
+  title: string
+  timeRange: string
+  summary: string
+  takeaway: string
+  actionItem: string
+  keywords: string[]
+  messageCount: number
+  speakerNames: string[]
+}
+
+interface GroupDailyReportData {
+  group: GroupChatInfo
+  generatedAt: number
+  startTime: number
+  endTime: number
+  totalMessages: number
+  newMessageCount: number
+  memberCount: number
+  activeMemberCount: number
+  topSpeakers: GroupMessageRank[]
+  activeHours: Array<{ hour: number; count: number }>
+  mediaStats: { typeCounts: Array<{ type: number; name: string; count: number }>; total: number }
+  overview: string
+  topics: GroupDailyReportTopic[]
+  summaryEngine?: {
+    type: 'ai' | 'local'
+    model: string
+  }
+}
+
+interface GroupDailyReportSettings {
+  enabled: boolean
+  time: string
+  lastRunKey?: string
+}
+
 type AnalysisFunction = 'members' | 'memberMessages' | 'memberAnalytics' | 'ranking' | 'activeHours' | 'mediaStats'
 type MemberExportFormat = 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone'
 
@@ -65,6 +104,128 @@ interface GroupMemberMessagesPage {
 }
 
 const MEMBER_MESSAGE_PAGE_SIZE = 40
+const GROUP_DAILY_REPORT_SETTINGS_KEY = 'groupDailyReportSettings'
+
+const parsePossibleReportJson = (value: unknown): any | null => {
+  if (typeof value !== 'string') return null
+  const raw = value.trim()
+  if (!raw) return null
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
+  const candidate = fenced || raw
+  const tryParse = (text: string): any | null => {
+    try {
+      const parsed = JSON.parse(text.trim())
+      return typeof parsed === 'string' ? tryParse(parsed) : parsed
+    } catch {
+      return null
+    }
+  }
+  const direct = tryParse(candidate)
+  if (direct) return direct
+  const objectStart = candidate.indexOf('{')
+  const objectEnd = candidate.lastIndexOf('}')
+  const arrayStart = candidate.indexOf('[')
+  const arrayEnd = candidate.lastIndexOf(']')
+  const spans: Array<{ start: number; end: number }> = []
+  if (objectStart >= 0 && objectEnd > objectStart) spans.push({ start: objectStart, end: objectEnd })
+  if (arrayStart >= 0 && arrayEnd > arrayStart) spans.push({ start: arrayStart, end: arrayEnd })
+  spans.sort((a, b) => a.start - b.start)
+  const span = spans[0]
+  return span ? tryParse(candidate.slice(span.start, span.end + 1)) : null
+}
+
+const normalizeReportTopic = (item: any, index: number): GroupDailyReportTopic | null => {
+  if (!item || typeof item !== 'object') return null
+  const categorySet = new Set(['product', 'technology', 'business', 'operations', 'other'])
+  const title = String(item.title || item.name || item.topic || `主题 ${index + 1}`).trim()
+  const summary = String(item.summary || item.description || item.detail || item.content || '').trim()
+  if (!title || !summary) return null
+  return {
+    category: categorySet.has(item.category) ? item.category : 'other',
+    title,
+    timeRange: String(item.timeRange || item.time_range || '--:--~--:--').trim(),
+    summary,
+    takeaway: String(item.takeaway || item.conclusion || item.value || item.note || '该议题值得继续跟进，建议补充更多上下文后形成明确判断。').trim(),
+    actionItem: String(item.actionItem || item.action || item.nextStep || item.next_step || '建议下一步：明确负责人、目标用户、验证指标和时间点。').trim(),
+    keywords: Array.isArray(item.keywords) ? item.keywords.map((keyword: unknown) => String(keyword).trim()).filter(Boolean).slice(0, 6) : [],
+    messageCount: Number.isFinite(Number(item.messageCount)) ? Math.max(0, Math.floor(Number(item.messageCount))) : 0,
+    speakerNames: Array.isArray(item.speakerNames) ? item.speakerNames.map((name: unknown) => String(name).trim()).filter(Boolean).slice(0, 5) : []
+  }
+}
+
+const looksLikeReportJsonText = (value: unknown) => {
+  const raw = String(value || '').trim()
+  return Boolean(raw) && (
+    raw.startsWith('{') ||
+    raw.startsWith('[') ||
+    /"overview"\s*:|"topics"\s*:|"summary"\s*:|"category"\s*:|"title"\s*:/.test(raw)
+  )
+}
+
+const ensureDailyReportTopics = (report: GroupDailyReportData): GroupDailyReportData => {
+  const topicsFromPayload = Array.isArray(report.topics) ? report.topics : []
+  const embeddedJson = topicsFromPayload.length === 1
+    ? parsePossibleReportJson(topicsFromPayload[0]?.title) || parsePossibleReportJson(topicsFromPayload[0]?.summary)
+    : null
+  const embeddedTopics = Array.isArray(embeddedJson)
+    ? embeddedJson
+    : Array.isArray(embeddedJson?.topics)
+      ? embeddedJson.topics
+      : Array.isArray(embeddedJson?.items)
+        ? embeddedJson.items
+        : []
+  if (embeddedTopics.length > 0) {
+    const normalizedTopics = embeddedTopics
+      .map((item: any, index: number) => normalizeReportTopic(item, index))
+      .filter((item: GroupDailyReportTopic | null): item is GroupDailyReportTopic => Boolean(item))
+    if (normalizedTopics.length > 0) {
+      return {
+        ...report,
+        overview: typeof embeddedJson?.overview === 'string' && embeddedJson.overview.trim()
+          ? embeddedJson.overview.trim()
+          : report.overview,
+        topics: normalizedTopics
+      }
+    }
+  }
+  const visibleTopics = topicsFromPayload.filter(topic => (
+    !looksLikeReportJsonText(topic?.title) &&
+    !looksLikeReportJsonText(topic?.summary)
+  ))
+  if (visibleTopics.length > 0) return { ...report, topics: visibleTopics }
+  const startClock = report.startTime
+    ? new Date(report.startTime * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '--:--'
+  const endClock = report.endTime
+    ? new Date(report.endTime * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '--:--'
+  const topSpeakerNames = (report.topSpeakers || [])
+    .slice(0, 3)
+    .map(item => item.member.displayName || item.member.username)
+    .filter(Boolean)
+  const activeHoursText = (report.activeHours || []).length > 0
+    ? report.activeHours.slice(0, 3).map(item => `${item.hour}点 ${item.count} 条`).join('、')
+    : '暂无明显峰值'
+
+  return {
+    ...report,
+    overview: report.overview || `当前时间段共有 ${report.totalMessages || 0} 条群聊发言，系统已生成基础群洞察。`,
+    summaryEngine: report.summaryEngine || { type: 'local', model: '本地规则引擎（AI Key 未解密或模型调用失败）' },
+    topics: [{
+      category: 'operations',
+      title: '运营行动：群活跃概览',
+      timeRange: `${startClock}~${endClock}`,
+      summary: `当前时间段共有 ${report.totalMessages || 0} 条发言，${report.activeMemberCount || 0} 位成员参与，主要活跃时段为 ${activeHoursText}。`,
+      takeaway: topSpeakerNames.length > 0
+        ? `可优先关注 ${topSpeakerNames.join('、')} 等高活跃成员的讨论方向。`
+        : '当前文本样本不足以抽取深度议题，但可以继续积累样本后复盘。',
+      actionItem: '建议下一步：在高活跃时段引导产品、技术或商业化主题讨论，形成更高质量的日报输入。',
+      keywords: ['群活跃', '运营', '复盘'],
+      messageCount: report.totalMessages || 0,
+      speakerNames: topSpeakerNames
+    }]
+  }
+}
 
 const filterMembersByKeyword = (members: GroupMember[], keyword: string) => {
   const normalizedKeyword = keyword.trim().toLowerCase()
@@ -157,12 +318,20 @@ function GroupAnalyticsPage() {
     () => (selectedGroupId ? groups.find(group => group.username === selectedGroupId) || null : null),
     [groups, selectedGroupId]
   )
+  const dailyReportRef = useRef<HTMLDivElement>(null)
 
   // 功能数据
   const [members, setMembers] = useState<GroupMember[]>([])
   const [rankings, setRankings] = useState<GroupMessageRank[]>([])
   const [activeHours, setActiveHours] = useState<Record<number, number>>({})
   const [mediaStats, setMediaStats] = useState<{ typeCounts: Array<{ type: number; name: string; count: number }>; total: number } | null>(null)
+  const [dailyReport, setDailyReport] = useState<GroupDailyReportData | null>(null)
+  const [dailyReportLoading, setDailyReportLoading] = useState(false)
+  const [dailyReportStatus, setDailyReportStatus] = useState<string | null>(null)
+  const [dailyReportSettings, setDailyReportSettings] = useState<GroupDailyReportSettings>({
+    enabled: false,
+    time: '09:00'
+  })
   const [functionLoading, setFunctionLoading] = useState(false)
   const [isExportingMembers, setIsExportingMembers] = useState(false)
   const [isExportingMemberMessages, setIsExportingMemberMessages] = useState(false)
@@ -292,6 +461,148 @@ function GroupAnalyticsPage() {
     }
   }, [])
 
+  const getReportRange = useCallback(() => {
+    const now = new Date()
+    const start = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    return {
+      startTime: Math.floor(start.getTime() / 1000),
+      endTime: Math.floor(now.getTime() / 1000)
+    }
+  }, [])
+
+  const formatReportDateTime = (timestamp: number) => {
+    if (!timestamp) return '-'
+    return new Date(timestamp * 1000).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  }
+
+  const getReportRunKey = (groupId: string, date = new Date()) => {
+    const yyyy = date.getFullYear()
+    const mm = String(date.getMonth() + 1).padStart(2, '0')
+    const dd = String(date.getDate()).padStart(2, '0')
+    return `${groupId}:${yyyy}-${mm}-${dd}`
+  }
+
+  const persistDailyReportSettings = useCallback(async (settings: GroupDailyReportSettings) => {
+    setDailyReportSettings(settings)
+    try {
+      await window.electronAPI.config.set(GROUP_DAILY_REPORT_SETTINGS_KEY, settings)
+    } catch (e) {
+      console.error('保存日报定时设置失败:', e)
+    }
+  }, [])
+
+  const generateDailyReport = useCallback(async (options?: { silent?: boolean; prepareSend?: boolean }) => {
+    if (!selectedGroup) return null
+    setDailyReportLoading(true)
+    if (!options?.silent) setDailyReportStatus('正在读取群聊记录并生成日报...')
+    try {
+      const { startTime, endTime } = getReportRange()
+      const result = await window.electronAPI.groupAnalytics.generateGroupDailyReport(selectedGroup.username, startTime, endTime)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '生成日报失败')
+      }
+      const normalizedReport = ensureDailyReportTopics(result.data as GroupDailyReportData)
+      console.info('[GroupDailyReport] frontend received', {
+        totalMessages: normalizedReport.totalMessages,
+        activeMemberCount: normalizedReport.activeMemberCount,
+        topics: normalizedReport.topics.length,
+        engine: normalizedReport.summaryEngine
+      })
+      setDailyReport(normalizedReport)
+      setDailyReportStatus(options?.prepareSend
+        ? `日报已生成，正在准备群发...（${normalizedReport.summaryEngine?.model || '本地规则引擎'}）`
+        : `日报已生成（${normalizedReport.summaryEngine?.model || '本地规则引擎'}）`)
+      return normalizedReport
+    } catch (e) {
+      const message = `生成日报失败：${String(e)}`
+      setDailyReportStatus(message)
+      return null
+    } finally {
+      setDailyReportLoading(false)
+    }
+  }, [getReportRange, selectedGroup])
+
+  const captureDailyReportDataUrl = useCallback(async () => {
+    if (!dailyReportRef.current) throw new Error('日报卡片尚未渲染')
+    const canvas = await html2canvas(dailyReportRef.current, {
+      backgroundColor: '#22b99a',
+      scale: 2,
+      useCORS: true
+    })
+    return canvas.toDataURL('image/png')
+  }, [])
+
+  const copyDailyReportImage = useCallback(async () => {
+    try {
+      const dataUrl = await captureDailyReportDataUrl()
+      const nativeCopyResult = await window.electronAPI.groupAnalytics.copyDailyReportImage(dataUrl)
+      if (nativeCopyResult.success) {
+        setDailyReportStatus('日报图片已复制到系统剪贴板，可在微信输入框粘贴后发送')
+        return true
+      }
+
+      const blob = await (await fetch(dataUrl)).blob()
+      const ClipboardItemCtor = (window as any).ClipboardItem
+      if (navigator.clipboard?.write && ClipboardItemCtor) {
+        await navigator.clipboard.write([new ClipboardItemCtor({ 'image/png': blob })])
+        setDailyReportStatus('日报图片已复制，可在微信输入框粘贴后发送')
+        return true
+      }
+      await navigator.clipboard.writeText(dailyReport?.overview || '')
+      setDailyReportStatus(`图片复制失败（${nativeCopyResult.error || '剪贴板不可用'}），已复制日报摘要文本`)
+      return false
+    } catch (e) {
+      setDailyReportStatus(`复制失败：${String(e)}`)
+      return false
+    }
+  }, [captureDailyReportDataUrl, dailyReport?.overview])
+
+  const exportDailyReportImage = useCallback(async () => {
+    if (!selectedGroup || !dailyReport) return
+    try {
+      const dataUrl = await captureDailyReportDataUrl()
+      const downloadsPath = await window.electronAPI.app.getDownloadsPath()
+      const baseName = sanitizeFileName(`${selectedGroup.displayName || selectedGroup.username}_群洞察日报`)
+      const separator = downloadsPath && downloadsPath.includes('\\') ? '\\' : '/'
+      const defaultPath = downloadsPath ? `${downloadsPath}${separator}${baseName}.png` : `${baseName}.png`
+      const saveResult = await window.electronAPI.dialog.saveFile({
+        title: '保存群洞察日报',
+        defaultPath,
+        filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+      })
+      if (!saveResult || saveResult.canceled || !saveResult.filePath) return
+      const result = await window.electronAPI.groupAnalytics.saveDailyReportImage({
+        filePath: saveResult.filePath,
+        dataUrl
+      })
+      setDailyReportStatus(result.success ? '日报图片已保存' : `保存失败：${result.error || '未知错误'}`)
+    } catch (e) {
+      setDailyReportStatus(`保存失败：${String(e)}`)
+    }
+  }, [captureDailyReportDataUrl, dailyReport, selectedGroup])
+
+  const prepareDailyReportSend = useCallback(async () => {
+    if (!selectedGroup) return
+    const report = dailyReport || await generateDailyReport({ prepareSend: true })
+    if (!report) return
+    window.setTimeout(() => {
+      void copyDailyReportImage().then(() => {
+        void window.electronAPI.window.openSessionChatWindow(selectedGroup.username, {
+          source: 'chat',
+          initialDisplayName: selectedGroup.displayName || selectedGroup.username,
+          initialAvatarUrl: selectedGroup.avatarUrl,
+          initialContactType: 'group'
+        })
+      })
+    }, 150)
+  }, [copyDailyReportImage, dailyReport, generateDailyReport, selectedGroup])
+
   const loadGroups = useCallback(async () => {
     const taskId = registerBackgroundTask({
       sourcePage: 'groupAnalytics',
@@ -335,6 +646,51 @@ function GroupAnalyticsPage() {
     loadGroups()
     loadExportPath()
   }, [loadGroups, loadExportPath])
+
+  useEffect(() => {
+    let disposed = false
+    window.electronAPI.config.get(GROUP_DAILY_REPORT_SETTINGS_KEY)
+      .then((value: unknown) => {
+        if (disposed || !value || typeof value !== 'object') return
+        const raw = value as Partial<GroupDailyReportSettings>
+        setDailyReportSettings({
+          enabled: raw.enabled === true,
+          time: typeof raw.time === 'string' && /^\d{2}:\d{2}$/.test(raw.time) ? raw.time : '09:00',
+          lastRunKey: typeof raw.lastRunKey === 'string' ? raw.lastRunKey : undefined
+        })
+      })
+      .catch(error => console.error('读取日报定时设置失败:', error))
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!dailyReportSettings.enabled || !selectedGroup) return
+    const timer = window.setInterval(() => {
+      const now = new Date()
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      const runKey = getReportRunKey(selectedGroup.username, now)
+      if (currentTime !== dailyReportSettings.time || dailyReportSettings.lastRunKey === runKey) return
+
+      void (async () => {
+        const report = await generateDailyReport({ silent: true, prepareSend: true })
+        if (!report) return
+        await persistDailyReportSettings({ ...dailyReportSettings, lastRunKey: runKey })
+        window.setTimeout(() => {
+          void copyDailyReportImage().then(() => {
+            void window.electronAPI.window.openSessionChatWindow(selectedGroup.username, {
+              source: 'chat',
+              initialDisplayName: selectedGroup.displayName || selectedGroup.username,
+              initialAvatarUrl: selectedGroup.avatarUrl,
+              initialContactType: 'group'
+            })
+          })
+        }, 300)
+      })()
+    }, 30 * 1000)
+    return () => window.clearInterval(timer)
+  }, [copyDailyReportImage, dailyReportSettings, generateDailyReport, persistDailyReportSettings, selectedGroup])
 
   useEffect(() => {
     preselectAppliedRef.current = false
@@ -440,6 +796,8 @@ function GroupAnalyticsPage() {
     setSelectedGroupId(group.username)
     setSelectedFunction(null)
     setSelectedMember(null)
+    setDailyReport(null)
+    setDailyReportStatus(null)
     setShowMemberExportModal(false)
     resetMemberMessageState()
     setShowFormatSelect(false)
@@ -1147,6 +1505,19 @@ function GroupAnalyticsPage() {
           <h2>{selectedGroup?.displayName}</h2>
           <p>{selectedGroup?.memberCount} 位成员</p>
         </div>
+        <div className="selected-group-actions">
+          <button type="button" onClick={() => void generateDailyReport()} disabled={dailyReportLoading || !selectedGroup}>
+            {dailyReportLoading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
+            <span>{dailyReportLoading ? '分析中' : '深度生成日报'}</span>
+          </button>
+          <button type="button" onClick={() => void prepareDailyReportSend()} disabled={dailyReportLoading || !selectedGroup}>
+            <Send size={16} />
+            <span>定时/群发</span>
+          </button>
+        </div>
+      </div>
+      <div className="daily-report-quick-note">
+        群洞察日报会优先使用 AI 基础设置里的通用模型；定时生成和复制群发入口在下方日报面板。
       </div>
       <div className="function-grid">
         <div className="function-card" onClick={() => handleFunctionSelect('members')}>
@@ -1179,6 +1550,114 @@ function GroupAnalyticsPage() {
           <span>媒体内容统计</span>
           <small>统计文本、图片、语音等类型</small>
         </div>
+      </div>
+      <div className="daily-report-panel">
+        <div className="daily-report-toolbar">
+          <div>
+            <div className="daily-report-kicker">自动报告与群发</div>
+            <h3>群洞察日报</h3>
+            <p>汇总今日发言、活跃成员、重点话题，并生成适合微信群发送的长图。</p>
+          </div>
+          <div className="daily-report-actions">
+            <button type="button" onClick={() => void generateDailyReport()} disabled={dailyReportLoading}>
+              {dailyReportLoading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
+              <span>{dailyReportLoading ? '分析中' : '深度生成'}</span>
+            </button>
+            <button type="button" onClick={() => void prepareDailyReportSend()} disabled={dailyReportLoading || !selectedGroup}>
+              <Send size={16} />
+              <span>复制并打开群聊</span>
+            </button>
+            <button type="button" onClick={() => void exportDailyReportImage()} disabled={!dailyReport}>
+              <ImageDown size={16} />
+              <span>导出图片</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="daily-report-schedule">
+          <label className="daily-report-switch">
+            <input
+              type="checkbox"
+              checked={dailyReportSettings.enabled}
+              onChange={event => void persistDailyReportSettings({ ...dailyReportSettings, enabled: event.target.checked })}
+            />
+            <span>定时生成并准备发送</span>
+          </label>
+          <input
+            type="time"
+            value={dailyReportSettings.time}
+            onChange={event => void persistDailyReportSettings({ ...dailyReportSettings, time: event.target.value || '09:00' })}
+            disabled={!dailyReportSettings.enabled}
+          />
+          <span className="daily-report-schedule-note">应用运行时到点执行；图片会复制到系统剪贴板并打开目标群聊。</span>
+        </div>
+
+        {dailyReportStatus && <div className="daily-report-status">{dailyReportStatus}</div>}
+
+        {dailyReport ? (
+          <div className="daily-report-preview-wrap">
+            <div className="daily-report-card" ref={dailyReportRef}>
+              <div className="daily-report-hero">
+                <div>
+                  <h1>群洞察日报</h1>
+                  <div className="daily-report-underline" />
+                </div>
+                <div className="daily-report-metrics">
+                  <span>{dailyReport.topics.length} 个话题总结中...</span>
+                  <strong>{formatNumber(dailyReport.totalMessages)} 条发言</strong>
+                  <span>{formatReportDateTime(dailyReport.generatedAt)} 更新</span>
+                </div>
+              </div>
+              <div className="daily-report-engine">
+                总结引擎：{dailyReport.summaryEngine?.model || '本地规则引擎'}
+              </div>
+
+              <div className="daily-report-group-row">
+                <span>{dailyReport.group.displayName}</span>
+                <Avatar src={dailyReport.group.avatarUrl} name={dailyReport.group.displayName} size={36} />
+                <em>{dailyReport.activeMemberCount} 位成员参与</em>
+              </div>
+
+              <div className="daily-report-summary">{dailyReport.overview}</div>
+
+              <div className="daily-report-cover">
+                <div className="cover-grid">
+                  <BarChart3 size={42} />
+                  <MessageSquare size={42} />
+                  <Users size={42} />
+                </div>
+                <span>产品、技术、商业化问题的群聊洞察</span>
+              </div>
+
+              <div className="daily-report-topic-list">
+                {dailyReport.topics.map((topic, index) => (
+                  <div key={`${topic.title}-${index}`} className="daily-report-topic">
+                    <div className="topic-title-row">
+                      <h2>{index + 1}. {topic.title}</h2>
+                      <span>{topic.timeRange}</span>
+                    </div>
+                    <p>{topic.summary}</p>
+                    <div className="topic-takeaway">{topic.takeaway}</div>
+                    <div className="topic-action">{topic.actionItem}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="daily-report-footer">
+                <div>
+                  <strong>{dailyReport.group.displayName} 专属群洞察</strong>
+                  <span>长按保存，查看今日群聊价值</span>
+                </div>
+                <div className="daily-report-qr">WF</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="daily-report-empty">
+            <Wand2 size={28} />
+            <span>点击“生成日报”后，这里会展示可导出和可发送的长图预览。</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1849,4 +2328,3 @@ function GroupAnalyticsPage() {
 }
 
 export default GroupAnalyticsPage
-

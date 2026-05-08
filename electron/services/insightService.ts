@@ -1332,5 +1332,3 @@ ${topMentionText}
 }
 
 export const insightService = new InsightService()
-
-

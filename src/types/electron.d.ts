@@ -821,6 +821,66 @@ export interface ElectronAPI {
       }
       error?: string
     }>
+    generateGroupDailyReport: (chatroomId: string, startTime?: number, endTime?: number) => Promise<{
+      success: boolean
+      data?: {
+        group: {
+          username: string
+          displayName: string
+          memberCount: number
+          avatarUrl?: string
+        }
+        generatedAt: number
+        startTime: number
+        endTime: number
+        totalMessages: number
+        newMessageCount: number
+        memberCount: number
+        activeMemberCount: number
+        topSpeakers: Array<{
+          member: {
+            username: string
+            displayName: string
+            avatarUrl?: string
+          }
+          messageCount: number
+        }>
+        activeHours: Array<{ hour: number; count: number }>
+        mediaStats: {
+          typeCounts: Array<{
+            type: number
+            name: string
+            count: number
+          }>
+          total: number
+        }
+        overview: string
+        summaryEngine: {
+          type: 'ai' | 'local'
+          model: string
+        }
+        topics: Array<{
+          category: 'product' | 'technology' | 'business' | 'operations' | 'other'
+          title: string
+          timeRange: string
+          summary: string
+          takeaway: string
+          actionItem: string
+          keywords: string[]
+          messageCount: number
+          speakerNames: string[]
+        }>
+      }
+      error?: string
+    }>
+    saveDailyReportImage: (payload: { filePath: string; dataUrl: string }) => Promise<{
+      success: boolean
+      error?: string
+    }>
+    copyDailyReportImage: (dataUrl: string) => Promise<{
+      success: boolean
+      error?: string
+    }>
     getGroupMemberAnalytics: (chatroomId: string, memberUsername: string, startTime?: number, endTime?: number) => Promise<{
       success: boolean
       data?: {
