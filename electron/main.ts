@@ -1,4 +1,4 @@
-﻿import './preload-env'
+import './preload-env'
 import { app, BrowserWindow, ipcMain, nativeTheme, session, Tray, Menu, nativeImage } from 'electron'
 import { Worker } from 'worker_threads'
 import { randomUUID } from 'crypto'
@@ -2601,8 +2601,8 @@ function registerIpcHandlers() {
     return chatService.exportMyFootprint(beginTimestamp, endTimestamp, format, filePath)
   })
 
-  ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) => {
-    return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+  ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, commentByUsername?: string) => {
+    return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime, commentByUsername)
   })
 
   ipcMain.handle('sns:getSnsUsernames', async () => {

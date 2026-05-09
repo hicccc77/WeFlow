@@ -1165,11 +1165,149 @@ class SnsService {
         })
     }
 
-    async getTimeline(limit: number = 20, offset: number = 0, usernames?: string[], keyword?: string, startTime?: number, endTime?: number): Promise<{ success: boolean; timeline?: SnsPost[]; error?: string }> {
-        const result = await wcdbService.getSnsTimeline(limit, offset, usernames, keyword, startTime, endTime)
-        if (!result.success || !result.timeline || result.timeline.length === 0) return result
+    async getTimeline(limit: number = 20, offset: number = 0, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, commentByUsername?: string): Promise<{ success: boolean; timeline?: SnsPost[]; error?: string }> {
+        let resultTimeline: any[] = [];
+        let finalSuccess = false;
+        let finalError: string | undefined = undefined;
+        let lastBatchResult: Awaited<ReturnType<typeof wcdbService.getSnsTimeline>> | undefined = undefined;
 
-        const enrichedTimeline = result.timeline.map((post: any) => {
+        let targetNicknames: string[] = [];
+        let commentSearchKeyword = '';
+        let targetDisplayNameOverride = '';
+        if (commentByUsername) {
+            const targetContactResult = await wcdbService.getContact(commentByUsername);
+            if (targetContactResult.success && targetContactResult.contact) {
+                const c = targetContactResult.contact;
+                const names = [c.nickname, c.nickName, c.nick_name, c.NickName, c.remark, c.Remark, c.displayName, c.alias, c.Alias];
+                for (const n of names) {
+                    if (n) targetNicknames.push(n);
+                }
+                targetDisplayNameOverride = c.remark || c.Remark || c.displayName || c.nickname || c.nickName || c.nick_name || c.NickName || c.alias || c.Alias || commentByUsername;
+            }
+            const cacheContact = this.contactCache.get(commentByUsername);
+            if (cacheContact && cacheContact.displayName) {
+                targetNicknames.push(cacheContact.displayName);
+                if (!targetDisplayNameOverride || targetDisplayNameOverride === commentByUsername) {
+                    targetDisplayNameOverride = cacheContact.displayName;
+                }
+            }
+            targetNicknames = [...new Set(targetNicknames)];
+            // Fallback: SQL LIKE 匹配，以防 XML 和 JSON 都解析不出 username
+            commentSearchKeyword = targetNicknames.length > 0 ? targetNicknames[0] : commentByUsername;
+            if (!targetDisplayNameOverride) targetDisplayNameOverride = commentByUsername;
+        }
+
+        if (!commentByUsername) {
+            const result = await wcdbService.getSnsTimeline(limit, offset, usernames, keyword, startTime, endTime)
+            lastBatchResult = result;
+            if (!result.success || !result.timeline || result.timeline.length === 0) return result
+            resultTimeline = result.timeline;
+            finalSuccess = result.success;
+            finalError = result.error;
+        } else {
+            // 过滤特定好友的评论
+            const batchLimit = 200;
+            let currentEndTime = endTime;
+            // 合并搜索词：如果有全局搜索词，也需要满足；否则用联系人昵称作为底层 SQL LIKE 的第一道防线，避免拉取太多无用数据
+            // 放宽限制，如果 keyword 和 commentSearchKeyword 都没有，直接传空，在内存中过滤
+            // 此时如果指定了特定人的评论，为了避免全局拉取太多导致内存爆炸，如果不传入 keyword 到数据库层面过滤，就只传空字符串。
+            const mergedKeyword = keyword || '';
+
+            let retryCount = 0;
+            const MAX_RETRIES = 50;
+
+            while (resultTimeline.length < limit && retryCount < MAX_RETRIES) {
+                retryCount++;
+                const result = await wcdbService.getSnsTimeline(batchLimit, 0, usernames, mergedKeyword, startTime, currentEndTime);
+                lastBatchResult = result;
+                if (!result.success) {
+                    if (resultTimeline.length === 0) {
+                        return result;
+                    }
+                    break;
+                }
+                if (!result.timeline || result.timeline.length === 0) {
+                    finalSuccess = true;
+                    break;
+                }
+                
+                for (const post of result.timeline) {
+                    const dllComments: any[] = post.comments || []
+                    let match = false;
+                    for (const c of dllComments) {
+                        if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                            match = true;
+                            break;
+                        }
+                    }
+                    if (!match && post.rawXml) {
+                         const xmlComments = parseCommentsFromXml(post.rawXml);
+                         for (const c of xmlComments) {
+                             if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                                 match = true;
+                                 break;
+                             }
+                         }
+                    }
+
+                    // 如果该动态匹配了，再检查它是否满足原始 keyword（因为我们刚才把 mergedKeyword 传给了底层，如果是 OR 关系，需要重新验证）
+                    if (match && keyword) {
+                        const contentStr = (post.contentDesc || '') + (post.nickname || '');
+                        let keywordMatch = contentStr.includes(keyword);
+                        if (!keywordMatch) {
+                            // 检查评论是否包含 keyword
+                            for (const c of dllComments) {
+                                if (c.content?.includes(keyword) || c.nickname?.includes(keyword)) {
+                                    keywordMatch = true; break;
+                                }
+                            }
+                        }
+                        if (!keywordMatch && post.rawXml) {
+                            const xmlComments = parseCommentsFromXml(post.rawXml);
+                            for (const c of xmlComments) {
+                                if (c.content?.includes(keyword) || c.nickname?.includes(keyword)) {
+                                    keywordMatch = true; break;
+                                }
+                            }
+                        }
+                        match = keywordMatch;
+                    }
+
+                    if (match) {
+                        resultTimeline.push(post);
+                        if (resultTimeline.length >= limit) break;
+                    }
+                }
+                
+                if (result.timeline.length === 0) {
+                    finalSuccess = true;
+                    break;
+                }
+                
+                if (result.timeline.length < batchLimit) {
+                    finalSuccess = true;
+                    break;
+                }
+                
+                if (retryCount >= MAX_RETRIES) {
+                    finalSuccess = true;
+                    break;
+                }
+                if (resultTimeline.length >= limit) {
+                    finalSuccess = true;
+                    break;
+                }
+                
+                const lastPost = result.timeline[result.timeline.length - 1];
+                currentEndTime = lastPost.createTime - 1;
+            }
+
+            if (resultTimeline.length === 0 && finalSuccess) {
+                return { success: true, timeline: [] };
+            }
+        }
+
+        const enrichedTimeline = resultTimeline.map((post: any) => {
             const contact = this.contactCache.get(post.username)
             const isVideoPost = post.type === 15
             const rawXml = post.rawXml || ''
@@ -1213,17 +1351,42 @@ class SnsService {
                 finalComments = this.fixCommentRefs(dllComments)
             }
 
+            // 替换评论中的昵称为联系人备注名
+            finalComments = finalComments.map((c: any) => {
+                let commentContact = c.username ? this.contactCache.get(c.username) : undefined;
+                let refCommentContact = c.refUsername ? this.contactCache.get(c.refUsername) : undefined;
+                
+                let finalNickname = commentContact?.displayName || c.nickname;
+                let finalRefNickname = refCommentContact?.displayName || c.refNickname;
+
+                // 如果搜索了特定好友的评论，且该评论人的昵称匹配上了搜索目标，则强制替换为其备注名
+                if (commentByUsername && targetDisplayNameOverride) {
+                    if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                        finalNickname = targetDisplayNameOverride;
+                    }
+                    if (c.refUsername === commentByUsername || targetNicknames.includes(c.refNickname) || c.refNickname === commentSearchKeyword || c.refNickname === commentByUsername) {
+                        finalRefNickname = targetDisplayNameOverride;
+                    }
+                }
+
+                return {
+                    ...c,
+                    nickname: finalNickname,
+                    refNickname: finalRefNickname
+                };
+            });
+
             return {
                 ...post,
                 avatarUrl: contact?.avatarUrl,
-                nickname: post.nickname || contact?.displayName || post.username,
+                nickname: contact?.displayName || post.nickname || post.username,
                 media: fixedMedia,
                 comments: finalComments,
                 location
             }
         })
 
-        return { ...result, timeline: enrichedTimeline }
+        return { ...lastBatchResult, success: finalSuccess, timeline: enrichedTimeline, error: finalError }
     }
 
     async debugResource(url: string): Promise<{ success: boolean; status?: number; headers?: any; error?: string }> {
@@ -1331,6 +1494,7 @@ class SnsService {
         format: 'json' | 'html' | 'arkmejson'
         usernames?: string[]
         keyword?: string
+        commentByUsername?: string
         exportMedia?: boolean
         exportImages?: boolean
         exportLivePhotos?: boolean
@@ -1343,7 +1507,7 @@ class SnsService {
         recordCreatedFile?: (filePath: string) => void
         recordCreatedDir?: (dirPath: string) => void
     }): Promise<{ success: boolean; filePath?: string; postCount?: number; mediaCount?: number; paused?: boolean; stopped?: boolean; error?: string }> {
-        const { outputDir, format, usernames, keyword, startTime, endTime } = options
+        const { outputDir, format, usernames, keyword, commentByUsername, startTime, endTime } = options
         const hasExplicitMediaSelection =
             typeof options.exportImages === 'boolean' ||
             typeof options.exportLivePhotos === 'boolean' ||
@@ -1398,7 +1562,7 @@ class SnsService {
                 if (controlState) {
                     return buildInterruptedResult(controlState, allPosts.length, 0)
                 }
-                const result = await this.getTimeline(pageSize, 0, usernames, keyword, startTime, endTs)
+                const result = await this.getTimeline(pageSize, 0, usernames, keyword, startTime, endTs, commentByUsername)
                 if (result.success && result.timeline && result.timeline.length > 0) {
                     allPosts.push(...result.timeline)
                     // 下一页的 endTs 为当前最后一条帖子的时间 - 1

@@ -88,6 +88,7 @@ interface SnsExportRequest {
     format: 'json' | 'html' | 'arkmejson'
     usernames?: string[]
     keyword?: string
+    commentByUsername?: string
     exportImages: boolean
     exportLivePhotos: boolean
     exportVideos: boolean
@@ -172,6 +173,7 @@ export default function SnsPage() {
 
     // Filter states
     const [searchKeyword, setSearchKeyword] = useState('')
+    const [commentByUsername, setCommentByUsername] = useState<string | undefined>(undefined)
     const [jumpTargetDate, setJumpTargetDate] = useState<Date | undefined>(undefined)
 
     // Contacts state
@@ -238,6 +240,7 @@ export default function SnsPage() {
     const overviewStatsRef = useRef<SnsOverviewStats>(overviewStats)
     const overviewStatsStatusRef = useRef<OverviewStatsStatus>(overviewStatsStatus)
     const searchKeywordRef = useRef(searchKeyword)
+    const commentByUsernameRef = useRef(commentByUsername)
     const jumpTargetDateRef = useRef<Date | undefined>(jumpTargetDate)
     const selectedContactUsernamesRef = useRef<string[]>(selectedContactUsernames)
     const cacheScopeKeyRef = useRef('')
@@ -278,6 +281,9 @@ export default function SnsPage() {
     useEffect(() => {
         searchKeywordRef.current = searchKeyword
     }, [searchKeyword])
+    useEffect(() => {
+        commentByUsernameRef.current = commentByUsername
+    }, [commentByUsername])
     useEffect(() => {
         jumpTargetDateRef.current = jumpTargetDate
     }, [jumpTargetDate])
@@ -824,6 +830,7 @@ export default function SnsPage() {
         format: exportFormat,
         usernames: exportScope.kind === 'selected' ? [...exportScope.usernames] : undefined,
         keyword: searchKeyword || undefined,
+        commentByUsername: commentByUsername || undefined,
         exportImages,
         exportLivePhotos,
         exportVideos,
@@ -841,7 +848,8 @@ export default function SnsPage() {
         exportLivePhotos,
         exportScope,
         exportVideos,
-        searchKeyword
+        searchKeyword,
+        commentByUsername
     ])
 
     const runSnsExport = useCallback(async (request: SnsExportRequest, statusText = '准备导出...') => {
@@ -1027,6 +1035,7 @@ export default function SnsPage() {
         try {
             const limit = 20
             const currentSearchKeyword = searchKeywordRef.current
+            const currentCommentByUsername = commentByUsernameRef.current
             const currentJumpTargetDate = jumpTargetDateRef.current
             const currentSelectedContactUsernames = selectedContactUsernamesRef.current
             const selectedUsernames = currentSelectedContactUsernames.length > 0
@@ -1051,7 +1060,8 @@ export default function SnsPage() {
                         selectedUsernames,
                         currentSearchKeyword,
                         topTs + 1,
-                        undefined
+                        undefined,
+                        currentCommentByUsername
                     );
 
                     if (result.success && result.timeline && result.timeline.length > 0) {
@@ -1092,7 +1102,8 @@ export default function SnsPage() {
                 selectedUsernames,
                 currentSearchKeyword,
                 startTs, // default undefined
-                endTs
+                endTs,
+                currentCommentByUsername
             )
 
             if (result.success && result.timeline) {
@@ -1104,7 +1115,7 @@ export default function SnsPage() {
                     // Check for newer items above topTs
                     const topTs = result.timeline[0]?.createTime || 0;
                     if (topTs > 0) {
-                        const checkResult = await window.electronAPI.sns.getTimeline(1, 0, selectedUsernames, currentSearchKeyword, topTs + 1, undefined);
+                        const checkResult = await window.electronAPI.sns.getTimeline(1, 0, selectedUsernames, currentSearchKeyword, topTs + 1, undefined, currentCommentByUsername);
                         setHasNewer(!!(checkResult.success && checkResult.timeline && checkResult.timeline.length > 0));
                     } else {
                         setHasNewer(false);
@@ -1747,7 +1758,7 @@ export default function SnsPage() {
             loadPosts({ reset: true })
         }, 500)
         return () => clearTimeout(timer)
-    }, [searchKeyword, jumpTargetDate, loadPosts])
+    }, [searchKeyword, jumpTargetDate, commentByUsername, loadPosts])
 
     const selectedContactUsernamesKey = useMemo(
         () => selectedContactUsernames.join('||'),
@@ -1997,11 +2008,12 @@ export default function SnsPage() {
                             <div className="no-results">
                                 <div className="no-results-icon"><Search size={48} /></div>
                                 <p>未找到相关动态</p>
-                                {(searchKeyword || jumpTargetDate || selectedContactUsernames.length > 0) && (
+                                {(searchKeyword || jumpTargetDate || selectedContactUsernames.length > 0 || commentByUsername) && (
                                     <button onClick={() => {
                                         setSearchKeyword('')
                                         setJumpTargetDate(undefined)
                                         clearSelectedContacts()
+                                        setCommentByUsername(undefined)
                                     }} className="reset-inline">
                                         重置筛选条件
                                     </button>
@@ -2034,6 +2046,8 @@ export default function SnsPage() {
                 onToggleFilteredContacts={toggleSelectFilteredContacts}
                 onClearSelectedContacts={clearSelectedContacts}
                 onExportSelectedContacts={openSelectedContactsExport}
+                commentByUsername={commentByUsername}
+                onSetCommentByUsername={setCommentByUsername}
             />
 
             {/* Dialogs and Overlays */}
@@ -2289,13 +2303,16 @@ export default function SnsPage() {
 
                         <div className="export-dialog-body">
                             {/* 筛选条件提示 */}
-                            {(searchKeyword || exportScope.kind === 'selected') && (
+                            {(searchKeyword || exportScope.kind === 'selected' || commentByUsername) && (
                                 <div className="export-filter-info">
                                     <span className="filter-badge">导出范围</span>
                                     {exportScope.kind === 'selected' && (
                                         <span className="filter-tag">联系人: {exportSelectedContactsSummary}</span>
                                     )}
                                     {searchKeyword && <span className="filter-tag">关键词: "{searchKeyword}"</span>}
+                                    {commentByUsername && (
+                                        <span className="filter-tag">评论人: {contacts.find(c => c.username === commentByUsername)?.displayName || commentByUsername}</span>
+                                    )}
                                 </div>
                             )}
 

@@ -1,4 +1,4 @@
-﻿import type { ChatSession, Message, Contact, ContactInfo, ChatRecordItem } from './models'
+import type { ChatSession, Message, Contact, ContactInfo, ChatRecordItem } from './models'
 
 export interface SessionChatWindowOpenOptions {
   source?: 'chat' | 'export'
@@ -1125,7 +1125,7 @@ export interface ElectronAPI {
     onDownloadProgress: (callback: (payload: { modelName: string; downloadedBytes: number; totalBytes?: number; percent?: number }) => void) => () => void
   }
   sns: {
-    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) => Promise<{
+    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, commentByUsername?: string) => Promise<{
       success: boolean
       timeline?: Array<{
         id: string

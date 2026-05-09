@@ -1,4 +1,4 @@
-﻿import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 // 暴露给渲染进程的 API
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -515,8 +515,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 朋友圈
   sns: {
-    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) =>
-      ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime),
+    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, commentByUsername?: string) => ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime, commentByUsername),
     getSnsUsernames: () => ipcRenderer.invoke('sns:getSnsUsernames'),
     getUserPostCounts: () => ipcRenderer.invoke('sns:getUserPostCounts'),
     getExportStatsFast: () => ipcRenderer.invoke('sns:getExportStatsFast'),

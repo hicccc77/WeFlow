@@ -1,5 +1,5 @@
 import React from 'react'
-import { Search, User, X, Loader2, CheckSquare, Square, Download } from 'lucide-react'
+import { Search, User, X, Loader2, CheckSquare, Square, Download, MessageSquare } from 'lucide-react'
 import { Avatar } from '../Avatar'
 
 interface Contact {
@@ -32,6 +32,8 @@ interface SnsFilterPanelProps {
     onToggleFilteredContacts: (usernames: string[], shouldSelect: boolean) => void
     onClearSelectedContacts: () => void
     onExportSelectedContacts: () => void
+    commentByUsername?: string
+    onSetCommentByUsername: (username: string | undefined) => void
 }
 
 export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
@@ -49,7 +51,9 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     onToggleContactSelected,
     onToggleFilteredContacts,
     onClearSelectedContacts,
-    onExportSelectedContacts
+    onExportSelectedContacts,
+    commentByUsername,
+    onSetCommentByUsername
 }) => {
     const filteredContacts = contacts.filter(c =>
         (c.displayName || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
@@ -73,6 +77,7 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     const clearFilters = () => {
         setSearchKeyword('')
         setContactSearch('')
+        onSetCommentByUsername(undefined)
     }
 
     const getEmptyStateText = () => {
@@ -89,7 +94,7 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
         <aside className="sns-filter-panel">
             <div className="filter-header">
                 <h3>筛选条件</h3>
-                {(searchKeyword || contactSearch) && (
+                {(searchKeyword || contactSearch || commentByUsername) && (
                     <button className="reset-all-btn" onClick={clearFilters} title="重置所有筛选">
                         <RefreshCw size={14} />
                     </button>
@@ -204,6 +209,14 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
                                                 </span>
                                             )}
                                         </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`contact-comment-search-btn${commentByUsername === contact.username ? ' active' : ''}`}
+                                        onClick={() => onSetCommentByUsername(commentByUsername === contact.username ? undefined : contact.username)}
+                                        title={commentByUsername === contact.username ? `取消搜索 ${contact.displayName} 的评论` : `仅看 ${contact.displayName} 的评论`}
+                                    >
+                                        <MessageSquare size={16} />
                                     </button>
                                 </div>
                             )

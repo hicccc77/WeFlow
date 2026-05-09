@@ -122,10 +122,6 @@
             font-weight: 600;
             display: inline-flex;
             align-items: center;
-
-            .spin {
-                animation: spin 0.8s linear infinite;
-            }
         }
 
         &.ready {
@@ -1444,6 +1440,31 @@
 
                     .spinning {
                         animation: spin 0.8s linear infinite;
+                    }
+                }
+
+                .contact-comment-search-btn {
+                    width: 32px;
+                    height: 32px;
+                    flex-shrink: 0;
+                    border: none;
+                    background: transparent;
+                    border-radius: 8px;
+                    color: var(--text-tertiary);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: background 0.2s ease, color 0.2s ease;
+
+                    &:hover {
+                        background: rgba(var(--primary-rgb), 0.1);
+                        color: var(--primary);
+                    }
+
+                    &.active {
+                        background: rgba(var(--primary-rgb), 0.15);
+                        color: var(--primary);
                     }
                 }
             }
