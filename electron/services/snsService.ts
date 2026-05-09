@@ -1224,6 +1224,7 @@ class SnsService {
                     if (resultTimeline.length === 0) {
                         return result;
                     }
+                    finalSuccess = true;
                     break;
                 }
                 if (!result.timeline || result.timeline.length === 0) {
@@ -1235,7 +1236,10 @@ class SnsService {
                     const dllComments: any[] = post.comments || []
                     let match = false;
                     for (const c of dllComments) {
-                        if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                        const isHit = c.username 
+                            ? c.username === commentByUsername
+                            : (targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername);
+                        if (isHit) {
                             match = true;
                             break;
                         }
@@ -1243,7 +1247,10 @@ class SnsService {
                     if (!match && post.rawXml) {
                          const xmlComments = parseCommentsFromXml(post.rawXml);
                          for (const c of xmlComments) {
-                             if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                             const isHit = c.username 
+                                 ? c.username === commentByUsername
+                                 : (targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername);
+                             if (isHit) {
                                  match = true;
                                  break;
                              }
@@ -1361,10 +1368,17 @@ class SnsService {
 
                 // 如果搜索了特定好友的评论，且该评论人的昵称匹配上了搜索目标，则强制替换为其备注名
                 if (commentByUsername && targetDisplayNameOverride) {
-                    if (c.username === commentByUsername || targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername) {
+                    const isCommentHit = c.username 
+                        ? c.username === commentByUsername
+                        : (targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername);
+                    if (isCommentHit) {
                         finalNickname = targetDisplayNameOverride;
                     }
-                    if (c.refUsername === commentByUsername || targetNicknames.includes(c.refNickname) || c.refNickname === commentSearchKeyword || c.refNickname === commentByUsername) {
+                    
+                    const isRefHit = c.refUsername
+                        ? c.refUsername === commentByUsername
+                        : (targetNicknames.includes(c.refNickname) || c.refNickname === commentSearchKeyword || c.refNickname === commentByUsername);
+                    if (isRefHit) {
                         finalRefNickname = targetDisplayNameOverride;
                     }
                 }
