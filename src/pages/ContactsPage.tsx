@@ -16,7 +16,7 @@ interface ContactEnrichInfo {
 
 const AVATAR_ENRICH_BATCH_SIZE = 80
 const SEARCH_DEBOUNCE_MS = 120
-const VIRTUAL_ROW_HEIGHT = 76
+const VIRTUAL_ROW_HEIGHT = 64
 const VIRTUAL_OVERSCAN = 10
 const DEFAULT_CONTACTS_LOAD_TIMEOUT_MS = 10000
 const AVATAR_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -635,6 +635,39 @@ function ContactsPage() {
         return '朋友圈：统计中...'
     }, [selectedContactSupportsSns, selectedContactSnsCount, snsUserPostCountsStatus])
 
+    const selectedContactTitle = useMemo(() => {
+        if (!selectedContact) return ''
+        return selectedContact.displayName || selectedContact.remark || selectedContact.nickname || selectedContact.username
+    }, [selectedContact])
+
+    const selectedContactSubtitle = useMemo(() => {
+        if (!selectedContact) return ''
+        const parts = [
+            selectedContact.remark && selectedContact.remark !== selectedContactTitle ? `备注 ${selectedContact.remark}` : '',
+            selectedContact.alias ? `微信号 ${selectedContact.alias}` : '',
+            selectedContact.region || ''
+        ].filter(Boolean)
+        return parts.join(' · ')
+    }, [selectedContact, selectedContactTitle])
+
+    const selectedContactDetailRows = useMemo(() => {
+        if (!selectedContact) return []
+        return [
+            { key: 'username', label: '用户名', value: selectedContact.username },
+            { key: 'nickname', label: '昵称', value: selectedContact.nickname || selectedContact.displayName },
+            selectedContact.remark ? { key: 'remark', label: '备注', value: selectedContact.remark } : null,
+            selectedContact.alias ? { key: 'alias', label: '微信号', value: selectedContact.alias } : null,
+            selectedContact.labels && selectedContact.labels.length > 0
+                ? { key: 'labels', label: '标签', value: selectedContact.labels.join('、') }
+                : null,
+            selectedContact.detailDescription
+                ? { key: 'signature', label: '个性签名', value: selectedContact.detailDescription }
+                : null,
+            selectedContact.region ? { key: 'region', label: '地区', value: selectedContact.region } : null,
+            { key: 'type', label: '类型', value: getContactTypeName(selectedContact.type) }
+        ].filter((row): row is { key: string; label: string; value: string } => Boolean(row && row.value))
+    }, [selectedContact])
+
     const openSelectedContactSnsTimeline = useCallback(() => {
         if (!selectedContact || !selectedContactSupportsSns) return
         if (snsUserPostCountsStatus === 'idle') {
@@ -1090,12 +1123,9 @@ function ContactsPage() {
                     </div>
                 </div>
             ) : selectedContact ? (
-                <div className="settings-panel">
-                    <div className="panel-header">
-                        <h2>联系人详情</h2>
-                    </div>
-                    <div className="settings-content">
-                        <div className="detail-profile">
+                <div className="settings-panel contact-detail-panel">
+                    <div className="contact-detail-scroll">
+                        <section className="contact-detail-hero">
                             <div className="detail-avatar">
                                 {selectedContact.avatarUrl ? (
                                     <img src={selectedContact.avatarUrl} alt="" />
@@ -1103,53 +1133,50 @@ function ContactsPage() {
                                     <span>{getAvatarLetter(selectedContact.displayName)}</span>
                                 )}
                             </div>
-                            <div className="detail-name">{selectedContact.displayName}</div>
-                            <div className={`contact-type ${selectedContact.type}`}>
-                                {getContactTypeIcon(selectedContact.type)}
-                                <span>{getContactTypeName(selectedContact.type)}</span>
-                            </div>
-                        </div>
-
-                        <div className="detail-info-list">
-                            <div className="detail-row"><span className="detail-label">用户名</span><span className="detail-value">{selectedContact.username}</span></div>
-                            <div className="detail-row"><span className="detail-label">昵称</span><span className="detail-value">{selectedContact.nickname || selectedContact.displayName}</span></div>
-                            {selectedContact.remark && <div className="detail-row"><span className="detail-label">备注</span><span className="detail-value">{selectedContact.remark}</span></div>}
-                            {selectedContact.alias && <div className="detail-row"><span className="detail-label">微信号</span><span className="detail-value">{selectedContact.alias}</span></div>}
-                            {selectedContact.labels && selectedContact.labels.length > 0 && (
-                                <div className="detail-row"><span className="detail-label">标签</span><span className="detail-value">{selectedContact.labels.join('、')}</span></div>
-                            )}
-                            {selectedContact.detailDescription && (
-                                <div className="detail-row"><span className="detail-label">个性签名</span><span className="detail-value">{selectedContact.detailDescription}</span></div>
-                            )}
-                            {selectedContact.region && (
-                                <div className="detail-row"><span className="detail-label">地区</span><span className="detail-value">{selectedContact.region}</span></div>
-                            )}
-                            <div className="detail-row"><span className="detail-label">类型</span><span className="detail-value">{getContactTypeName(selectedContact.type)}</span></div>
-                            {selectedContactSupportsSns && (
-                                <div className="detail-row">
-                                    <span className="detail-label">朋友圈</span>
-                                    <button
-                                        type="button"
-                                        className="detail-entry-btn"
-                                        onClick={openSelectedContactSnsTimeline}
-                                    >
-                                        <Aperture size={14} />
-                                        <span>{selectedContactSnsEntryLabel}</span>
-                                    </button>
+                            <div className="contact-detail-heading">
+                                <div className={`contact-type detail-type ${selectedContact.type}`}>
+                                    {getContactTypeIcon(selectedContact.type)}
+                                    <span>{getContactTypeName(selectedContact.type)}</span>
                                 </div>
-                            )}
-                        </div>
+                                <h2>{selectedContactTitle}</h2>
+                                {selectedContactSubtitle && <p>{selectedContactSubtitle}</p>}
+                            </div>
+                        </section>
 
-                        <button
-                            className="goto-chat-btn"
-                            onClick={() => {
-                                setCurrentSession(selectedContact.username)
-                                navigate('/chat')
-                            }}
-                        >
-                            <MessageCircle size={18} />
-                            <span>查看聊天记录</span>
-                        </button>
+                        <section className="contact-action-row" aria-label="联系人操作">
+                            <button
+                                className="goto-chat-btn"
+                                onClick={() => {
+                                    setCurrentSession(selectedContact.username)
+                                    navigate('/chat')
+                                }}
+                            >
+                                <MessageCircle size={18} />
+                                <span>查看聊天记录</span>
+                            </button>
+                            {selectedContactSupportsSns && (
+                                <button
+                                    type="button"
+                                    className="detail-entry-btn"
+                                    onClick={openSelectedContactSnsTimeline}
+                                >
+                                    <Aperture size={18} />
+                                    <span>{selectedContactSnsEntryLabel}</span>
+                                </button>
+                            )}
+                        </section>
+
+                        <section className="contact-detail-section">
+                            <div className="section-title">基础资料</div>
+                            <div className="detail-info-list">
+                                {selectedContactDetailRows.map(row => (
+                                    <div className="detail-row" key={row.key}>
+                                        <span className="detail-label">{row.label}</span>
+                                        <span className="detail-value">{row.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
                     </div>
                 </div>
             ) : (

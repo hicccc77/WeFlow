@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { RefreshCw, Search, X, Download, FolderOpen, FileJson, FileText, Image, CheckCircle, AlertCircle, Calendar, Info, Shield, ShieldOff, Loader2, Pause, Play, Square } from 'lucide-react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import './SnsPage.scss'
 import { SnsPost } from '../types/sns'
 import { SnsPostItem } from '../components/Sns/SnsPostItem'
@@ -231,7 +232,8 @@ export default function SnsPage() {
     const [cacheMigrationDone, setCacheMigrationDone] = useState(false)
     const [cacheMigrationError, setCacheMigrationError] = useState<string | null>(null)
 
-    const postsContainerRef = useRef<HTMLDivElement>(null)
+    const postsContainerRef = useRef<HTMLElement | null>(null)
+    const postsVirtuosoRef = useRef<VirtuosoHandle | null>(null)
     const jumpCalendarWrapRef = useRef<HTMLDivElement | null>(null)
     const [hasNewer, setHasNewer] = useState(false)
     const [loadingNewer, setLoadingNewer] = useState(false)
@@ -1121,6 +1123,7 @@ export default function SnsPage() {
                         setHasNewer(false);
                     }
 
+                    postsVirtuosoRef.current?.scrollToIndex({ index: 0, align: 'start', behavior: 'auto' })
                     if (postsContainerRef.current) {
                         postsContainerRef.current.scrollTop = 0
                     }
@@ -1775,23 +1778,61 @@ export default function SnsPage() {
         loadPosts({ reset: true })
     }, [loadPosts, selectedContactUsernamesKey])
 
-    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-        const { scrollTop, clientHeight, scrollHeight } = e.currentTarget
-        if (scrollHeight - scrollTop - clientHeight < 400 && hasMore && !loading && !loadingNewer) {
-            loadPosts({ direction: 'older' })
-        }
-        if (scrollTop < 10 && hasNewer && !loading && !loadingNewer) {
-            loadPosts({ direction: 'newer' })
-        }
-    }
+    const handlePostsEndReached = useCallback(() => {
+        if (!hasMore || loading || loadingNewer) return
+        void loadPosts({ direction: 'older' })
+    }, [hasMore, loadPosts, loading, loadingNewer])
 
-    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-        const container = postsContainerRef.current
-        if (!container) return
-        if (e.deltaY < -20 && container.scrollTop <= 0 && hasNewer && !loading && !loadingNewer) {
-            loadPosts({ direction: 'newer' })
-        }
-    }
+    const renderPostItem = useCallback((_: number, post: SnsPost) => (
+        <div className="sns-post-row">
+            <SnsPostItem
+                post={{ ...post, isProtected: triggerInstalled === true }}
+                onPreview={(src, isVideo, liveVideoPath) => {
+                    if (isVideo) {
+                        void window.electronAPI.window.openVideoPlayerWindow(src)
+                    } else {
+                        void window.electronAPI.window.openImageViewerWindow(src, liveVideoPath || undefined)
+                    }
+                }}
+                onDebug={(p) => setDebugPost(p)}
+                onDelete={handlePostDelete}
+                onOpenAuthorPosts={openAuthorTimeline}
+            />
+        </div>
+    ), [handlePostDelete, openAuthorTimeline, triggerInstalled])
+
+    const snsVirtuosoComponents = useMemo(() => ({
+        Header: () => (
+            <>
+                {loadingNewer && (
+                    <div className="status-indicator loading-newer">
+                        <RefreshCw size={14} className="spinning" />
+                        <span>正在检查更新动态</span>
+                    </div>
+                )}
+
+                {!loadingNewer && hasNewer && (
+                    <button type="button" className="status-indicator newer-hint" onClick={() => void loadPosts({ direction: 'newer' })}>
+                        有新动态，点击查看
+                    </button>
+                )}
+            </>
+        ),
+        Footer: () => (
+            <>
+                {loading && visiblePosts.length > 0 && (
+                    <div className="status-indicator loading-more">
+                        <RefreshCw size={14} className="spinning" />
+                        <span>正在加载更多</span>
+                    </div>
+                )}
+
+                {!hasMore && visiblePosts.length > 0 && (
+                    <div className="status-indicator no-more">已加载全部动态</div>
+                )}
+            </>
+        )
+    }), [hasMore, hasNewer, loadPosts, loading, loadingNewer, visiblePosts.length])
 
     return (
         <div className="sns-page-layout">
@@ -1951,62 +1992,19 @@ export default function SnsPage() {
                         </div>
                     )}
 
-                    <div className="sns-posts-scroll" onScroll={handleScroll} onWheel={handleWheel} ref={postsContainerRef}>
-                        {loadingNewer && (
-                            <div className="status-indicator loading-newer">
-                                <RefreshCw size={16} className="spinning" />
-                                <span>正在检查更新的动态...</span>
-                            </div>
-                        )}
-
-                        {!loadingNewer && hasNewer && (
-                            <div className="status-indicator newer-hint" onClick={() => loadPosts({ direction: 'newer' })}>
-                                有新动态，点击查看
-                            </div>
-                        )}
-
-                        <div className="posts-list">
-                            {visiblePosts.map(post => (
-                                <SnsPostItem
-                                    key={post.id}
-                                    post={{ ...post, isProtected: triggerInstalled === true }}
-                                    onPreview={(src, isVideo, liveVideoPath) => {
-                                        if (isVideo) {
-                                            void window.electronAPI.window.openVideoPlayerWindow(src)
-                                        } else {
-                                            void window.electronAPI.window.openImageViewerWindow(src, liveVideoPath || undefined)
-                                        }
-                                    }}
-                                    onDebug={(p) => setDebugPost(p)}
-                                    onDelete={handlePostDelete}
-                                    onOpenAuthorPosts={openAuthorTimeline}
-                                />
-                            ))}
-                        </div>
-
+                    <div className="sns-posts-stage">
                         {loading && visiblePosts.length === 0 && (
                             <div className="initial-loading">
                                 <div className="loading-pulse">
                                     <div className="pulse-circle"></div>
-                                    <span>正在加载朋友圈...</span>
+                                    <span>正在加载动态</span>
                                 </div>
                             </div>
                         )}
 
-                        {loading && visiblePosts.length > 0 && (
-                            <div className="status-indicator loading-more">
-                                <RefreshCw size={16} className="spinning" />
-                                <span>正在加载更多...</span>
-                            </div>
-                        )}
-
-                        {!hasMore && visiblePosts.length > 0 && (
-                            <div className="status-indicator no-more">或许过往已无可溯洄，但好在还有可以与你相遇的明天</div>
-                        )}
-
                         {!loading && visiblePosts.length === 0 && (
                             <div className="no-results">
-                                <div className="no-results-icon"><Search size={48} /></div>
+                                <div className="no-results-icon"><Search size={28} /></div>
                                 <p>未找到相关动态</p>
                                 {(searchKeyword || jumpTargetDate || selectedContactUsernames.length > 0 || commentByUsername) && (
                                     <button onClick={() => {
@@ -2019,6 +2017,24 @@ export default function SnsPage() {
                                     </button>
                                 )}
                             </div>
+                        )}
+
+                        {visiblePosts.length > 0 && (
+                            <Virtuoso
+                                ref={postsVirtuosoRef}
+                                className="sns-posts-scroll"
+                                data={visiblePosts}
+                                computeItemKey={(_, post) => post.id}
+                                itemContent={renderPostItem}
+                                components={snsVirtuosoComponents}
+                                endReached={handlePostsEndReached}
+                                scrollerRef={(ref) => {
+                                    postsContainerRef.current = ref instanceof HTMLElement ? ref : null
+                                }}
+                                defaultItemHeight={220}
+                                increaseViewportBy={{ top: 260, bottom: 520 }}
+                                overscan={{ main: 900, reverse: 480 }}
+                            />
                         )}
                     </div>
                 </div>

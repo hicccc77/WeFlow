@@ -28,6 +28,7 @@ import ChatHistoryPage from './pages/ChatHistoryPage'
 import NotificationWindow from './pages/NotificationWindow'
 import AccountManagementPage from './pages/AccountManagementPage'
 import BackupPage from './pages/BackupPage'
+import InsightInboxPage from './pages/InsightInboxPage'
 
 import { useAppStore } from './stores/appStore'
 import { themes, useThemeStore, type ThemeId, type ThemeMode } from './stores/themeStore'
@@ -149,7 +150,7 @@ function App() {
     }
   }, [isOnboardingWindow, isNotificationWindow, isAnnualReportWindow, isDualReportWindow])
 
-  // 应用主题
+  // 应用主题 (accent color + light/dark mode)
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const applyMode = (mode: ThemeMode, systemDark?: boolean) => {
@@ -312,6 +313,19 @@ function App() {
       if (!sessionId) return
       // 导航到聊天页面，通过URL参数让ChatPage接收sessionId
       navigate(`/chat?sessionId=${encodeURIComponent(sessionId)}`, { replace: true })
+    })
+
+    return () => {
+      removeListener?.()
+    }
+  }, [navigate, isNotificationWindow])
+
+  useEffect(() => {
+    if (isNotificationWindow) return
+
+    const removeListener = window.electronAPI?.notification?.onNavigateToRoute?.((route: string) => {
+      if (!route || !route.startsWith('/')) return
+      navigate(route, { replace: true })
     })
 
     return () => {
@@ -703,6 +717,7 @@ function App() {
 
               <Route path="/export" element={<div className="export-route-anchor" aria-hidden="true" />} />
               <Route path="/sns" element={<SnsPage />} />
+              <Route path="/insight-inbox" element={<InsightInboxPage />} />
               <Route path="/biz" element={<BizPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/resources" element={<ResourcesPage />} />

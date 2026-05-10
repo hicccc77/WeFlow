@@ -5,245 +5,395 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WeFlow</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #8b7355;
+      --primary-rgb: 139, 115, 85;
+      --on-primary: #ffffff;
+      --window-bg: transparent;
+      --card-bg: rgba(255, 255, 255, 0.96);
+      --card-bg-solid: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.06);
+      --text-primary: #171717;
+      --text-secondary: #6f6f6f;
+      --text-tertiary: #9a9a9a;
+      --track-bg: rgba(0, 0, 0, 0.06);
+      --logo-surface: #f4f4f5;
+      --card-gloss-start: rgba(255, 255, 255, 0.62);
+      --card-gloss-end: rgba(255, 255, 255, 0);
+      --shadow: none;
+    }
 
-    html, body {
-      width: 100%; height: 100%;
-      background: transparent;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      background: var(--window-bg);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
       user-select: none;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
       -webkit-app-region: drag;
     }
 
-    .splash {
-      width: 100%; height: 100%;
-      border-radius: 20px;
+    .splash-shell {
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      border-radius: 0;
+      border: none;
+      background:
+        linear-gradient(180deg, var(--card-gloss-start) 0%, var(--card-gloss-end) 48%),
+        var(--card-bg);
+      box-shadow: var(--shadow);
+      isolation: isolate;
+      animation: shellIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .splash-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 0%, rgba(var(--primary-rgb), 0.035) 48%, transparent 100%),
+        linear-gradient(180deg, rgba(var(--primary-rgb), 0.045) 0%, transparent 32%);
+      opacity: 0.9;
+      z-index: -1;
+    }
+
+    .brand-stage {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding-bottom: 42px;
+    }
+
+    .brand-lockup {
       display: flex;
       flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: contentIn 460ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
     }
 
-    /* 品牌区 */
-    .brand {
-      padding: 48px 52px 0;
-      display: flex;
-      align-items: center;
-      gap: 18px;
-      animation: fadeIn 0.4s ease both;
+    .logo-tile {
+      width: 80px;
+      height: 80px;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      background: var(--logo-surface);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 10px 24px rgba(0, 0, 0, 0.04);
+      margin-bottom: 25px;
+      overflow: hidden;
     }
+
     .logo {
-      width: 56px; height: 56px;
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
       border-radius: 14px;
-      flex-shrink: 0;
+      display: block;
     }
+
     .app-name {
-      font-size: 22px;
+      font-size: 25px;
+      line-height: 1.2;
       font-weight: 700;
-      letter-spacing: 0.3px;
+      letter-spacing: 0;
+      color: var(--text-primary);
+      margin-bottom: 10px;
     }
+
     .app-desc {
-      font-size: 12px;
-      margin-top: 5px;
-      opacity: 0.6;
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 400;
+      color: var(--text-secondary);
     }
 
-    .spacer { flex: 1; }
-
-    /* 底部进度区 */
-    .bottom {
-      padding: 0 48px 40px;
-      animation: fadeIn 0.4s ease 0.1s both;
-    }
-
-    /* 进度条轨道 */
-    .progress-track {
-      width: 100%;
-      height: 2px;
-      border-radius: 2px;
-      margin-bottom: 12px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* 进度条填充 */
-    .progress-fill {
-      height: 100%;
-      width: 0%;
-      border-radius: 2px;
-      position: relative;
-      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-
-    /* 扫光：只在有进度时显示，不循环 */
-    .progress-fill::after {
-      content: '';
+    .status-row {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%);
-      animation: sweep 1.2s ease-out forwards;
-      opacity: 0;
-    }
-
-    /* 等待阶段：进度条末端呼吸光点 */
-    .progress-fill.waiting::before {
-      content: '';
-      position: absolute;
-      top: -1px; right: -2px;
-      width: 6px; height: 4px;
-      border-radius: 50%;
-      background: inherit;
-      filter: blur(2px);
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-
-    .bottom-row {
+      left: 32px;
+      right: 32px;
+      bottom: 26px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-    }
-    .progress-text {
-      font-size: 11px;
-      opacity: 0.38;
-    }
-    .version {
-      font-size: 11px;
-      opacity: 0.25;
+      justify-content: space-between;
+      gap: 20px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+      animation: contentIn 460ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
+    .progress-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+
+    .version {
+      flex-shrink: 0;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0;
+      opacity: 0.82;
+    }
+
+    .progress-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: var(--track-bg);
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      width: 0%;
+      min-width: 0;
+      height: 100%;
+      background: var(--primary);
+      border-radius: 0 999px 999px 0;
+      box-shadow: 0 0 18px rgba(var(--primary-rgb), 0.34);
+      transition: width 440ms cubic-bezier(0.22, 1, 0.36, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .progress-fill::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+      opacity: 0;
+      transform: translateX(-100%);
+      animation: sweep 1200ms ease-out;
+    }
+
+    .progress-fill.waiting::before {
+      content: "";
+      position: absolute;
+      top: -4px;
+      right: -10px;
+      width: 22px;
+      height: 11px;
+      border-radius: 999px;
+      background: rgba(var(--primary-rgb), 0.7);
+      filter: blur(5px);
+      animation: waitingPulse 1300ms ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .splash-shell,
+      .brand-lockup,
+      .status-row,
+      .progress-fill,
+      .progress-fill::after,
+      .progress-fill.waiting::before {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    @keyframes shellIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes contentIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     @keyframes sweep {
-      0%   { opacity: 0; transform: translateX(-100%); }
-      20%  { opacity: 1; }
-      80%  { opacity: 1; }
-      100% { opacity: 0; transform: translateX(100%); }
+      0% {
+        opacity: 0;
+        transform: translateX(-100%);
+      }
+      20%,
+      70% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(100%);
+      }
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 0.4; transform: scaleX(1); }
-      50%       { opacity: 1;   transform: scaleX(1.8); }
+
+    @keyframes waitingPulse {
+      0%,
+      100% {
+        opacity: 0.32;
+        transform: scaleX(0.8);
+      }
+      50% {
+        opacity: 0.92;
+        transform: scaleX(1.45);
+      }
     }
   </style>
 </head>
 <body>
-  <div class="splash" id="splash">
-    <div class="brand">
-      <img class="logo" src="./logo.png" alt="WeFlow" />
-      <div class="brand-text">
-        <div class="app-name" id="appName">WeFlow</div>
-        <div class="app-desc" id="appDesc">微信聊天记录管理工具</div>
+  <main class="splash-shell" id="splash" role="status" aria-live="polite">
+    <section class="brand-stage">
+      <div class="brand-lockup">
+        <div class="logo-tile" aria-hidden="true">
+          <img class="logo" src="./logo.png" alt="">
+        </div>
+        <h1 class="app-name">WeFlow</h1>
+        <p class="app-desc">&#24494;&#20449;&#32842;&#22825;&#35760;&#24405;&#31649;&#29702;&#24037;&#20855;</p>
       </div>
+    </section>
+
+    <div class="status-row">
+      <div class="progress-text" id="progressText">&#27491;&#22312;&#21551;&#21160;...</div>
+      <div class="version" id="versionText"></div>
     </div>
 
-    <div class="spacer"></div>
-
-    <div class="bottom">
-      <div class="progress-track" id="progressTrack">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-      <div class="bottom-row">
-        <div class="progress-text" id="progressText">正在启动...</div>
-        <div class="version" id="versionText"></div>
-      </div>
+    <div class="progress-track" aria-hidden="true">
+      <div class="progress-fill" id="progressFill"></div>
     </div>
-  </div>
+  </main>
 
   <script>
-    var themes = {
-      'cloud-dancer': {
-        light: { primary: '#8B7355', bg: '#F0EEE9', bgEnd: '#E5E1DA', text: '#3d3d3d', desc: '#8B7355' },
-        dark:  { primary: '#C9A86C', bg: '#1a1816', bgEnd: '#252220', text: '#F0EEE9', desc: '#C9A86C' }
+    var themePalettes = {
+      "cloud-dancer": {
+        light: { primary: "#8B7355", rgb: "139, 115, 85", onPrimary: "#ffffff" },
+        dark: { primary: "#C9A86C", rgb: "201, 168, 108", onPrimary: "#111111" }
       },
-      'corundum-blue': {
-        light: { primary: '#4A6670', bg: '#E8EEF0', bgEnd: '#D8E4E8', text: '#3d3d3d', desc: '#4A6670' },
-        dark:  { primary: '#6A9AAA', bg: '#141a1c', bgEnd: '#1e2a2e', text: '#E0EEF2', desc: '#6A9AAA' }
+      "blossom-dream": {
+        light: { primary: "#D4849A", rgb: "212, 132, 154", onPrimary: "#ffffff" },
+        dark: { primary: "#D19EBB", rgb: "209, 158, 187", onPrimary: "#111111" }
       },
-      'kiwi-green': {
-        light: { primary: '#7A9A5C', bg: '#E8F0E4', bgEnd: '#D8E8D2', text: '#3d3d3d', desc: '#7A9A5C' },
-        dark:  { primary: '#9ABA7C', bg: '#161a14', bgEnd: '#222a1e', text: '#E8F0E4', desc: '#9ABA7C' }
+      "corundum-blue": {
+        light: { primary: "#4A6670", rgb: "74, 102, 112", onPrimary: "#ffffff" },
+        dark: { primary: "#6A9AAA", rgb: "106, 154, 170", onPrimary: "#111111" }
       },
-      'spicy-red': {
-        light: { primary: '#8B4049', bg: '#F0E8E8', bgEnd: '#E8D8D8', text: '#3d3d3d', desc: '#8B4049' },
-        dark:  { primary: '#C06068', bg: '#1a1416', bgEnd: '#261e20', text: '#F2E8EA', desc: '#C06068' }
+      "kiwi-green": {
+        light: { primary: "#7A9A5C", rgb: "122, 154, 92", onPrimary: "#ffffff" },
+        dark: { primary: "#9ABA7C", rgb: "154, 186, 124", onPrimary: "#111111" }
       },
-      'teal-water': {
-        light: { primary: '#5A8A8A', bg: '#E4F0F0', bgEnd: '#D2E8E8', text: '#3d3d3d', desc: '#5A8A8A' },
-        dark:  { primary: '#7ABAAA', bg: '#121a1a', bgEnd: '#1a2626', text: '#E0F2EE', desc: '#7ABAAA' }
+      "spicy-red": {
+        light: { primary: "#8B4049", rgb: "139, 64, 73", onPrimary: "#ffffff" },
+        dark: { primary: "#C06068", rgb: "192, 96, 104", onPrimary: "#ffffff" }
       },
-      'blossom-dream': {
-        light: { primary: '#D4849A', primaryEnd: '#D4849A', bg: '#FCF9FB', bgMid: '#F8F2F8', bgEnd: '#F2F6FB', text: '#2E2633', desc: '#D4849A' },
-        dark:  { primary: '#C670C3', primaryEnd: '#8A60C0', bg: '#120B16', bgMid: '#1A1020', bgEnd: '#0E0B18', text: '#F2EAF4', desc: '#C670C3' }
+      "teal-water": {
+        light: { primary: "#5A8A8A", rgb: "90, 138, 138", onPrimary: "#ffffff" },
+        dark: { primary: "#7ABAAA", rgb: "122, 186, 170", onPrimary: "#111111" }
+      },
+      "geist": {
+        light: { primary: "#444444", rgb: "68, 68, 68", onPrimary: "#ffffff" },
+        dark: { primary: "#ededed", rgb: "237, 237, 237", onPrimary: "#111111" }
       }
     };
 
-    function applyTheme(themeId, mode) {
-      var t = themes[themeId] || themes['cloud-dancer'];
-      var isDark = mode === 'dark';
-      if (mode === 'system') isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      var c = isDark ? t.dark : t.light;
-
-      var el = document.getElementById('splash');
-      var fill = document.getElementById('progressFill');
-
-      if (themeId === 'blossom-dream') {
-        if (isDark) {
-          // 深色
-          el.style.background =
-            'radial-gradient(ellipse 60% 50% at 100% 0%, ' + c.primary + '28 0%, transparent 70%), ' +
-            'linear-gradient(150deg, ' + c.bg + ' 0%, ' + c.bgMid + ' 45%, ' + c.bgEnd + ' 100%)';
-        } else {
-          // 浅色
-          el.style.background = 'linear-gradient(150deg, ' + c.bg + ' 0%, ' + c.bgMid + ' 45%, ' + c.bgEnd + ' 100%)';
-        }
-        // 进度条
-        fill.style.background = 'linear-gradient(90deg, ' + c.primary + ' 0%, ' + c.primaryEnd + ' 100%)';
-      } else {
-        if (isDark) {
-          el.style.background =
-            'radial-gradient(ellipse 60% 50% at 100% 0%, ' + c.primary + '22 0%, transparent 70%), ' +
-            'linear-gradient(145deg, ' + c.bg + ' 0%, ' + c.bgEnd + ' 100%)';
-        } else {
-          el.style.background = 'linear-gradient(150deg, ' + c.bg + ' 0%, ' + c.bgEnd + ' 100%)';
-        }
-        fill.style.background = c.primary;
-      }
-
-      document.getElementById('appName').style.color = c.text;
-      document.getElementById('appDesc').style.color = c.desc;
-      document.getElementById('progressText').style.color = c.text;
-      document.getElementById('versionText').style.color = c.text;
-      document.getElementById('progressTrack').style.background = c.primary + (isDark ? '25' : '18');
+    function setVar(name, value) {
+      document.documentElement.style.setProperty(name, value);
     }
 
-    // percent: 实际进度值；waiting: 是否处于等待阶段
+    function resolveMode(mode) {
+      if (mode === "dark" || mode === "light") return mode;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(themeId, mode) {
+      var palette = themePalettes[themeId] || themePalettes["cloud-dancer"];
+      var resolvedMode = resolveMode(mode);
+      var accent = palette[resolvedMode] || palette.light;
+      var isDark = resolvedMode === "dark";
+
+      setVar("--primary", accent.primary);
+      setVar("--primary-rgb", accent.rgb);
+      setVar("--on-primary", accent.onPrimary);
+      setVar("--window-bg", "transparent");
+
+      if (isDark) {
+        setVar("--card-bg", "rgba(31, 31, 31, 0.96)");
+        setVar("--card-bg-solid", "#1f1f1f");
+        setVar("--card-border", "rgba(255, 255, 255, 0.08)");
+        setVar("--text-primary", "#f1f1f1");
+        setVar("--text-secondary", "#b8b8b8");
+        setVar("--text-tertiary", "#858585");
+        setVar("--track-bg", "rgba(255, 255, 255, 0.09)");
+        setVar("--logo-surface", "#2b2b2b");
+        setVar("--card-gloss-start", "rgba(255, 255, 255, 0.035)");
+        setVar("--card-gloss-end", "rgba(255, 255, 255, 0)");
+        setVar("--shadow", "none");
+      } else {
+        setVar("--card-bg", "rgba(255, 255, 255, 0.96)");
+        setVar("--card-bg-solid", "#ffffff");
+        setVar("--card-border", "rgba(0, 0, 0, 0.06)");
+        setVar("--text-primary", "#171717");
+        setVar("--text-secondary", "#6f6f6f");
+        setVar("--text-tertiary", "#9a9a9a");
+        setVar("--track-bg", "rgba(0, 0, 0, 0.06)");
+        setVar("--logo-surface", "#f4f4f5");
+        setVar("--card-gloss-start", "rgba(255, 255, 255, 0.62)");
+        setVar("--card-gloss-end", "rgba(255, 255, 255, 0)");
+        setVar("--shadow", "none");
+      }
+    }
+
     function updateProgress(percent, text, waiting) {
-      var fill = document.getElementById('progressFill');
-      var label = document.getElementById('progressText');
+      var fill = document.getElementById("progressFill");
+      var label = document.getElementById("progressText");
+      var safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
 
       if (fill) {
-        fill.style.width = percent + '%';
+        fill.style.width = safePercent + "%";
         if (waiting) {
-          fill.classList.add('waiting');
+          fill.classList.add("waiting");
         } else {
-          fill.classList.remove('waiting');
-          // 触发扫光：重置动画
-          fill.style.animation = 'none';
+          fill.classList.remove("waiting");
+          fill.style.animation = "none";
           fill.offsetHeight;
-          fill.style.animation = '';
+          fill.style.animation = "";
         }
       }
+
       if (label && text) label.textContent = text;
     }
 
-    function setVersion(ver) {
-      var el = document.getElementById('versionText');
-      if (el) el.textContent = 'v' + ver;
+    function setVersion(version) {
+      var el = document.getElementById("versionText");
+      if (!el) return;
+      var text = String(version || "").trim();
+      el.textContent = text ? "v" + text.replace(/^v/i, "") : "";
     }
 
-    applyTheme('cloud-dancer', 'light');
+    applyTheme("cloud-dancer", "light");
   </script>
 </body>
 </html>

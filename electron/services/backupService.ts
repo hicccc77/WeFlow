@@ -454,14 +454,14 @@ export class BackupService {
     if (!wxid || !dbPath) return { success: false, error: '请先配置数据库路径和微信账号' }
     if (!decryptKey) return { success: false, error: '请先配置数据库解密密钥' }
 
-    const accountDir = this.resolveAccountDir(dbPath, wxid)
+    // 使用 ConfigService 统一解析账号目录
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
     if (!accountDir) return { success: false, error: `未在配置的 dbPath 下找到账号目录：${wxid}` }
     const dbStorage = join(accountDir, 'db_storage')
     if (!existsSync(dbStorage)) return { success: false, error: '未找到 db_storage 目录' }
 
-    const accountDirName = basename(accountDir)
     const opened = await withTimeout(
-      wcdbService.open(dbPath, decryptKey, accountDirName),
+      wcdbService.open(accountDir, decryptKey),
       15000,
       '连接目标账号数据库超时，请检查数据库路径、密钥是否正确'
     )

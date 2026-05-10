@@ -21,6 +21,72 @@ export interface SocialSaveWeiboCookieResult {
   error?: string
 }
 
+export type InsightRecordTriggerReason = 'activity' | 'silence' | 'test'
+
+export interface InsightRecordLog {
+  endpoint: string
+  model: string
+  maxTokens: number
+  temperature: number
+  triggerReason: InsightRecordTriggerReason
+  allowContext: boolean
+  contextCount: number
+  systemPrompt: string
+  userPrompt: string
+  rawOutput: string
+  finalInsight: string
+  durationMs: number
+  createdAt: number
+}
+
+export interface InsightRecordSummary {
+  id: string
+  createdAt: number
+  sessionId: string
+  displayName: string
+  avatarUrl?: string
+  triggerReason: InsightRecordTriggerReason
+  insight: string
+  read: boolean
+}
+
+export interface InsightRecord extends InsightRecordSummary {
+  accountScope: string
+  log: InsightRecordLog
+}
+
+export interface InsightRecordContactFacet {
+  sessionId: string
+  displayName: string
+  avatarUrl?: string
+  count: number
+}
+
+export interface InsightRecordFilters {
+  keyword?: string
+  sessionId?: string
+  startTime?: number
+  endTime?: number
+  limit?: number
+  offset?: number
+}
+
+export interface InsightRecordListResult {
+  success: boolean
+  records: InsightRecordSummary[]
+  total: number
+  todayCount: number
+  unreadCount: number
+  contacts: InsightRecordContactFacet[]
+  error?: string
+}
+
+export interface InsightRecordResult {
+  success: boolean
+  record?: InsightRecord
+  error?: string
+}
+
 export interface BackupProgress {
   phase: 'preparing' | 'scanning' | 'exporting' | 'packing' | 'inspecting' | 'restoring' | 'done' | 'failed'
   message: string
@@ -167,13 +233,14 @@ export interface ElectronAPI {
     onUpdateAvailable: (callback: (info: { version: string; releaseNotes: string }) => void) => () => void
   }
   notification: {
-    show: (data: { title: string; content: string; avatarUrl?: string; sessionId: string }) => Promise<{ success?: boolean; error?: string } | void>
+    show: (data: { title: string; content: string; avatarUrl?: string; sessionId: string; channel?: string; insightRecordId?: string; targetRoute?: string }) => Promise<{ success?: boolean; error?: string } | void>
     close: () => Promise<void>
-    click: (sessionId: string) => void
+    click: (payload: string | { sessionId?: string; channel?: string; insightRecordId?: string; targetRoute?: string }) => void
     ready: () => void
     resize: (width: number, height: number) => void
     onShow: (callback: (event: any, data: any) => void) => () => void
     onNavigateToSession: (callback: (sessionId: string) => void) => () => void
+    onNavigateToRoute: (callback: (route: string) => void) => () => void
   }
   log: {
     getPath: () => Promise<string>
@@ -271,6 +338,7 @@ export interface ElectronAPI {
   chat: {
     connect: () => Promise<{ success: boolean; error?: string }>
     getSessions: () => Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }>
+    markAllSessionsRead: () => Promise<{ success: boolean; error?: string }>
     getAntiRevokeSessions: () => Promise<{ success: boolean; sessions?: ChatSession[]; error?: string }>
     getSessionStatuses: (usernames: string[]) => Promise<{
       success: boolean
@@ -1234,6 +1302,10 @@ export interface ElectronAPI {
   insight: {
     testConnection: () => Promise<{ success: boolean; message: string }>
     getTodayStats: () => Promise<Array<{ sessionId: string; count: number; times: string[] }>>
+    listRecords: (filters?: InsightRecordFilters) => Promise<InsightRecordListResult>
+    getRecord: (id: string) => Promise<InsightRecordResult>
+    markRecordRead: (id: string) => Promise<{ success: boolean; error?: string }>
+    clearRecords: (filters?: InsightRecordFilters) => Promise<{ success: boolean; removed: number; error?: string }>
     triggerTest: () => Promise<{ success: boolean; message: string }>
     generateFootprintInsight: (payload: {
       rangeLabel: string

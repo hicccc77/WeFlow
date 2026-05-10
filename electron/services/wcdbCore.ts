@@ -35,8 +35,10 @@ export class WcdbCore {
   private wcdbUpdateMessage: any = null
   private wcdbDeleteMessage: any = null
   private wcdbGetSessions: any = null
+  private wcdbMarkAllSessionsRead: any = null
   private wcdbGetMessages: any = null
   private wcdbGetMessageCount: any = null
+  private wcdbGetMessageByServerId: any = null
   private wcdbGetDisplayNames: any = null
   private wcdbGetAvatarUrls: any = null
   private wcdbGetGroupMemberCount: any = null
@@ -810,11 +812,21 @@ export class WcdbCore {
       // wcdb_status wcdb_get_sessions(wcdb_handle handle, char** out_json)
       this.wcdbGetSessions = this.lib.func('int32 wcdb_get_sessions(int64 handle, _Out_ void** outJson)')
 
+      // wcdb_status wcdb_mark_all_sessions_read(wcdb_handle handle, char** out_error)
+      try {
+        this.wcdbMarkAllSessionsRead = this.lib.func('int32 wcdb_mark_all_sessions_read(int64 handle, _Out_ void** outError)')
+      } catch {
+        this.wcdbMarkAllSessionsRead = null
+      }
+
       // wcdb_status wcdb_get_messages(wcdb_handle handle, const char* username, int32_t limit, int32_t offset, char** out_json)
       this.wcdbGetMessages = this.lib.func('int32 wcdb_get_messages(int64 handle, const char* username, int32 limit, int32 offset, _Out_ void** outJson)')
 
       // wcdb_status wcdb_get_message_count(wcdb_handle handle, const char* username, int32_t* out_count)
       this.wcdbGetMessageCount = this.lib.func('int32 wcdb_get_message_count(int64 handle, const char* username, _Out_ int32* outCount)')
+
+      // wcdb_status wcdb_get_message_by_svrid(wcdb_handle handle, const char* session_id, const char* svrid, char** out_json)
+      this.wcdbGetMessageByServerId = this.lib.func('int32 wcdb_get_message_by_svrid(int64 handle, const char* sessionId, const char* svrid, _Out_ void** outJson)')
 
       // wcdb_status wcdb_get_display_names(wcdb_handle handle, const char* usernames_json, char** out_json)
       this.wcdbGetDisplayNames = this.lib.func('int32 wcdb_get_display_names(int64 handle, const char* usernamesJson, _Out_ void** outJson)')
@@ -1260,13 +1272,12 @@ export class WcdbCore {
   /**
    * 测试数据库连接
    */
-  async testConnection(dbPath: string, hexKey: string, wxid: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
+  async testConnection(accountDir: string, hexKey: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
     try {
       // 如果当前已经有相同参数的活动连接，直接返回成功
       if (this.handle !== null &&
-        this.currentPath === dbPath &&
-        this.currentKey === hexKey &&
-        this.currentWxid === wxid) {
+        this.currentPath === accountDir &&
+        this.currentKey === hexKey) {
         return { success: true, sessionCount: 0 }
       }
 
@@ -1284,9 +1295,9 @@ export class WcdbCore {
         }
       }
 
-      // 构建 db_storage 目录路径
-      const dbStoragePath = this.resolveDbStoragePath(dbPath, wxid)
-      this.writeLog(`testConnection dbPath=${dbPath} wxid=${wxid} dbStorage=${dbStoragePath || 'null'}`)
+      // 直接使用账号目录
+      const dbStoragePath = join(accountDir, 'db_storage')
+      this.writeLog(`testConnection accountDir=${accountDir} dbStorage=${dbStoragePath}`)
 
       if (!dbStoragePath || !existsSync(dbStoragePath)) {
         return { success: false, error: this.formatInitProtectionError(-3001) }
@@ -1329,9 +1340,9 @@ export class WcdbCore {
       }
 
       // 恢复测试前的连接（如果之前有活动连接）
-      if (hadActiveConnection && prevPath && prevKey && prevWxid) {
+      if (hadActiveConnection && prevPath && prevKey) {
         try {
-          await this.open(prevPath, prevKey, prevWxid)
+          await this.open(prevPath, prevKey)
         } catch {
           // 恢复失败则保持断开，由调用方处理
         }
@@ -1536,7 +1547,7 @@ export class WcdbCore {
   /**
    * 打开数据库
    */
-  async open(dbPath: string, hexKey: string, wxid: string): Promise<boolean> {
+  async open(accountDir: string, hexKey: string): Promise<boolean> {
     try {
       lastDllInitError = null
       if (!this.initialized) {
@@ -1546,9 +1557,8 @@ export class WcdbCore {
 
       // 检查是否已经是当前连接的参数，如果是则直接返回成功，实现"始终保持链接"
       if (this.handle !== null &&
-        this.currentPath === dbPath &&
-        this.currentKey === hexKey &&
-        this.currentWxid === wxid) {
+        this.currentPath === accountDir &&
+        this.currentKey === hexKey) {
         return true
       }
 
@@ -1560,12 +1570,12 @@ export class WcdbCore {
         if (!initOk) return false
       }
 
-      const dbStoragePath = this.resolveDbStoragePath(dbPath, wxid)
-      this.writeLog(`open dbPath=${dbPath} wxid=${wxid} dbStorage=${dbStoragePath || 'null'}`, true)
+      const dbStoragePath = join(accountDir, 'db_storage')
+      this.writeLog(`open accountDir=${accountDir} dbStorage=${dbStoragePath}`, true)
 
       if (!dbStoragePath || !existsSync(dbStoragePath)) {
-        console.error('数据库目录不存在:', dbPath)
-        this.writeLog(`open failed: dbStorage not found for ${dbPath}`)
+        console.error('数据库目录不存在:', accountDir)
+        this.writeLog(`open failed: dbStorage not found for ${accountDir}`)
         lastDllInitError = this.formatInitProtectionError(-3001)
         return false
       }
@@ -1596,8 +1606,11 @@ export class WcdbCore {
         return false
       }
 
+      // 从账号目录路径中提取 wxid（目录名）
+      const wxid = basename(accountDir)
+
       this.handle = handle
-      this.currentPath = dbPath
+      this.currentPath = accountDir
       this.currentKey = hexKey
       this.currentWxid = wxid
       this.currentDbStoragePath = dbStoragePath
@@ -1615,7 +1628,7 @@ export class WcdbCore {
       }
       this.writeLog(`open ok handle=${handle}`, true)
       await this.dumpDbStatus('open')
-      await this.runPostOpenDiagnostics(dbPath, dbStoragePath, sessionDbPath, wxid)
+      await this.runPostOpenDiagnostics(accountDir, dbStoragePath, sessionDbPath, wxid)
       return true
     } catch (e) {
       console.error('打开数据库异常:', e)
@@ -1696,6 +1709,39 @@ export class WcdbCore {
     }
   }
 
+  async markAllSessionsRead(): Promise<{ success: boolean; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    if (!this.wcdbMarkAllSessionsRead) {
+      return { success: false, error: '当前数据服务版本不支持一键已读' }
+    }
+    try {
+      await new Promise(resolve => setImmediate(resolve))
+
+      const outPtr = [null as any]
+      const result = this.wcdbMarkAllSessionsRead(this.handle, outPtr)
+      let message = ''
+      if (outPtr[0]) {
+        try { message = this.koffi.decode(outPtr[0], 'char', -1) } catch { }
+        try { this.wcdbFreeString(outPtr[0]) } catch { }
+      }
+
+      await new Promise(resolve => setImmediate(resolve))
+
+      if (result !== 0) {
+        this.writeLog(`markAllSessionsRead failed: code=${result} error=${message}`)
+        return { success: false, error: message || `一键已读失败: ${result}` }
+      }
+      this.clearMediaStreamSessionCache()
+      this.writeLog('markAllSessionsRead ok')
+      return { success: true }
+    } catch (e) {
+      this.writeLog(`markAllSessionsRead exception: ${String(e)}`)
+      return { success: false, error: String(e) }
+    }
+  }
+
   async getMessages(sessionId: string, limit: number, offset: number): Promise<{ success: boolean; messages?: any[]; error?: string }> {
     if (!this.ensureReady()) {
       return { success: false, error: 'WCDB 未连接' }
@@ -1760,6 +1806,30 @@ export class WcdbCore {
         return { success: false, error: `获取消息总数失败: ${result}` }
       }
       return { success: true, count: outCount[0] }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async getMessageByServerId(sessionId: string, svrid: string): Promise<{ success: boolean; row?: any; error?: string }> {
+    if (!this.ensureReady()) {
+      return { success: false, error: 'WCDB 未连接' }
+    }
+    try {
+      const outPtr = [null as any]
+      const result = this.wcdbGetMessageByServerId(this.handle, sessionId, svrid, outPtr)
+      if (result !== 0) {
+        return { success: false, error: `查询消息失败: ${result}` }
+      }
+      const jsonStr = this.decodeJsonPtr(outPtr[0])
+      if (!jsonStr) {
+        return { success: true, row: null }
+      }
+      const parsed = JSON.parse(jsonStr)
+      if (!parsed || Object.keys(parsed).length === 0) {
+        return { success: true, row: null }
+      }
+      return { success: true, row: parsed }
     } catch (e) {
       return { success: false, error: String(e) }
     }

@@ -3,56 +3,15 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
-  animation: appFadeIn 0.35s ease-out;
   position: relative;
   overflow: hidden;
-}
-
-// 繁花如梦：底色层（::before）+ 光晕层（::after）分离，避免 blur 吃掉边缘
-[data-theme="blossom-dream"] .app-container {
-  background: transparent;
-}
-
-// ::before 纯底色，不模糊
-[data-theme="blossom-dream"] .app-container::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: -2;
-  background: var(--bg-primary);
-}
-
-// ::after 光晕层，模糊叠加在底色上
-[data-theme="blossom-dream"] .app-container::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(ellipse 55% 45% at 15% 20%, var(--blossom-pink) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 85% 75%, var(--blossom-peach) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 50% at 80% 10%, var(--blossom-blue) 0%, transparent 60%);
-  filter: blur(80px);
-  opacity: 0.75;
-}
-
-// 深色模式光晕更克制
-[data-theme="blossom-dream"][data-mode="dark"] .app-container::after {
-  background:
-    radial-gradient(ellipse 55% 45% at 15% 20%, var(--blossom-pink) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 85% 75%, var(--blossom-purple) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 50% at 80% 10%, var(--blossom-blue) 0%, transparent 60%);
-  filter: blur(100px);
-  opacity: 0.2;
 }
 
 .window-drag-region {
   position: fixed;
   top: 0;
   left: 0;
-  right: 150px; // 预留系统最小化/最大化/关闭按钮区域
+  right: 150px;
   height: 40px;
   -webkit-app-region: drag;
   pointer-events: auto;
@@ -68,8 +27,9 @@
 .content {
   flex: 1;
   overflow: auto;
-  padding: 24px;
+  padding: 24px 32px;
   position: relative;
+  background: var(--bg-primary);
 }
 
 .export-keepalive-page {
@@ -84,18 +44,7 @@
   display: none;
 }
 
-@keyframes appFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-// 更新提示条
+// ---- Update banner ----
 .update-banner {
   display: flex;
   align-items: center;
@@ -107,7 +56,7 @@
 
   .update-text {
     flex: 1;
-    
+
     strong {
       font-weight: 600;
     }
@@ -124,7 +73,7 @@
     color: white;
     font-size: 13px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.15s;
 
     &:hover {
       background: rgba(255, 255, 255, 0.3);
@@ -143,7 +92,7 @@
     color: white;
     cursor: pointer;
     opacity: 0.7;
-    transition: opacity 0.2s;
+    transition: opacity 0.15s;
 
     &:hover {
       opacity: 1;
@@ -178,29 +127,31 @@
   }
 }
 
-// 用户协议弹窗
+// ---- Agreement modal ----
 .agreement-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  backdrop-filter: blur(4px);
 }
 
 .agreement-modal {
   width: 520px;
   max-height: 80vh;
   background: var(--bg-primary);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
 }
 
 .agreement-header {
@@ -241,8 +192,8 @@
   margin-bottom: 16px;
   padding: 12px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 160, 0, 0.35);
-  background: rgba(255, 160, 0, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
   color: var(--text-primary);
 
   strong {
@@ -291,19 +242,6 @@
     color: var(--text-secondary);
     line-height: 1.6;
   }
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 3px;
-  }
 }
 
 .agreement-footer {
@@ -347,21 +285,21 @@
     border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.15s;
 
     &:hover {
-      background: var(--border-color);
+      background: var(--bg-hover);
     }
   }
 
   .btn-primary {
     background: var(--primary);
-    color: white;
+    color: var(--on-primary);
     border: none;
     border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: opacity 0.15s;
 
     &:disabled {
       opacity: 0.5;

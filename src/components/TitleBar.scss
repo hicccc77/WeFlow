@@ -1,23 +1,16 @@
 .title-bar {
-  height: 41px;
-  background: var(--bg-secondary);
+  height: 48px;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding-left: 16px;
-  padding-right: 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding-right: 8px;
   -webkit-app-region: drag;
   flex-shrink: 0;
   gap: 8px;
   position: relative;
   z-index: 2101;
-}
-
-// 繁花如梦：标题栏毛玻璃
-[data-theme="blossom-dream"] .title-bar {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
 }
 
 .title-brand {
@@ -33,16 +26,15 @@
 }
 
 .titles {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-secondary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 .title-sidebar-toggle {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -52,11 +44,11 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   -webkit-app-region: no-drag;
 
   &:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 }
@@ -64,26 +56,26 @@
 .title-window-controls {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   -webkit-app-region: no-drag;
 }
 
 .title-window-control-btn {
-  width: 28px;
+  width: 36px;
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 
@@ -107,14 +99,14 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.15s;
 
     &:hover {
-      background: var(--bg-tertiary);
+      background: var(--bg-hover);
       color: var(--text-primary);
     }
 
@@ -124,8 +116,8 @@
     }
 
     &.live-play-btn.active {
-      background: rgba(var(--primary-rgb, 76, 132, 255), 0.16);
-      color: var(--primary, #4c84ff);
+      background: var(--primary-light);
+      color: var(--primary);
     }
   }
 

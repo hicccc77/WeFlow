@@ -1,6 +1,5 @@
 .home-page {
   height: 100%;
-  background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8,105 +7,29 @@
   position: relative;
 }
 
-.home-bg-blobs {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  filter: blur(80px);
-  z-index: 0;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  animation: moveBlob 20s infinite alternate ease-in-out;
-}
-
-.blob-1 {
-  width: 400px;
-  height: 400px;
-  background: rgba(var(--primary-rgb), 0.25);
-  top: -100px;
-  left: -50px;
-  animation-duration: 25s;
-}
-
-.blob-2 {
-  width: 350px;
-  height: 350px;
-  background: rgba(var(--primary-rgb), 0.15);
-  bottom: -50px;
-  right: -50px;
-  animation-duration: 30s;
-  animation-delay: -5s;
-}
-
-.blob-3 {
-  width: 300px;
-  height: 300px;
-  background: rgba(255, 255, 255, 0.1);
-  top: 40%;
-  left: 30%;
-  animation-duration: 22s;
-  animation-delay: -10s;
-}
-
-[data-mode="dark"] .blob-3 {
-  background: rgba(255, 255, 255, 0.03);
-}
-
 .home-content {
-  z-index: 1;
-  animation: fadeScaleUp 1s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.hero {
   text-align: center;
+  max-width: 640px;
+  width: 100%;
+  padding: 0 24px;
 }
 
-.hero-title {
-  font-size: 64px;
-  font-weight: 800;
-  margin: 0 0 16px;
+.home-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0 0 12px;
   color: var(--text-primary);
-  letter-spacing: -2px;
-  background: linear-gradient(135deg, var(--primary) 0%, rgba(var(--primary-rgb), 0.6) 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-.hero-subtitle {
-  font-size: 18px;
+.home-subtitle {
+  font-size: 16px;
   color: var(--text-secondary);
-  max-width: 520px;
-  margin: 0 auto;
+  margin: 0;
   line-height: 1.6;
-  opacity: 0.8;
 }
 
-@keyframes moveBlob {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-
-  to {
-    transform: translate(100px, 50px) scale(1.1);
-  }
-}
-
-@keyframes fadeScaleUp {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
+@media (max-width: 480px) {
+  .home-title {
+    font-size: 36px;
   }
 }

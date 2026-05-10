@@ -9,10 +9,10 @@ let linuxNotificationService:
   | null = null;
 
 // 用于处理通知点击的回调函数（在Linux上用于导航到会话）
-let onNotificationNavigate: ((sessionId: string) => void) | null = null;
+let onNotificationNavigate: ((payload: unknown) => void) | null = null;
 
 export function setNotificationNavigateHandler(
-  callback: (sessionId: string) => void,
+  callback: (payload: unknown) => void,
 ) {
   onNotificationNavigate = callback;
 }
@@ -109,25 +109,33 @@ export function createNotificationWindow() {
 export async function showNotification(data: any) {
   // 先检查配置
   const config = ConfigService.getInstance();
-  const enabled = await config.get("notificationEnabled");
-  if (enabled === false) return; // 默认为 true
-
-  // 检查会话过滤
-  const filterMode = config.get("notificationFilterMode") || "all";
-  const filterList = config.get("notificationFilterList") || [];
   const sessionId = typeof data.sessionId === "string" ? data.sessionId : "";
-  // 系统通知（如 "WeFlow 准备就绪"）不是聊天消息，不应受会话白/黑名单影响
-  const isSystemNotification = sessionId.startsWith("weflow-");
+  const channel = typeof data.channel === "string" ? data.channel : "";
+  const isAiInsightNotification = channel === "ai-insight";
 
-  if (!isSystemNotification && filterMode !== "all") {
-    const isInList = sessionId !== "" && filterList.includes(sessionId);
-    if (filterMode === "whitelist" && !isInList) {
-      // 白名单模式：不在列表中则不显示（空列表视为全部拦截）
-      return;
-    }
-    if (filterMode === "blacklist" && isInList) {
-      // 黑名单模式：在列表中则不显示
-      return;
+  if (isAiInsightNotification) {
+    const enabled = await config.get("aiInsightNotificationEnabled");
+    if (enabled === false) return; // 默认为 true
+  } else {
+    const enabled = await config.get("notificationEnabled");
+    if (enabled === false) return; // 默认为 true
+
+    // 检查会话过滤
+    const filterMode = config.get("notificationFilterMode") || "all";
+    const filterList = config.get("notificationFilterList") || [];
+    // 系统通知（如 "WeFlow 准备就绪"）不是聊天消息，不应受会话白/黑名单影响
+    const isSystemNotification = sessionId.startsWith("weflow-");
+
+    if (!isSystemNotification && filterMode !== "all") {
+      const isInList = sessionId !== "" && filterList.includes(sessionId);
+      if (filterMode === "whitelist" && !isInList) {
+        // 白名单模式：不在列表中则不显示（空列表视为全部拦截）
+        return;
+      }
+      if (filterMode === "blacklist" && isInList) {
+        // 黑名单模式：在列表中则不显示
+        return;
+      }
     }
   }
 
@@ -176,6 +184,9 @@ async function showLinuxNotification(data: any) {
     content: data.content,
     avatarUrl: data.avatarUrl,
     sessionId: data.sessionId,
+    channel: data.channel,
+    insightRecordId: data.insightRecordId,
+    targetRoute: data.targetRoute,
     expireTimeout: 5000,
   };
 
@@ -249,14 +260,14 @@ export async function registerNotificationHandlers() {
       await linuxNotificationModule.initLinuxNotificationService();
 
       // 在Linux上注册通知点击回调
-      linuxNotificationModule.onNotificationAction((sessionId: string) => {
+      linuxNotificationModule.onNotificationAction((payload: unknown) => {
         console.log(
           "[NotificationWindow] Linux notification clicked, sessionId:",
-          sessionId,
+          payload,
         );
         // 如果设置了导航处理程序，则使用该处理程序；否则，回退到ipcMain方法。
         if (onNotificationNavigate) {
-          onNotificationNavigate(sessionId);
+          onNotificationNavigate(payload);
         } else {
           // 如果尚未设置处理程序，则通过ipcMain发出事件
           // 正常流程中不应该发生这种情况，因为我们在初始化之前设置了处理程序。

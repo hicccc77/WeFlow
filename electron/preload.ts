@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notification: {
     show: (data: any) => ipcRenderer.invoke('notification:show', data),
     close: () => ipcRenderer.invoke('notification:close'),
-    click: (sessionId: string) => ipcRenderer.send('notification-clicked', sessionId),
+    click: (payload: any) => ipcRenderer.send('notification-clicked', payload),
     ready: () => ipcRenderer.send('notification:ready'),
     resize: (width: number, height: number) => ipcRenderer.send('notification:resize', { width, height }),
     onShow: (callback: (event: any, data: any) => void) => {
@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: any, sessionId: string) => callback(sessionId)
       ipcRenderer.on('navigate-to-session', listener)
       return () => ipcRenderer.removeListener('navigate-to-session', listener)
+    },
+    onNavigateToRoute: (callback: (route: string) => void) => {
+      const listener = (_: any, route: string) => callback(route)
+      ipcRenderer.on('navigate-to-route', listener)
+      return () => ipcRenderer.removeListener('navigate-to-route', listener)
     }
   },
 
@@ -185,6 +190,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chat: {
     connect: () => ipcRenderer.invoke('chat:connect'),
     getSessions: () => ipcRenderer.invoke('chat:getSessions'),
+    markAllSessionsRead: () => ipcRenderer.invoke('chat:markAllSessionsRead'),
     getAntiRevokeSessions: () => ipcRenderer.invoke('chat:getAntiRevokeSessions'),
     getSessionStatuses: (usernames: string[]) => ipcRenderer.invoke('chat:getSessionStatuses', usernames),
     getExportTabCounts: () => ipcRenderer.invoke('chat:getExportTabCounts'),
@@ -571,6 +577,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   insight: {
     testConnection: () => ipcRenderer.invoke('insight:testConnection'),
     getTodayStats: () => ipcRenderer.invoke('insight:getTodayStats'),
+    listRecords: (filters?: any) => ipcRenderer.invoke('insight:listRecords', filters),
+    getRecord: (id: string) => ipcRenderer.invoke('insight:getRecord', id),
+    markRecordRead: (id: string) => ipcRenderer.invoke('insight:markRecordRead', id),
+    clearRecords: (filters?: any) => ipcRenderer.invoke('insight:clearRecords', filters),
     triggerTest: () => ipcRenderer.invoke('insight:triggerTest'),
     generateFootprintInsight: (payload: {
       rangeLabel: string

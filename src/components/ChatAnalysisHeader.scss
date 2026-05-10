@@ -4,28 +4,29 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 28px;
+  min-height: 32px;
   padding: 4px 0;
   background: transparent;
   border: none;
-  border-radius: 0;
   flex-shrink: 0;
 }
 
 .chat-analysis-back {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0;
+  gap: 4px;
+  padding: 4px 8px 4px 4px;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 
   &:hover {
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 }
@@ -33,12 +34,13 @@
 .chat-analysis-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 
   .chat-analysis-breadcrumb-separator {
-    opacity: 0.6;
+    opacity: 0.5;
+    font-size: 12px;
   }
 }
 
@@ -49,25 +51,27 @@
 .chat-analysis-current-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0;
+  gap: 4px;
+  padding: 4px 8px;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  transition: color 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   .current {
     color: var(--text-primary);
   }
 
   svg {
-    transition: transform 0.2s ease;
+    transition: transform 0.15s ease;
   }
 
   &:hover {
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 
@@ -78,34 +82,33 @@
 
 .chat-analysis-menu {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 6px);
   right: 0;
   min-width: 120px;
-  padding: 6px;
-  background: var(--card-bg);
+  padding: 4px;
+  background: var(--bg-secondary-solid, var(--bg-secondary));
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
   z-index: 20;
 }
 
 .chat-analysis-menu-item {
   width: 100%;
   display: block;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.15s ease;
 
   &:hover {
     background: var(--bg-hover);
-    color: var(--primary);
   }
 }
 

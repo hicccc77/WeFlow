@@ -32,10 +32,10 @@ if (parentPort) {
                     break
                     }
                 case 'testConnection':
-                    result = await core.testConnection(payload.dbPath, payload.hexKey, payload.wxid)
+                    result = await core.testConnection(payload.accountDir, payload.hexKey)
                     break
                 case 'open':
-                    result = await core.open(payload.dbPath, payload.hexKey, payload.wxid)
+                    result = await core.open(payload.accountDir, payload.hexKey)
                     break
                 case 'getLastInitError':
                     result = core.getLastInitError()
@@ -50,6 +50,9 @@ if (parentPort) {
                 case 'getSessions':
                     result = await core.getSessions()
                     break
+                case 'markAllSessionsRead':
+                    result = await core.markAllSessionsRead()
+                    break
                 case 'getMessages':
                     result = await core.getMessages(payload.sessionId, payload.limit, payload.offset)
                     break
@@ -58,6 +61,9 @@ if (parentPort) {
                     break
                 case 'getMessageCount':
                     result = await core.getMessageCount(payload.sessionId)
+                    break
+                case 'getMessageByServerId':
+                    result = await core.getMessageByServerId(payload.sessionId, payload.svrid)
                     break
                 case 'getMessageCounts':
                     result = await core.getMessageCounts(payload.sessionIds)

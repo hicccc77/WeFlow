@@ -110,7 +110,9 @@ class DualReportService {
     if (!decryptKey) return { success: false, error: '未配置解密密钥' }
 
     const cleanedWxid = this.cleanAccountDirName(wxid)
-    const ok = await wcdbService.open(dbPath, decryptKey, cleanedWxid)
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
+    if (!accountDir) return { success: false, error: '无法找到账号目录' }
+    const ok = await wcdbService.open(accountDir, decryptKey)
     if (!ok) return { success: false, error: 'WCDB 打开失败' }
     return { success: true, cleanedWxid, rawWxid: wxid }
   }

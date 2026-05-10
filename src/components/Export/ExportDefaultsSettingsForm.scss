@@ -457,3 +457,130 @@
     }
   }
 }
+
+// UI rebuild polish for the modal variant used by ExportPage.
+.export-defaults-settings-form.layout-split {
+  display: grid;
+  gap: 10px;
+
+  .form-group {
+    grid-template-columns: minmax(176px, 0.82fr) minmax(0, 1.18fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px;
+    border: none;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-secondary) 82%, var(--bg-primary));
+  }
+
+  .form-group:first-child,
+  .form-group:last-child {
+    padding: 12px;
+  }
+
+  .form-copy {
+    padding-top: 2px;
+  }
+
+  label {
+    margin-bottom: 3px;
+    line-height: 1.35;
+  }
+
+  .form-hint {
+    line-height: 1.45;
+  }
+
+  .form-control {
+    width: 100%;
+    min-width: 0;
+    justify-content: stretch;
+  }
+
+  .select-field,
+  .settings-time-range-field,
+  .log-toggle-line,
+  .media-default-grid,
+  .concurrency-inline-options {
+    max-width: none;
+    width: 100%;
+  }
+
+  .select-trigger,
+  .settings-time-range-trigger {
+    border-radius: 12px;
+    background: var(--bg-primary);
+    min-height: 42px;
+    padding: 9px 12px;
+  }
+
+  .log-toggle-line {
+    border-radius: 12px;
+    background: var(--bg-primary);
+    min-height: 42px;
+    padding: 8px 12px;
+  }
+
+  .concurrency-inline-options {
+    grid-template-columns: repeat(6, minmax(38px, 1fr));
+    gap: 6px;
+  }
+
+  .concurrency-option {
+    min-width: 0;
+    min-height: 36px;
+    border-radius: 8px;
+  }
+
+  .format-setting-group {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .format-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .format-card {
+    min-height: 68px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--bg-primary);
+  }
+
+  .format-label,
+  .format-desc {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .media-default-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+    gap: 8px;
+
+    label {
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-primary);
+    }
+  }
+}
+
+@media (max-width: 980px) {
+  .export-defaults-settings-form.layout-split {
+    .form-group {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .format-grid {
+      grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+    }
+  }
+}

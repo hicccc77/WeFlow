@@ -29,6 +29,8 @@ import {
   onSingleExportDialogStatus,
   requestExportSessionStatus
 } from '../services/exportBridge'
+import ChatHeader from './Chat/ChatHeader'
+import ChatMessageBubble from './Chat/ChatMessageBubble'
 import '../styles/batchTranscribe.scss'
 import './ChatPage.scss'
 
@@ -1453,6 +1455,7 @@ function ChatPage(props: ChatPageProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(260)
   const [isResizing, setIsResizing] = useState(false)
+  const [isMarkingAllSessionsRead, setIsMarkingAllSessionsRead] = useState(false)
   const [showDetailPanel, setShowDetailPanel] = useState(false)
   const [showGroupMembersPanel, setShowGroupMembersPanel] = useState(false)
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null)
@@ -3127,6 +3130,35 @@ function ChatPage(props: ChatPageProps) {
       } else {
         setLoadingSessions(false)
       }
+    }
+  }
+
+  const handleMarkAllSessionsRead = async () => {
+    if (isMarkingAllSessionsRead || isLoadingSessions || isRefreshingSessions) return
+    setIsMarkingAllSessionsRead(true)
+    setConnectionError(null)
+    try {
+      const result = await window.electronAPI.chat.markAllSessionsRead()
+      if (!result.success) {
+        setConnectionError(result.error || '一键已读失败')
+        return
+      }
+
+      const latestSessions = useChatStore.getState().sessions || []
+      const nextSessions = latestSessions.map((session) => (
+        session.unreadCount > 0 ? { ...session, unreadCount: 0 } : session
+      ))
+      setSessions(nextSessions)
+      sessionsRef.current = nextSessions
+
+      const scope = await resolveChatCacheScope()
+      persistSessionListCache(scope, nextSessions)
+      await loadSessions({ silent: true })
+    } catch (e) {
+      console.error('一键已读失败:', e)
+      setConnectionError(`一键已读失败: ${String(e)}`)
+    } finally {
+      setIsMarkingAllSessionsRead(false)
     }
   }
 
@@ -6775,6 +6807,15 @@ function ChatPage(props: ChatPageProps) {
               <button className="icon-btn refresh-btn" onClick={handleRefresh} disabled={isLoadingSessions || isRefreshingSessions}>
                 <RefreshCw size={16} className={(isLoadingSessions || isRefreshingSessions) ? 'spin' : ''} />
               </button>
+              <button
+                className="icon-btn refresh-btn mark-read-btn"
+                onClick={handleMarkAllSessionsRead}
+                disabled={isMarkingAllSessionsRead || isLoadingSessions || isRefreshingSessions}
+                title="一键已读"
+                aria-label="一键已读"
+              >
+                {isMarkingAllSessionsRead ? <Loader2 size={16} className="spin" /> : <CheckSquare size={16} />}
+              </button>
             </div>
           </div>
           {/* 折叠群 header */}
@@ -6988,155 +7029,62 @@ function ChatPage(props: ChatPageProps) {
             <BizMessageArea account={selectedBizAccount} />
         ) : currentSession ? (
             <>
-              <div className="message-header">
-              <Avatar
-                src={currentSession.avatarUrl}
-                name={currentSession.displayName || currentSession.username}
-                size={40}
-                className={isCurrentSessionGroup ? 'group session-avatar' : 'session-avatar'}
+              <ChatHeader
+                session={currentSession}
+                isGroupChat={isCurrentSessionGroup}
+                standaloneSessionWindow={standaloneSessionWindow}
+                showGroupMembersPanel={showGroupMembersPanel}
+                showJumpPopover={showJumpPopover}
+                showInSessionSearch={showInSessionSearch}
+                showDetailPanel={showDetailPanel}
+                shouldHideStandaloneDetailButton={shouldHideStandaloneDetailButton}
+                isPrivateSnsSupported={isCurrentSessionPrivateSnsSupported}
+                isExportActionBusy={isExportActionBusy}
+                isCurrentSessionExporting={isCurrentSessionExporting}
+                isPreparingExportDialog={isPreparingExportDialog}
+                isBatchTranscribing={isBatchTranscribing}
+                runningBatchVoiceTaskType={runningBatchVoiceTaskType}
+                isBatchDecrypting={isBatchDecrypting}
+                isRefreshingMessages={isRefreshingMessages}
+                isLoadingMessages={isLoadingMessages}
+                currentSessionId={currentSessionId}
+                jumpCalendarWrapRef={jumpCalendarWrapRef}
+                onGroupAnalytics={handleGroupAnalytics}
+                onToggleGroupMembersPanel={toggleGroupMembersPanel}
+                onExportCurrentSession={handleExportCurrentSession}
+                onOpenSnsTimeline={openCurrentSessionSnsTimeline}
+                onBatchTranscribe={handleBatchTranscribe}
+                onBatchDecrypt={handleBatchDecrypt}
+                onToggleJumpPopover={handleToggleJumpPopover}
+                onToggleInSessionSearch={handleToggleInSessionSearch}
+                onRefreshMessages={handleRefreshMessages}
+                onToggleDetailPanel={toggleDetailPanel}
               />
-              <div className="header-info">
-                <h3>{currentSession.displayName || currentSession.username}</h3>
-                {isCurrentSessionGroup && (
-                  <div className="header-subtitle">群聊</div>
-                )}
-              </div>
-              <div className="header-actions">
-                {!standaloneSessionWindow && isCurrentSessionGroup && (
-                  <button
-                    className="icon-btn group-analytics-btn"
-                    onClick={handleGroupAnalytics}
-                    title="群聊分析"
-                  >
-                    <BarChart3 size={18} />
-                  </button>
-                )}
-                {isCurrentSessionGroup && (
-                  <button
-                    className={`icon-btn group-members-btn ${showGroupMembersPanel ? 'active' : ''}`}
-                    onClick={toggleGroupMembersPanel}
-                    title="群成员"
-                  >
-                    <Users size={18} />
-                  </button>
-                )}
-                {!standaloneSessionWindow && (
-                  <button
-                    className={`icon-btn export-session-btn${isExportActionBusy ? ' exporting' : ''}`}
-                    onClick={handleExportCurrentSession}
-                    disabled={!currentSessionId || isExportActionBusy}
-                    title={isCurrentSessionExporting ? '导出中' : isPreparingExportDialog ? '正在准备导出模块' : '导出当前会话'}
-                  >
-                    {isExportActionBusy ? (
-                      <Loader2 size={18} className="spin" />
-                    ) : (
-                      <Download size={18} />
-                    )}
-                  </button>
-                )}
-                {!standaloneSessionWindow && isCurrentSessionPrivateSnsSupported && (
-                  <button
-                    className="icon-btn chat-sns-timeline-btn"
-                    onClick={openCurrentSessionSnsTimeline}
-                    disabled={!currentSessionId}
-                    title="查看对方朋友圈"
-                  >
-                    <Aperture size={18} />
-                  </button>
-                )}
-                {!standaloneSessionWindow && (
-                  <button
-                    className={`icon-btn batch-transcribe-btn${isBatchTranscribing ? ' transcribing' : ''}`}
-                    onClick={handleBatchTranscribe}
-                    disabled={!currentSessionId}
-                    title={isBatchTranscribing
-                      ? `${runningBatchVoiceTaskType === 'decrypt' ? '批量语音解密' : '批量转写'}中，可在导出页任务中心查看进度`
-                      : '批量语音处理（解密/转文字）'}
-                  >
-                    {isBatchTranscribing ? (
-                      <Loader2 size={18} className="spin" />
-                    ) : (
-                      <Mic size={18} />
-                    )}
-                  </button>
-                )}
-                {!standaloneSessionWindow && (
-                  <button
-                    className={`icon-btn batch-decrypt-btn${isBatchDecrypting ? ' transcribing' : ''}`}
-                    onClick={handleBatchDecrypt}
-                    disabled={!currentSessionId}
-                    title={isBatchDecrypting
-                      ? '批量解密中，可在导出页任务中心查看进度'
-                      : '批量解密图片'}
-                  >
-                    {isBatchDecrypting ? (
-                      <Loader2 size={18} className="spin" />
-                    ) : (
-                      <ImageIcon size={18} />
-                    )}
-                  </button>
-                )}
-                <div className="jump-calendar-anchor" ref={jumpCalendarWrapRef}>
-                  <button
-                    className={`icon-btn jump-to-time-btn ${showJumpPopover ? 'active' : ''}`}
-                    onClick={handleToggleJumpPopover}
-                    title="跳转到指定时间"
-                  >
-                    <Calendar size={18} />
-                  </button>
-                </div>
-                {showJumpPopover && createPortal(
-                  <div
-                    ref={jumpPopoverPortalRef}
-                    style={{
-                      position: 'fixed',
-                      top: jumpPopoverPosition.top,
-                      left: jumpPopoverPosition.left,
-                      zIndex: 3600
-                    }}
-                  >
-                    <JumpToDatePopover
-                      isOpen={showJumpPopover}
-                      currentDate={jumpPopoverDate}
-                      onClose={() => setShowJumpPopover(false)}
-                      onSelect={handleJumpDateSelect}
-                      messageDates={messageDates}
-                      hasLoadedMessageDates={hasLoadedMessageDates}
-                      messageDateCounts={messageDateCounts}
-                      loadingDates={loadingDates}
-                      loadingDateCounts={loadingDateCounts}
-                      style={{ position: 'static', top: 'auto', right: 'auto' }}
-                    />
-                  </div>,
-                  document.body
-                )}
-                <button
-                  className={`icon-btn in-session-search-btn ${showInSessionSearch ? 'active' : ''}`}
-                  onClick={handleToggleInSessionSearch}
-                  disabled={!currentSessionId}
-                  title="搜索会话消息"
+              {showJumpPopover && createPortal(
+                <div
+                  ref={jumpPopoverPortalRef}
+                  style={{
+                    position: 'fixed',
+                    top: jumpPopoverPosition.top,
+                    left: jumpPopoverPosition.left,
+                    zIndex: 3600
+                  }}
                 >
-                  <Search size={18} />
-                </button>
-                <button
-                  className="icon-btn refresh-messages-btn"
-                  onClick={handleRefreshMessages}
-                  disabled={isRefreshingMessages || isLoadingMessages}
-                  title="刷新消息"
-                >
-                  <RefreshCw size={18} className={isRefreshingMessages ? 'spin' : ''} />
-                </button>
-                {!shouldHideStandaloneDetailButton && (
-                  <button
-                    className={`icon-btn detail-btn ${showDetailPanel ? 'active' : ''}`}
-                    onClick={toggleDetailPanel}
-                    title="会话详情"
-                  >
-                    <Info size={18} />
-                  </button>
-                )}
-              </div>
-            </div>
+                  <JumpToDatePopover
+                    isOpen={showJumpPopover}
+                    currentDate={jumpPopoverDate}
+                    onClose={() => setShowJumpPopover(false)}
+                    onSelect={handleJumpDateSelect}
+                    messageDates={messageDates}
+                    hasLoadedMessageDates={hasLoadedMessageDates}
+                    messageDateCounts={messageDateCounts}
+                    loadingDates={loadingDates}
+                    loadingDateCounts={loadingDateCounts}
+                    style={{ position: 'static', top: 'auto', right: 'auto' }}
+                  />
+                </div>,
+                document.body
+              )}
 
             {isPreparingExportDialog && exportPrepareHint && (
               <div className="export-prepare-hint" role="status" aria-live="polite">
@@ -8370,6 +8318,8 @@ function MessageBubble({
 
   // State variables...
   const [imageError, setImageError] = useState(false)
+  const [imageErrorReason, setImageErrorReason] = useState<string | undefined>(undefined)
+  const [imageFailureKind, setImageFailureKind] = useState<'not_found' | 'decrypt_failed' | undefined>(undefined)
   const [imageLoading, setImageLoading] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageStageLockHeight, setImageStageLockHeight] = useState<number | null>(null)
@@ -8757,7 +8707,11 @@ function MessageBubble({
         if (result.success && result.localPath) {
           const renderPath = toRenderableImageSrc(result.localPath)
           if (!renderPath) {
-            if (!silent) setImageError(true)
+            if (!silent) {
+              setImageError(true)
+              setImageErrorReason('路径无效')
+              setImageFailureKind('decrypt_failed')
+            }
             return { success: false }
           }
           imageDataUrlCache.set(imageCacheKey, renderPath)
@@ -8769,6 +8723,10 @@ function MessageBubble({
           setImageHasUpdate(false)
           if (result.liveVideoPath) setImageLiveVideoPath(result.liveVideoPath)
           return { ...result, localPath: renderPath }
+        } else if (!silent && result.error) {
+          setImageError(true)
+          setImageErrorReason(result.error)
+          setImageFailureKind(result.failureKind)
         }
       }
 
@@ -8785,9 +8743,17 @@ function MessageBubble({
         setImageHasUpdate(false)
         return { success: true, localPath: dataUrl }
       }
-      if (!silent) setImageError(true)
-    } catch {
-      if (!silent) setImageError(true)
+      if (!silent) {
+        setImageError(true)
+        setImageErrorReason('图片数据获取失败')
+        setImageFailureKind('not_found')
+      }
+    } catch (e) {
+      if (!silent) {
+        setImageError(true)
+        setImageErrorReason(e instanceof Error ? e.message : '解密异常')
+        setImageFailureKind('decrypt_failed')
+      }
     } finally {
       if (!silent) setImageLoading(false)
       imageDecryptPendingRef.current = false
@@ -9409,8 +9375,14 @@ function MessageBubble({
     appMsgTextCache.set(selector, value)
     return value
   }, [appMsgDoc, appMsgTextCache])
+  const decodeHtmlEntities = useCallback((text: string): string => {
+    const textarea = document.createElement('textarea')
+    textarea.innerHTML = text
+    return textarea.value
+  }, [])
+
   const queryPreferredQuotedContent = useCallback((): string => {
-    if (message.quotedContent) return message.quotedContent
+    if (message.quotedContent) return decodeHtmlEntities(message.quotedContent)
     const candidates = [
       'refermsg > selectedcontent',
       'refermsg > selectedtext',
@@ -9427,10 +9399,10 @@ function MessageBubble({
     ]
     for (const selector of candidates) {
       const value = queryAppMsgText(selector)
-      if (value) return value
+      if (value) return decodeHtmlEntities(value)
     }
     return ''
-  }, [message.quotedContent, queryAppMsgText])
+  }, [message.quotedContent, queryAppMsgText, decodeHtmlEntities])
   const appMsgThumbRawCandidate = useMemo(() => (
     message.linkThumb ||
     message.appMsgThumbUrl ||
@@ -9624,7 +9596,7 @@ function MessageBubble({
   // 渲染消息内容
   const renderContent = () => {
     if (isImage) {
-      return (
+      const imageContent = (
         <div
           ref={imageContainerRef}
           className={`image-stage ${imageStageLockHeight ? 'locked' : ''}`}
@@ -9636,14 +9608,15 @@ function MessageBubble({
             </div>
           ) : imageError || !imageLocalPath ? (
             <button
-              className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
+              className={`image-unavailable ${imageClicked ? 'clicked' : ''} ${imageError ? 'error' : ''}`}
               onClick={handleImageClick}
               disabled={imageLoading}
               type="button"
             >
               <ImageIcon size={24} />
-              <span>图片未解密</span>
-              <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
+              <span>{imageError ? '解密失败' : '图片未解密'}</span>
+              {imageErrorReason && <span className="image-error-reason">{imageErrorReason}</span>}
+              <span className="image-action">{imageClicked ? '已点击…' : '点击重试'}</span>
             </button>
           ) : (
             <>
@@ -9659,6 +9632,8 @@ function MessageBubble({
                   onLoad={() => {
                     setImageLoaded(true)
                     setImageError(false)
+                    setImageErrorReason(undefined)
+                    setImageFailureKind(undefined)
                     stabilizeImageScrollAfterResize()
                     releaseImageStageLock()
                   }}
@@ -9679,13 +9654,24 @@ function MessageBubble({
           )}
         </div>
       )
+
+      if (hasQuote) {
+        return renderBubbleWithQuote(
+          renderQuotedMessageBlock(renderTextWithEmoji(cleanMessageContent(quotedContent))),
+          imageContent
+        )
+      }
+
+      return <div className="bubble-content">{imageContent}</div>
     }
 
     // 视频消息
     if (isVideo) {
+      let videoContent: React.ReactNode
+
       // 未进入可视区域时显示占位符
       if (!isVideoVisible) {
-        return (
+        videoContent = (
           <div className="video-placeholder" ref={videoContainerRef as React.RefObject<HTMLDivElement>}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polygon points="23 7 16 12 23 17 23 7"></polygon>
@@ -9693,20 +9679,16 @@ function MessageBubble({
             </svg>
           </div>
         )
-      }
-
-      // 加载中
-      if (videoLoading) {
-        return (
+      } else if (videoLoading) {
+        // 加载中
+        videoContent = (
           <div className="video-loading" ref={videoContainerRef as React.RefObject<HTMLDivElement>}>
             <Loader2 size={20} className="spin" />
           </div>
         )
-      }
-
-      // 视频不存在 - 添加点击重试功能
-      if (!videoInfo?.exists || !videoInfo.videoUrl) {
-        return (
+      } else if (!videoInfo?.exists || !videoInfo.videoUrl) {
+        // 视频不存在 - 添加点击重试功能
+        videoContent = (
           <button
             className={`video-unavailable ${videoClicked ? 'clicked' : ''}`}
             ref={videoContainerRef as React.RefObject<HTMLButtonElement>}
@@ -9726,27 +9708,36 @@ function MessageBubble({
             <span className="video-action">{videoClicked ? '已点击…' : '点击重试'}</span>
           </button>
         )
+      } else {
+        // 默认显示缩略图，点击打开独立播放窗口
+        const thumbSrc = videoInfo.thumbUrl || videoInfo.coverUrl
+        videoContent = (
+          <div className="video-thumb-wrapper" ref={videoContainerRef as React.RefObject<HTMLDivElement>} onClick={handlePlayVideo}>
+            {thumbSrc ? (
+              <img src={thumbSrc} alt="视频缩略图" className="video-thumb" loading="lazy" decoding="async" />
+            ) : (
+              <div className="video-thumb-placeholder">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                </svg>
+              </div>
+            )}
+            <div className="video-play-button">
+              <Play size={32} fill="white" />
+            </div>
+          </div>
+        )
       }
 
-      // 默认显示缩略图，点击打开独立播放窗口
-      const thumbSrc = videoInfo.thumbUrl || videoInfo.coverUrl
-      return (
-          <div className="video-thumb-wrapper" ref={videoContainerRef as React.RefObject<HTMLDivElement>} onClick={handlePlayVideo}>
-          {thumbSrc ? (
-            <img src={thumbSrc} alt="视频缩略图" className="video-thumb" loading="lazy" decoding="async" />
-          ) : (
-            <div className="video-thumb-placeholder">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="23 7 16 12 23 17 23 7"></polygon>
-                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-              </svg>
-            </div>
-          )}
-          <div className="video-play-button">
-            <Play size={32} fill="white" />
-          </div>
-        </div>
-      )
+      if (hasQuote) {
+        return renderBubbleWithQuote(
+          renderQuotedMessageBlock(renderTextWithEmoji(cleanMessageContent(quotedContent))),
+          videoContent
+        )
+      }
+
+      return <div className="bubble-content">{videoContent}</div>
     }
 
     if (isVoice) {
@@ -9834,7 +9825,7 @@ function MessageBubble({
         void requestVoiceTranscript()
       }
 
-      return (
+      const voiceContent = (
         <div className="voice-stack">
           <div className={`voice-message ${isVoicePlaying ? 'playing' : ''}`} onClick={handleToggle}>
             <button
@@ -9917,6 +9908,15 @@ function MessageBubble({
           )}
         </div>
       )
+
+      if (hasQuote) {
+        return renderBubbleWithQuote(
+          renderQuotedMessageBlock(renderTextWithEmoji(cleanMessageContent(quotedContent))),
+          voiceContent
+        )
+      }
+
+      return <div className="bubble-content">{voiceContent}</div>
     }
 
     // 名片消息
@@ -10020,10 +10020,30 @@ function MessageBubble({
             return <span className="quoted-type-label">[动画表情]</span>
           }
 
+          // 链接类消息：需区分真正的链接和嵌套引用
+          // 当一个引用了别的消息的消息被引用（B引用A，C又引用B），那么 B 在 C 的 refermsg 里 type=49
+          // 与此同时，一个链接的 type 也是 49，这可能意味着 49 是一个更高级别的分类
+          // 因此，不能将 type=49 的引用信息一律视为链接，它也可能是嵌套引用。那么怎么区分呢？
+          // 答：嵌套引用的 referContent 中 xmlType=57，真正的链接 xmlType=49 或 5
+          // 对于更多层的嵌套引用，微信不会保存所有层的信息，因此和两层的情况差不多
+          // 注意：需从原始 XML 获取 refermsg > content，而非后端处理过的 quotedContent
+          if (referType === '49') {
+            try {
+              const rawReferContent = q('refermsg > content') || ''
+              const innerDoc = new DOMParser().parseFromString(rawReferContent, 'text/xml')
+              const innerXmlType = innerDoc.querySelector('appmsg > type')?.textContent?.trim()
+              if (innerXmlType === '57') {
+                const innerTitle = innerDoc.querySelector('title')?.textContent?.trim() || ''
+                if (innerTitle) return <>{renderTextWithEmoji(cleanMessageContent(innerTitle))}</>
+              }
+            } catch { /* 解析失败降级 */ }
+            return <span className="quoted-type-label">[链接]</span>
+          }
+
           // 各类型名称映射
           const typeLabels: Record<string, string> = {
             '3': '图片', '34': '语音', '43': '视频',
-            '49': '链接', '50': '通话', '10000': '系统消息', '10002': '撤回消息',
+            '50': '通话', '10000': '系统消息', '10002': '撤回消息',
           }
           if (referType && typeLabels[referType]) {
             return <span className="quoted-type-label">[{typeLabels[referType]}]</span>
@@ -10396,9 +10416,29 @@ function MessageBubble({
             } catch { /* 解析失败降级 */ }
             return <span className="quoted-type-label">[动画表情]</span>
           }
+          // 链接类消息：需区分真正的链接和嵌套引用
+          // 当一个引用了别的消息的消息被引用（B引用A，C又引用B），那么 B 在 C 的 refermsg 里 type=49
+          // 与此同时，一个链接的 type 也是 49，这可能意味着 49 是一个更高级别的分类
+          // 因此，不能将 type=49 的引用信息一律视为链接，它也可能是嵌套引用。那么怎么区分呢？
+          // 答：嵌套引用的 referContent 中 xmlType=57，真正的链接 xmlType=49 或 5
+          // 对于更多层的嵌套引用，微信不会保存所有层的信息，因此和两层的情况差不多
+          // 注意：需从原始 XML 获取 refermsg > content，而非后端处理过的 quotedContent
+          if (referType === '49') {
+            try {
+              const rawReferContent = parsedDoc?.querySelector('refermsg > content')?.textContent?.trim() || ''
+              const innerDoc = new DOMParser().parseFromString(rawReferContent, 'text/xml')
+              const innerXmlType = innerDoc.querySelector('appmsg > type')?.textContent?.trim()
+              if (innerXmlType === '57') {
+                const innerTitle = innerDoc.querySelector('title')?.textContent?.trim() || ''
+                if (innerTitle) return <>{renderTextWithEmoji(cleanMessageContent(innerTitle))}</>
+              }
+            } catch { /* 解析失败降级 */ }
+            return <span className="quoted-type-label">[链接]</span>
+          }
+          // 各类型名称映射
           const typeLabels: Record<string, string> = {
             '3': '图片', '34': '语音', '43': '视频',
-            '49': '链接', '50': '通话', '10000': '系统消息', '10002': '撤回消息',
+            '50': '通话', '10000': '系统消息', '10002': '撤回消息',
           }
           if (referType && typeLabels[referType]) {
             return <span className="quoted-type-label">[{typeLabels[referType]}]</span>
@@ -10696,115 +10736,57 @@ function MessageBubble({
     return <div className="bubble-content">{renderTextWithEmoji(cleanedParsedContent)}</div>
   }
 
-  return (
-    <>
-      {showTime && (
-        <div className="time-divider">
-          <span>{formatTime(message.createTime)}</span>
+  const systemAlertPortal = systemAlert ? createPortal(
+    <div className="modal-overlay" onClick={() => setSystemAlert(null)} style={{ zIndex: 99999 }}>
+      <div className="delete-confirm-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+        <div className="confirm-icon">
+          <AlertCircle size={32} color="var(--danger)" />
         </div>
-      )}
-      <div
-        className={`message-wrapper-with-selection ${isSelectionMode ? 'selectable' : ''}`}
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          width: '100%',
-          justifyContent: isSent ? 'flex-end' : 'flex-start',
-          cursor: isSelectionMode ? 'pointer' : 'default'
-        }}
-        onClick={(e) => {
-          if (isSelectionMode) {
-            e.stopPropagation()
-            onToggleSelection?.(messageKey, e.shiftKey)
-          }
-        }}
-      >
-        {isSelectionMode && !isSent && (
-          <div className={`checkbox ${isSelected ? 'checked' : ''}`} style={{
-            width: '20px',
-            height: '20px',
-            borderRadius: '4px',
-            border: isSelected ? 'none' : '2px solid rgba(128,128,128,0.5)',
-            backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            marginRight: '12px',
-            marginTop: '10px', // Align with avatar top
-            flexShrink: 0
-          }}>
-            {isSelected && <Check size={14} strokeWidth={3} />}
-          </div>
-        )}
-
-        <div className={`message-bubble ${bubbleClass} ${isEmoji && message.emojiCdnUrl && !emojiError ? 'emoji' : ''} ${isImage ? 'image' : ''} ${isVoice ? 'voice' : ''}`}
-          onContextMenu={(e) => onContextMenu?.(e, message)}
-        >
-          <div className="bubble-avatar">
-            <Avatar
-              src={avatarUrl}
-              name={!isSent ? (isGroupChat ? (resolvedSenderName || '?') : (session.displayName || session.username)) : '我'}
-              size={36}
-              className="bubble-avatar"
-            />
-          </div>
-          <div className="bubble-body">
-            {/* 群聊中显示发送者名称 */}
-            {isGroupChat && !isSent && (
-              <div className="sender-name">
-                {resolvedSenderName || '群成员'}
-              </div>
-            )}
-            {renderContent()}
-          </div>
+        <div className="confirm-content">
+          <h3>{systemAlert.title}</h3>
+          <p style={{ marginTop: '12px', lineHeight: '1.6', fontSize: '14px', color: 'var(--text-secondary)' }}>
+            {systemAlert.message}
+          </p>
         </div>
-
-        {isSelectionMode && isSent && (
-          <div className={`checkbox ${isSelected ? 'checked' : ''}`} style={{
-            width: '20px',
-            height: '20px',
-            borderRadius: '4px',
-            border: isSelected ? 'none' : '2px solid rgba(128,128,128,0.5)',
-            backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            marginLeft: '12px',
-            marginTop: '10px',
-            flexShrink: 0
-          }}>
-            {isSelected && <Check size={14} strokeWidth={3} />}
-          </div>
-        )}
-        {systemAlert && createPortal(
-            <div className="modal-overlay" onClick={() => setSystemAlert(null)} style={{ zIndex: 99999 }}>
-              <div className="delete-confirm-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-                <div className="confirm-icon">
-                  <AlertCircle size={32} color="var(--danger)" />
-                </div>
-                <div className="confirm-content">
-                  <h3>{systemAlert.title}</h3>
-                  <p style={{ marginTop: '12px', lineHeight: '1.6', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                    {systemAlert.message}
-                  </p>
-                </div>
-                <div className="confirm-actions" style={{ justifyContent: 'center', marginTop: '24px' }}>
-                  <button
-                      className="btn-primary"
-                      onClick={() => setSystemAlert(null)}
-                      style={{ padding: '8px 32px' }}
-                  >
-                    确认
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-        )}
+        <div className="confirm-actions" style={{ justifyContent: 'center', marginTop: '24px' }}>
+          <button
+            className="btn-primary"
+            onClick={() => setSystemAlert(null)}
+            style={{ padding: '8px 32px' }}
+          >
+            确认
+          </button>
+        </div>
       </div>
-    </>
+    </div>,
+    document.body
+  ) : null
+
+  return (
+    <ChatMessageBubble
+      message={message}
+      messageKey={messageKey}
+      session={session}
+      showTime={showTime}
+      timeText={formatTime(message.createTime)}
+      isSent={isSent}
+      isSystem={isSystem}
+      isEmoji={isEmoji}
+      isImage={isImage}
+      isVoice={isVoice}
+      emojiHasAsset={Boolean(message.emojiCdnUrl || message.emojiLocalPath)}
+      emojiError={emojiError}
+      avatarUrl={avatarUrl}
+      isGroupChat={isGroupChat}
+      resolvedSenderName={resolvedSenderName}
+      isSelectionMode={isSelectionMode}
+      isSelected={isSelected}
+      onContextMenu={onContextMenu}
+      onToggleSelection={onToggleSelection}
+      portal={systemAlertPortal}
+    >
+      {renderContent()}
+    </ChatMessageBubble>
   )
 }
 

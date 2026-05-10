@@ -29,6 +29,9 @@ export default function NotificationWindow() {
             const newNoti: NotificationData = {
                 id: `noti_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
                 sessionId: data.sessionId,
+                channel: data.channel,
+                insightRecordId: data.insightRecordId,
+                targetRoute: data.targetRoute,
                 title: data.title,
                 content: data.content,
                 timestamp: timestamp,
@@ -70,8 +73,17 @@ export default function NotificationWindow() {
         window.electronAPI.notification?.close()
     }
 
-    const handleClick = (sessionId: string) => {
-        window.electronAPI.notification?.click(sessionId)
+    const handleClick = (data: NotificationData) => {
+        if (data.channel === 'ai-insight') {
+            window.electronAPI.notification?.click({
+                sessionId: data.sessionId,
+                channel: data.channel,
+                insightRecordId: data.insightRecordId,
+                targetRoute: data.targetRoute
+            })
+        } else {
+            window.electronAPI.notification?.click(data.sessionId)
+        }
         setNotification(null)
         setPrevNotification(null)
         // Main process handles window hide/close

@@ -66,6 +66,7 @@ export const CONFIG_KEYS = {
 
   // 通知
   NOTIFICATION_ENABLED: 'notificationEnabled',
+  AI_INSIGHT_NOTIFICATION_ENABLED: 'aiInsightNotificationEnabled',
   NOTIFICATION_POSITION: 'notificationPosition',
   NOTIFICATION_FILTER_MODE: 'notificationFilterMode',
   NOTIFICATION_FILTER_LIST: 'notificationFilterList',
@@ -1675,6 +1676,15 @@ export async function getNotificationEnabled(): Promise<boolean> {
 // 设置通知开关
 export async function setNotificationEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.NOTIFICATION_ENABLED, enabled)
+}
+
+export async function getAiInsightNotificationEnabled(): Promise<boolean> {
+  const value = await config.get(CONFIG_KEYS.AI_INSIGHT_NOTIFICATION_ENABLED)
+  return value !== false
+}
+
+export async function setAiInsightNotificationEnabled(enabled: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.AI_INSIGHT_NOTIFICATION_ENABLED, enabled)
 }
 
 // 获取通知位置

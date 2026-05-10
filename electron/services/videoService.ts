@@ -131,6 +131,14 @@ class VideoService {
     if (dbPathContainsWxid) {
       return join(dbPath, 'msg', 'video')
     }
+
+    // 使用 ConfigService 的统一账号目录解析
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
+    if (accountDir) {
+      return join(accountDir, 'msg', 'video')
+    }
+
+    // 回退到原始逻辑
     return join(dbPath, wxid, 'msg', 'video')
   }
 
@@ -144,6 +152,13 @@ class VideoService {
       return [join(dbPath, 'db_storage', 'hardlink', 'hardlink.db')]
     }
 
+    // 使用 ConfigService 的统一账号目录解析
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
+    if (accountDir) {
+      return [join(accountDir, 'db_storage', 'hardlink', 'hardlink.db')]
+    }
+
+    // 回退到原始逻辑
     return [
       join(dbPath, wxid, 'db_storage', 'hardlink', 'hardlink.db'),
       join(dbPath, cleanedWxid, 'db_storage', 'hardlink', 'hardlink.db')

@@ -1955,3 +1955,276 @@
     opacity: 0.92;
   }
 }
+
+// UI rebuild polish: align group analysis with the shared ChatGPT-style tokens.
+.group-analytics-shell {
+  gap: 14px;
+  background: transparent;
+}
+
+.group-analytics-page {
+  gap: 14px;
+}
+
+.group-sidebar,
+.detail-area {
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.group-sidebar {
+  .sidebar-header {
+    min-height: 58px;
+    padding: 14px;
+  }
+
+  .search-box {
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: var(--bg-primary);
+
+    &:focus-within {
+      border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+    }
+  }
+
+  .refresh-btn {
+    border-radius: 10px;
+    background: var(--bg-primary);
+  }
+}
+
+.group-item {
+  margin: 0 8px 4px;
+  border-bottom: none;
+  border-radius: 12px;
+
+  &.active {
+    background: color-mix(in srgb, var(--primary) 12%, var(--bg-secondary));
+    color: var(--text-primary);
+  }
+
+  .group-avatar {
+    border-radius: 10px;
+  }
+}
+
+.detail-drag-region {
+  height: 14px;
+}
+
+.function-menu {
+  padding: 18px 22px 24px;
+
+  .selected-group-info {
+    border-radius: 16px;
+    border-color: color-mix(in srgb, var(--border-color) 70%, transparent);
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+
+  .function-grid {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+  }
+
+  .function-card {
+    min-height: 136px;
+    border-radius: 16px;
+    border-color: color-mix(in srgb, var(--border-color) 76%, transparent);
+    background: var(--bg-primary);
+    box-shadow: none;
+    transform: none;
+
+    &:hover {
+      transform: none;
+      border-color: color-mix(in srgb, var(--primary) 35%, var(--border-color));
+      background: color-mix(in srgb, var(--primary) 5%, var(--bg-primary));
+      box-shadow: var(--shadow-sm);
+    }
+  }
+}
+
+.function-content {
+  .content-header {
+    padding: 16px 22px 12px;
+    background: var(--bg-secondary);
+    border-bottom-color: color-mix(in srgb, var(--border-color) 70%, transparent);
+
+    .back-btn,
+    .refresh-btn,
+    .export-btn {
+      border-radius: 10px;
+      background: var(--bg-primary);
+    }
+  }
+
+  .content-body {
+    padding: 18px 22px 22px;
+  }
+}
+
+.members-grid {
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 10px;
+
+  .member-card {
+    border-radius: 12px;
+    background: var(--bg-primary);
+    border: 1px solid transparent;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary) 5%, var(--bg-primary));
+      border-color: color-mix(in srgb, var(--primary) 28%, var(--border-color));
+    }
+  }
+}
+
+.member-export-panel,
+.member-messages-panel,
+.member-analytics-panel {
+  .select-trigger {
+    border-radius: 12px;
+    background: var(--bg-primary);
+  }
+
+  .member-export-options,
+  .member-message-item,
+  .member-message-summary-card {
+    border-radius: 12px;
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+
+.rankings-list {
+  .ranking-item {
+    border-radius: 12px;
+    background: var(--bg-primary);
+    border: 1px solid transparent;
+
+    &:hover {
+      border-color: var(--border-color);
+      background: color-mix(in srgb, var(--primary) 4%, var(--bg-primary));
+    }
+  }
+}
+
+.media-stats {
+  .media-layout .media-legend,
+  .stat-card,
+  .charts-grid .chart-card {
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+
+.member-modal-overlay {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.member-modal,
+.member-export-modal,
+.member-result-modal {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-primary) 96%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.member-modal {
+  width: min(380px, calc(100vw - 32px));
+  padding: 28px 32px 32px;
+
+  .member-display-name {
+    margin-bottom: 20px;
+  }
+
+  .detail-row {
+    border-radius: 12px;
+    background: var(--bg-secondary);
+  }
+
+  .member-modal-actions {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .member-modal-primary-btn,
+  .member-modal-secondary-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    span {
+      min-width: 0;
+      white-space: normal;
+      text-align: center;
+    }
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  .member-modal-primary-btn {
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: var(--on-primary, #fff);
+
+    &:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+      opacity: 1;
+    }
+  }
+
+  .member-modal-secondary-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+      background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
+      color: var(--primary);
+    }
+  }
+}
+
+[data-mode="dark"] {
+  .member-modal,
+  .member-export-modal,
+  .member-result-modal {
+    background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
+    border-color: color-mix(in srgb, var(--border-color) 85%, transparent);
+  }
+
+  .members-grid .member-card,
+  .rankings-list .ranking-item,
+  .member-export-panel .member-message-item,
+  .media-stats .media-layout .media-legend,
+  .media-stats .stat-card,
+  .media-stats .charts-grid .chart-card {
+    background: var(--bg-secondary);
+  }
+}

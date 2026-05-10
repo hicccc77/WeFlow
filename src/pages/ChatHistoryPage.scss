@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 96%, white) 0%, var(--bg-primary) 100%);
+  color: var(--text-primary);
+  background: var(--bg-primary);
 
   .history-list {
     flex: 1;
@@ -149,7 +149,7 @@
         .nested-chat-record-card {
           min-width: 220px;
           max-width: 320px;
-          background: color-mix(in srgb, var(--bg-secondary) 97%, #f5f7fb);
+          background: var(--card-bg);
           border: 1px solid var(--border-color);
           border-radius: 14px;
           overflow: hidden;

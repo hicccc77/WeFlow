@@ -493,7 +493,7 @@ export const SnsPostItem: React.FC<SnsPostItemProps> = ({ post, onPreview, onDeb
                         <Avatar
                             src={post.avatarUrl}
                             name={post.nickname}
-                            size={48}
+                            size={36}
                             shape="rounded"
                         />
                     </button>

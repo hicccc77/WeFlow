@@ -9552,7 +9552,7 @@ function ExportPage() {
                         customScrollParent={contactsListScrollParent ?? undefined}
                         data={filteredContacts}
                         computeItemKey={(_, contact) => contact.username}
-                        fixedItemHeight={76}
+                        fixedItemHeight={64}
                         itemContent={renderContactRow}
                         rangeChanged={handleContactsRangeChanged}
                         atTopStateChange={setIsContactsListAtTop}

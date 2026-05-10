@@ -166,7 +166,15 @@ async function run() {
 
   let result: any
   if (config.mode === 'contacts') {
-    const { contactExportService } = await import('./services/contactExportService')
+    const [{ contactExportService }, { chatService }] = await Promise.all([
+      import('./services/contactExportService'),
+      import('./services/chatService')
+    ])
+    chatService.setRuntimeConfig({
+      dbPath: config.dbPath,
+      decryptKey: config.decryptKey,
+      myWxid: config.myWxid
+    })
     result = await contactExportService.exportContacts(
       String(config.outputDir || ''),
       config.options || {}

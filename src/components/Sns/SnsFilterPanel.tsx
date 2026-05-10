@@ -1,6 +1,9 @@
 import React from 'react'
 import { Search, User, X, Loader2, CheckSquare, Square, Download, MessageSquare } from 'lucide-react'
+import { Virtuoso } from 'react-virtuoso'
 import { Avatar } from '../Avatar'
+
+// --- Types ---
 
 interface Contact {
     username: string
@@ -32,9 +35,12 @@ interface SnsFilterPanelProps {
     onToggleFilteredContacts: (usernames: string[], shouldSelect: boolean) => void
     onClearSelectedContacts: () => void
     onExportSelectedContacts: () => void
+    // 评论筛选相关属性
     commentByUsername?: string
     onSetCommentByUsername: (username: string | undefined) => void
 }
+
+// --- Component ---
 
 export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     searchKeyword,
@@ -55,25 +61,36 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     commentByUsername,
     onSetCommentByUsername
 }) => {
-    const filteredContacts = contacts.filter(c =>
-        (c.displayName || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
-        c.username.toLowerCase().includes(contactSearch.toLowerCase())
-    )
+    // 1. 过滤联系人逻辑
+    const filteredContacts = React.useMemo(() => {
+        const keyword = contactSearch.trim().toLowerCase()
+        if (!keyword) return contacts
+        return contacts.filter(c =>
+            (c.displayName || '').toLowerCase().includes(keyword) ||
+            c.username.toLowerCase().includes(keyword)
+        )
+    }, [contacts, contactSearch])
+
+    // 2. 选中状态逻辑
     const selectedContactLookup = React.useMemo(
         () => new Set(selectedContactUsernames),
         [selectedContactUsernames]
     )
+
     const filteredContactUsernames = React.useMemo(
         () => filteredContacts.map((contact) => contact.username),
         [filteredContacts]
     )
+
     const selectedFilteredCount = React.useMemo(
         () => filteredContactUsernames.filter((username) => selectedContactLookup.has(username)).length,
         [filteredContactUsernames, selectedContactLookup]
     )
+
     const hasFilteredContacts = filteredContactUsernames.length > 0
     const allFilteredSelected = hasFilteredContacts && selectedFilteredCount === filteredContactUsernames.length
 
+    // 3. 重置所有筛选
     const clearFilters = () => {
         setSearchKeyword('')
         setContactSearch('')
@@ -81,14 +98,66 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     }
 
     const getEmptyStateText = () => {
-        if (loading && contacts.length === 0) {
-            return '正在加载联系人...'
-        }
-        if (contacts.length === 0) {
-            return '暂无好友或曾经的好友'
-        }
+        if (loading && contacts.length === 0) return '正在加载联系人...'
+        if (contacts.length === 0) return '暂无好友或曾经的好友'
         return '没有找到联系人'
     }
+
+    // 4. 渲染单行联系人 (用于 Virtuoso)
+    const renderContactRow = React.useCallback((_: number, contact: Contact) => {
+        const isPostCountReady = contact.postCountStatus === 'ready'
+        const isSelected = selectedContactLookup.has(contact.username)
+        const isActive = activeContactUsername === contact.username
+        const isCommentActive = commentByUsername === contact.username
+
+        return (
+            <div className={`contact-row${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}`}>
+                {/* 左侧：多选框 */}
+                <button
+                    type="button"
+                    className={`contact-select-btn${isSelected ? ' checked' : ''}`}
+                    onClick={() => onToggleContactSelected(contact)}
+                    title={isSelected ? `取消选择 ${contact.displayName}` : `选择 ${contact.displayName}`}
+                >
+                    {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                </button>
+
+                {/* 中间：主体信息（头像、昵称、条数） */}
+                <button
+                    type="button"
+                    className="contact-main-btn"
+                    onClick={() => onOpenContactTimeline(contact)}
+                    title={`查看 ${contact.displayName} 的朋友圈`}
+                >
+                    <Avatar src={contact.avatarUrl} name={contact.displayName} size={30} shape="rounded" />
+                    <div className="contact-meta">
+                        <span className="contact-name">{contact.displayName}</span>
+                    </div>
+                    <div className="contact-post-count-wrap">
+                        {isPostCountReady ? (
+                            <span className="contact-post-count">
+                                {Math.max(0, Math.floor(Number(contact.postCount || 0)))}条
+                            </span>
+                        ) : (
+                            <span className="contact-post-count-loading" title="统计中">
+                                <Loader2 size={12} className="spinning" />
+                            </span>
+                        )}
+                    </div>
+                </button>
+
+                {/* 右侧：评论搜索按钮 */}
+                <button
+                    type="button"
+                    className={`contact-comment-search-btn${isCommentActive ? ' active' : ''}`}
+                    onClick={() => onSetCommentByUsername(isCommentActive ? undefined : contact.username)}
+                    title={isCommentActive ? `取消搜索 ${contact.displayName} 的评论` : `仅看 ${contact.displayName} 的评论`}
+                >
+                    <MessageSquare size={15} />
+                </button>
+            </div>
+        )
+    }, [activeContactUsername, commentByUsername, onOpenContactTimeline, onToggleContactSelected, onSetCommentByUsername, selectedContactLookup])
 
     return (
         <aside className="sns-filter-panel">
@@ -102,7 +171,7 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
             </div>
 
             <div className="filter-widgets">
-                {/* Search Widget */}
+                {/* 关键词搜索 */}
                 <div className="filter-widget search-widget">
                     <div className="widget-header">
                         <Search size={14} />
@@ -122,7 +191,8 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
                         )}
                     </div>
                 </div>
-                {/* Contact Widget */}
+
+                {/* 联系人筛选 */}
                 <div className="filter-widget contact-widget">
                     <div className="widget-header">
                         <User size={14} />
@@ -168,64 +238,26 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
                     )}
 
                     <div className="contact-interaction-hint">
-                        点左侧可多选下载，点右侧可查看单人详情
+                        左侧多选下载，中间查看详情，右侧搜评论
                     </div>
 
+                    {/* 虚拟列表容器 */}
                     <div className="contact-list-scroll">
-                        {filteredContacts.map(contact => {
-                            const isPostCountReady = contact.postCountStatus === 'ready'
-                            const isSelected = selectedContactLookup.has(contact.username)
-                            const isActive = activeContactUsername === contact.username
-                            return (
-                                <div
-                                    key={contact.username}
-                                    className={`contact-row${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}`}
-                                >
-                                    <button
-                                        type="button"
-                                        className={`contact-select-btn${isSelected ? ' checked' : ''}`}
-                                        onClick={() => onToggleContactSelected(contact)}
-                                        title={isSelected ? `取消选择 ${contact.displayName}` : `选择 ${contact.displayName}`}
-                                        aria-pressed={isSelected}
-                                    >
-                                        {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="contact-main-btn"
-                                        onClick={() => onOpenContactTimeline(contact)}
-                                        title={`查看 ${contact.displayName} 的朋友圈`}
-                                    >
-                                        <Avatar src={contact.avatarUrl} name={contact.displayName} size={36} shape="rounded" />
-                                        <div className="contact-meta">
-                                            <span className="contact-name">{contact.displayName}</span>
-                                        </div>
-                                        <div className="contact-post-count-wrap">
-                                            {isPostCountReady ? (
-                                                <span className="contact-post-count">{Math.max(0, Math.floor(Number(contact.postCount || 0)))}条</span>
-                                            ) : (
-                                                <span className="contact-post-count-loading" title="统计中">
-                                                    <Loader2 size={13} className="spinning" />
-                                                </span>
-                                            )}
-                                        </div>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`contact-comment-search-btn${commentByUsername === contact.username ? ' active' : ''}`}
-                                        onClick={() => onSetCommentByUsername(commentByUsername === contact.username ? undefined : contact.username)}
-                                        title={commentByUsername === contact.username ? `取消搜索 ${contact.displayName} 的评论` : `仅看 ${contact.displayName} 的评论`}
-                                    >
-                                        <MessageSquare size={16} />
-                                    </button>
-                                </div>
-                            )
-                        })}
-                        {filteredContacts.length === 0 && (
+                        {filteredContacts.length > 0 ? (
+                            <Virtuoso
+                                className="contact-list-virtuoso"
+                                data={filteredContacts}
+                                computeItemKey={(_, contact) => contact.username}
+                                fixedItemHeight={42}
+                                itemContent={renderContactRow}
+                                overscan={200}
+                            />
+                        ) : (
                             <div className="empty-state">{getEmptyStateText()}</div>
                         )}
                     </div>
 
+                    {/* 底部批量操作栏 */}
                     {selectedContactUsernames.length > 0 && (
                         <div className="contact-batch-bar">
                             <span className="contact-batch-summary">已选 {selectedContactUsernames.length} 人</span>
@@ -244,6 +276,7 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     )
 }
 
+// 内部图标组件
 function RefreshCw({ size, className }: { size?: number, className?: string }) {
     return (
         <svg

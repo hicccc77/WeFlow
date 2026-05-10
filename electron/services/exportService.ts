@@ -1889,7 +1889,9 @@ class ExportService {
     if (!decryptKey) return { success: false, error: '请先在设置页面配置解密密钥' }
 
     const cleanedWxid = this.cleanAccountDirName(wxid)
-    const ok = await wcdbService.open(dbPath, decryptKey, cleanedWxid)
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
+    if (!accountDir) return { success: false, error: '无法找到账号目录' }
+    const ok = await wcdbService.open(accountDir, decryptKey)
     if (!ok) return { success: false, error: 'WCDB 打开失败' }
     return { success: true, cleanedWxid }
   }
@@ -2178,6 +2180,10 @@ class ExportService {
    */
   private convertMessageType(localType: number, content: string): number {
     const normalized = this.normalizeAppMessageContent(content || '')
+    if (this.isReadableSystemMessage(localType, normalized)) {
+      return 80
+    }
+
     const xmlTypeRaw = this.extractAppMessageType(normalized)
     const xmlType = xmlTypeRaw ? Number.parseInt(xmlTypeRaw, 10) : null
     const looksLikeAppMessage = localType === 49 || normalized.includes('<appmsg') || normalized.includes('<msg>')
@@ -2199,6 +2205,12 @@ class ExportService {
       }
     }
     return MESSAGE_TYPE_MAP[localType] ?? 99 // 未知类型 -> OTHER
+  }
+
+  private isReadableSystemMessage(localType: number, content: string): boolean {
+    if (localType === 10000) return true
+    const normalized = this.normalizeAppMessageContent(content || '')
+    return /<sysmsg\b/i.test(this.stripSenderPrefix(normalized))
   }
 
   /**
@@ -2627,6 +2639,10 @@ class ExportService {
     emojiCaption?: string
   ): string {
     const safeContent = content || ''
+    const readableSystemText = this.extractReadableSystemMessageText(safeContent)
+    if (readableSystemText && this.isReadableSystemMessage(localType, safeContent)) {
+      return readableSystemText
+    }
 
     if (localType === 3) return '[图片]'
     if (localType === 1) return this.stripSenderPrefix(safeContent)
@@ -3075,6 +3091,18 @@ class ExportService {
       .trim() || '[系统消息]'
   }
 
+  private extractReadableSystemMessageText(content: string): string {
+    if (!content) return ''
+    const normalized = this.normalizeAppMessageContent(content)
+    const sysmsgMatch = /<sysmsg\b[^>]*>([\s\S]*?)<\/sysmsg>/i.exec(this.stripSenderPrefix(normalized))
+    const source = sysmsgMatch?.[1] || normalized
+    const text =
+      this.extractXmlValue(source, 'plain') ||
+      this.extractXmlValue(source, 'text') ||
+      ''
+    return this.stripSenderPrefix(text).replace(/\s+/g, ' ').trim()
+  }
+
   /**
    * 解析通话消息
    * 格式: <voipmsg type="VoIPBubbleMsg"><VoIPBubbleMsg><msg><![CDATA[...]]></msg><room_type>0/1</room_type>...</VoIPBubbleMsg></voipmsg>
@@ -3139,6 +3167,9 @@ class ExportService {
     // 检查 XML 中的 type 标签（支持大 localType 的情况）
     if (content) {
       const normalized = this.normalizeAppMessageContent(content)
+      if (this.isReadableSystemMessage(localType, normalized)) {
+        return '系统消息'
+      }
       const xmlType = this.extractAppMessageType(normalized)
 
       if (xmlType) {
@@ -3505,7 +3536,49 @@ class ExportService {
     return result
   }
 
-  private parseQuoteMessage(content: string): { content?: string; sender?: string; type?: string } {
+  private async resolveQuotedMessagesForExport(messages: any[], sessionId: string): Promise<void> {
+    const svridsToResolve: Array<{ msg: any; svrid: string }> = []
+
+    for (const msg of messages) {
+      if (msg.replyToMessageId && msg.quotedContent === '[消息]') {
+        svridsToResolve.push({ msg, svrid: msg.replyToMessageId })
+      }
+    }
+
+    if (svridsToResolve.length === 0) return
+
+    const results = await Promise.allSettled(
+      svridsToResolve.map(({ svrid }) => wcdbService.getMessageByServerId(sessionId, svrid))
+    )
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      const { msg } = svridsToResolve[i]
+
+      if (result.status === 'fulfilled' && result.value.success && result.value.row) {
+        const localType = parseInt(result.value.row.local_type || '0', 10)
+        const rawMessageContent = result.value.row.message_content
+        const rawCompressContent = result.value.row.compress_content
+        const content = chatService['decodeMessageContent'](rawMessageContent, rawCompressContent)
+
+        if (localType === 1) {
+          msg.quotedContent = chatService['sanitizeQuotedContent'](content)
+        } else if (localType === 3) {
+          msg.quotedContent = '[图片]'
+        } else if (localType === 34) {
+          msg.quotedContent = '[语音]'
+        } else if (localType === 43) {
+          msg.quotedContent = '[视频]'
+        } else if (localType === 47) {
+          msg.quotedContent = '[动画表情]'
+        } else if (localType === 49) {
+          msg.quotedContent = '[链接]'
+        }
+      }
+    }
+  }
+
+  private parseQuoteMessage(content: string): { content?: string; sender?: string; type?: string; svrid?: string } {
     try {
       const normalized = this.normalizeAppMessageContent(content || '')
       const referMsgStart = normalized.indexOf('<refermsg>')
@@ -3522,6 +3595,7 @@ class ExportService {
 
       const referContent = this.extractXmlValue(referMsgXml, 'content')
       const referType = this.extractXmlValue(referMsgXml, 'type')
+      const svrid = this.extractXmlValue(referMsgXml, 'svrid')
       let displayContent = referContent
 
       switch (referType) {
@@ -3744,6 +3818,7 @@ class ExportService {
       if (quoteInfo.content) meta.quotedContent = quoteInfo.content
       if (quoteInfo.sender) meta.quotedSender = quoteInfo.sender
       if (quoteInfo.type) meta.quotedType = quoteInfo.type
+      if (quoteInfo.svrid) meta.quotedSvrid = quoteInfo.svrid
     }
 
     if (appMsgKind === 'link') {
@@ -3935,6 +4010,11 @@ class ExportService {
       return this.formatEmojiSemanticText(emojiCaption)
     }
     if (!content) return ''
+
+    const readableSystemText = this.extractReadableSystemMessageText(content)
+    if (readableSystemText && this.isReadableSystemMessage(localType, content)) {
+      return readableSystemText
+    }
 
     if (localType === 1) {
       return this.stripSenderPrefix(content)
@@ -6585,6 +6665,9 @@ class ExportService {
             msg.emojiCaption
           )
         }
+        if (this.isReadableSystemMessage(msg.localType, msg.content)) {
+          content = this.extractReadableSystemMessageText(msg.content) || content
+        }
 
         // 转账消息：追加 "谁转账给谁" 信息
         if (content && this.isTransferExportContent(content) && msg.content) {
@@ -6896,6 +6979,9 @@ class ExportService {
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
 
+      // 解析引用消息
+      await this.resolveQuotedMessagesForExport(collected.rows, sessionId)
+
       const voiceMessages = options.exportVoiceAsText
         ? collected.rows.filter(msg => msg.localType === 34)
         : []
@@ -7086,6 +7172,9 @@ class ExportService {
             msg.emojiCaption
           )
         }
+        if (this.isReadableSystemMessage(msg.localType, msg.content)) {
+          content = this.extractReadableSystemMessageText(msg.content) || content
+        }
 
         const quotedReplyDisplay = await this.resolveQuotedReplyDisplayWithNames({
           content: msg.content,
@@ -7097,7 +7186,8 @@ class ExportService {
           rawMyWxid,
           myDisplayName: myInfo.displayName || cleanedMyWxid
         })
-        if (quotedReplyDisplay) {
+        // 对于媒体消息，不要让引用信息覆盖媒体路径
+        if (quotedReplyDisplay && !mediaItem) {
           content = this.buildQuotedReplyText(quotedReplyDisplay)
         }
 
@@ -7141,7 +7231,7 @@ class ExportService {
           localId: allMessages.length + 1,
           createTime: msg.createTime,
           formattedTime: this.formatTimestamp(msg.createTime),
-          type: this.getMessageTypeName(msg.localType),
+          type: this.getMessageTypeName(msg.localType, msg.content),
           localType: msg.localType,
           content,
           isSend: msg.isSend ? 1 : 0,
@@ -7632,6 +7722,9 @@ class ExportService {
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
 
+      // 解析引用消息
+      await this.resolveQuotedMessagesForExport(collected.rows, sessionId)
+
       const voiceMessages = options.exportVoiceAsText
         ? collected.rows.filter(msg => msg.localType === 34)
         : []
@@ -8052,20 +8145,20 @@ class ExportService {
         worksheet.getCell(currentRow, 2).value = this.formatTimestamp(msg.createTime)
         if (useCompactColumns) {
           worksheet.getCell(currentRow, 3).value = senderRole
-          worksheet.getCell(currentRow, 4).value = this.getMessageTypeName(msg.localType)
+          worksheet.getCell(currentRow, 4).value = this.getMessageTypeName(msg.localType, msg.content)
         } else if (includeGroupNicknameColumn) {
           worksheet.getCell(currentRow, 3).value = senderNickname
           worksheet.getCell(currentRow, 4).value = senderWxid
           worksheet.getCell(currentRow, 5).value = senderRemark
           worksheet.getCell(currentRow, 6).value = senderGroupNickname
           worksheet.getCell(currentRow, 7).value = senderRole
-          worksheet.getCell(currentRow, 8).value = this.getMessageTypeName(msg.localType)
+          worksheet.getCell(currentRow, 8).value = this.getMessageTypeName(msg.localType, msg.content)
         } else {
           worksheet.getCell(currentRow, 3).value = senderNickname
           worksheet.getCell(currentRow, 4).value = senderWxid
           worksheet.getCell(currentRow, 5).value = senderRemark
           worksheet.getCell(currentRow, 6).value = senderRole
-          worksheet.getCell(currentRow, 7).value = this.getMessageTypeName(msg.localType)
+          worksheet.getCell(currentRow, 7).value = this.getMessageTypeName(msg.localType, msg.content)
         }
         contentCell.value = enrichedContentValue
         if (!quotedReplyDisplay) {
@@ -8338,7 +8431,7 @@ class ExportService {
             i + 1,
             this.formatTimestamp(msg.createTime),
             senderRole,
-            this.getMessageTypeName(msg.localType),
+            this.getMessageTypeName(msg.localType, msg.content),
             enrichedContentValue
           ]
           : includeGroupNicknameColumn
@@ -8350,7 +8443,7 @@ class ExportService {
               senderRemark,
               senderGroupNickname,
               senderRole,
-              this.getMessageTypeName(msg.localType),
+              this.getMessageTypeName(msg.localType, msg.content),
               enrichedContentValue
             ]
             : [
@@ -8360,7 +8453,7 @@ class ExportService {
               senderWxid,
               senderRemark,
               senderRole,
-              this.getMessageTypeName(msg.localType),
+              this.getMessageTypeName(msg.localType, msg.content),
               enrichedContentValue
             ])
         if (!quotedReplyDisplay) {
@@ -8509,6 +8602,9 @@ class ExportService {
       }
 
       await this.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
+
+      // 解析引用消息
+      await this.resolveQuotedMessagesForExport(collected.rows, sessionId)
 
       const voiceMessages = options.exportVoiceAsText
         ? collected.rows.filter(msg => msg.localType === 34)
@@ -9635,7 +9731,7 @@ class ExportService {
         const avatarHtml = getAvatarHtml(isSenderMe ? cleanedMyWxid : msg.senderUsername, resolvedSenderName)
 
         const timeText = this.formatTimestamp(msg.createTime)
-        const typeName = this.getMessageTypeName(msg.localType)
+        const typeName = this.getMessageTypeName(msg.localType, msg.content)
         const quotedReplyDisplay = await this.resolveQuotedReplyDisplayWithNames({
           content: msg.content,
           isGroup,

@@ -154,15 +154,17 @@ export class WcdbService {
   /**
    * 测试数据库连接
    */
-  async testConnection(dbPath: string, hexKey: string, wxid: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
-    return this.callWorker('testConnection', { dbPath, hexKey, wxid })
+  async testConnection(accountDir: string, hexKey: string): Promise<{ success: boolean; error?: string; sessionCount?: number }> {
+    return this.callWorker('testConnection', { accountDir, hexKey })
   }
 
   /**
    * 打开数据库
+   * @param accountDir 账号目录的完整路径
+   * @param hexKey 解密密钥
    */
-  async open(dbPath: string, hexKey: string, wxid: string): Promise<boolean> {
-    return this.callWorker('open', { dbPath, hexKey, wxid })
+  async open(accountDir: string, hexKey: string): Promise<boolean> {
+    return this.callWorker('open', { accountDir, hexKey })
   }
 
   async getLastInitError(): Promise<string | null> {
@@ -202,6 +204,10 @@ export class WcdbService {
     return this.callWorker('getSessions')
   }
 
+  async markAllSessionsRead(): Promise<{ success: boolean; error?: string }> {
+    return this.callWorker('markAllSessionsRead')
+  }
+
   /**
    * 获取消息列表
    */
@@ -221,6 +227,13 @@ export class WcdbService {
    */
   async getMessageCount(sessionId: string): Promise<{ success: boolean; count?: number; error?: string }> {
     return this.callWorker('getMessageCount', { sessionId })
+  }
+
+  /**
+   * 根据 server_id 查询单条消息
+   */
+  async getMessageByServerId(sessionId: string, svrid: string): Promise<{ success: boolean; row?: any; error?: string }> {
+    return this.callWorker('getMessageByServerId', { sessionId, svrid })
   }
 
   async getMessageCounts(sessionIds: string[]): Promise<{ success: boolean; counts?: Record<string, number>; error?: string }> {

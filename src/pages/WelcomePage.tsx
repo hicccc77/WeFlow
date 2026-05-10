@@ -1038,7 +1038,13 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                     className="field-input"
                     placeholder="64 位十六进制密钥"
                     value={decryptKey}
-                    onChange={(e) => setDecryptKey(e.target.value.trim())}
+                    onChange={(e) => {
+                      const value = e.target.value.trim()
+                      setDecryptKey(value)
+                      if (value.length === 64) {
+                        setHasReacquiredDbKey(true)
+                      }
+                    }}
                   />
                   <button type="button" className="toggle-btn" onClick={() => setShowDecryptKey(!showDecryptKey)}>
                     {showDecryptKey ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -1171,7 +1177,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                 )}
 
                 <div className="field-hint" style={{ marginTop: '8px' }}>
-                  图片密钥已改为自动计算。仅当“缓存计算 + 本地校验通过”时会自动跳过本步骤；若失败可使用内存扫描兜底。
+                  图片密钥已改为自动计算。仅当"缓存计算 + 本地校验通过"时会自动跳过本步骤；若失败可使用内存扫描兜底。
                 </div>
                 {isImageKeyVerified && (
                   <div className="status-message is-success" style={{ marginTop: '8px' }}>

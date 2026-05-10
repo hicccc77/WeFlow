@@ -160,6 +160,16 @@ export class DbPathService {
 
           // 检查是否有有效账号目录结构
           if (this.isAccountDir(entryPath)) {
+            // 过滤掉不带后缀的 wxid_ 目录
+            const lowerEntry = entry.toLowerCase()
+            if (lowerEntry.startsWith('wxid_')) {
+              // wxid_ 开头的目录必须带后缀（wxid_xxx_yyyy 格式）
+              const parts = entry.split('_')
+              if (parts.length <= 2) {
+                // wxid_xxx 格式，跳过
+                continue
+              }
+            }
             accounts.push(entry)
           }
         }
@@ -232,6 +242,16 @@ export class DbPathService {
           const lower = entry.toLowerCase()
           if (lower === 'all_users') continue
           if (!entry.includes('_')) continue
+
+          // 过滤掉不带后缀的 wxid_ 目录
+          if (lower.startsWith('wxid_')) {
+            const parts = entry.split('_')
+            if (parts.length <= 2) {
+              // wxid_xxx 格式，跳过
+              continue
+            }
+          }
+
           wxids.push({ wxid: entry, modifiedTime: stat.mtimeMs })
         }
       }

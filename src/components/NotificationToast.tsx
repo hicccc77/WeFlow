@@ -7,6 +7,9 @@ import './NotificationToast.scss'
 export interface NotificationData {
     id: string
     sessionId: string
+    channel?: string
+    insightRecordId?: string
+    targetRoute?: string
     avatarUrl?: string
     title: string
     content: string
@@ -16,7 +19,7 @@ export interface NotificationData {
 interface NotificationToastProps {
     data: NotificationData | null
     onClose: () => void
-    onClick: (sessionId: string) => void
+    onClick: (data: NotificationData) => void
     duration?: number
     position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center'
     isStatic?: boolean
@@ -64,7 +67,7 @@ export function NotificationToast({
         setIsVisible(false)
         setTimeout(() => {
             onClose()
-            onClick(currentData.sessionId)
+            onClick(currentData)
         }, 300)
     }
 

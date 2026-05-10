@@ -514,50 +514,11 @@ export class ImageDecryptService {
   }
 
   private resolveAccountDir(dbPath: string, wxid: string): string | null {
-    const cleanedWxid = this.cleanAccountDirName(wxid)
-    const normalized = dbPath.replace(/[\\/]+$/, '')
-    const cacheKey = `${normalized}|${cleanedWxid.toLowerCase()}`
-    const cached = this.accountDirCache.get(cacheKey)
-    if (cached && existsSync(cached)) return cached
-    if (cached && !existsSync(cached)) {
-      this.accountDirCache.delete(cacheKey)
-    }
-
-    const direct = join(normalized, cleanedWxid)
-    if (existsSync(direct)) {
-      this.accountDirCache.set(cacheKey, direct)
-      return direct
-    }
-
-    if (this.isAccountDir(normalized)) {
-      this.accountDirCache.set(cacheKey, normalized)
-      return normalized
-    }
-
-    try {
-      const entries = readdirSync(normalized)
-      const lowerWxid = cleanedWxid.toLowerCase()
-      for (const entry of entries) {
-        const entryPath = join(normalized, entry)
-        if (!this.isDirectory(entryPath)) continue
-        const lowerEntry = entry.toLowerCase()
-        if (lowerEntry === lowerWxid || lowerEntry.startsWith(`${lowerWxid}_`)) {
-          if (this.isAccountDir(entryPath)) {
-            this.accountDirCache.set(cacheKey, entryPath)
-            return entryPath
-          }
-        }
-      }
-    } catch { }
-
-    return null
+    return this.configService.getAccountDir(dbPath, wxid)
   }
 
   private resolveCurrentAccountDir(): string | null {
-    const wxid = this.getConfiguredMyWxid()
-    const dbPath = this.getConfiguredDbPath()
-    if (!wxid || !dbPath) return null
-    return this.resolveAccountDir(dbPath, wxid)
+    return this.configService.getAccountDir()
   }
 
   /**
@@ -1260,8 +1221,9 @@ export class ImageDecryptService {
     const decryptKey = this.configService.get('decryptKey')
     const wxid = this.configService.get('myWxid')
     if (!dbPath || !decryptKey || !wxid) return false
-    const cleanedWxid = this.cleanAccountDirName(wxid)
-    return await wcdbService.open(dbPath, decryptKey, cleanedWxid)
+    const accountDir = this.configService.getAccountDir(dbPath, wxid)
+    if (!accountDir) return false
+    return await wcdbService.open(accountDir, decryptKey)
   }
 
   private getRowValue(row: any, column: string): any {

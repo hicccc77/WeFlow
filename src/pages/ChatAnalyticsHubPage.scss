@@ -1,4 +1,4 @@
-.chat-analytics-hub-page {
+.analytics-hub {
   min-height: 100%;
   display: flex;
   align-items: center;
@@ -6,118 +6,125 @@
   padding: 40px 24px;
 }
 
-.chat-analytics-hub-content {
-  width: min(860px, 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
+.analytics-hub-inner {
+  width: min(560px, 100%);
+  animation: analyticsHubFadeIn 0.35s ease-out;
 }
 
-.chat-analytics-hub-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: var(--primary-light);
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 600;
+// ---- Hero ----
+.analytics-hub-hero {
+  margin-bottom: 40px;
 }
 
-.chat-analytics-hub-content h1 {
-  margin: 20px 0 12px;
-  font-size: 32px;
-  line-height: 1.2;
+.analytics-hub-title {
+  font-size: 28px;
+  font-weight: 700;
   color: var(--text-primary);
+  margin: 0 0 10px;
+  letter-spacing: -0.5px;
 }
 
-.chat-analytics-hub-desc {
-  max-width: 620px;
-  margin: 0 0 32px;
+.analytics-hub-desc {
+  margin: 0;
   color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.7;
 }
 
-.chat-analytics-hub-grid {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.chat-analytics-entry-card {
+// ---- Perspectives list ----
+.analytics-hub-perspectives {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
+  gap: 4px;
+}
+
+.analytics-hub-perspectives-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.analytics-hub-row {
+  display: flex;
+  align-items: center;
   gap: 14px;
-  min-height: 260px;
-  padding: 28px;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(7, 193, 96, 0.08) 0%, rgba(7, 193, 96, 0.02) 100%),
-    var(--card-bg);
+  padding: 14px 16px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  text-align: left;
+  transition: background 0.15s ease;
+  width: 100%;
 
   &:hover {
-    transform: translateY(-4px);
-    border-color: rgba(7, 193, 96, 0.35);
-    box-shadow: 0 20px 36px rgba(7, 193, 96, 0.12);
-  }
+    background: var(--bg-hover);
 
-  .entry-card-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(7, 193, 96, 0.12);
-    color: #07c160;
-
-    &.group {
-      background: rgba(24, 119, 242, 0.12);
-      color: #1877f2;
+    .analytics-hub-row-arrow {
+      transform: translateX(3px);
+      color: var(--text-secondary);
     }
-  }
-
-  .entry-card-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 24px;
-    line-height: 1.2;
-  }
-
-  p {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 1.7;
-  }
-
-  .entry-card-cta {
-    margin-top: auto;
-    color: var(--primary);
-    font-size: 13px;
-    font-weight: 600;
   }
 }
 
-@media (max-width: 900px) {
-  .chat-analytics-hub-grid {
-    grid-template-columns: 1fr;
+.analytics-hub-row-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--primary-light);
+  color: var(--primary);
+
+  &--group {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+  }
+}
+
+[data-mode="dark"] .analytics-hub-row-icon--group {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+}
+
+.analytics-hub-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.analytics-hub-row-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.analytics-hub-row-desc {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.analytics-hub-row-arrow {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+@keyframes analyticsHubFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

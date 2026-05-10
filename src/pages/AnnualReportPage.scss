@@ -7,6 +7,7 @@
   min-height: 100%;
   text-align: center;
   padding: 40px 24px;
+  animation: reportFadeIn 0.35s ease-out;
 }
 
 .annual-report-page.report-route-transitioning > :not(.report-launch-overlay) {
@@ -20,40 +21,43 @@
 }
 
 .page-title {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 12px;
+  margin: 0 0 10px;
+  letter-spacing: -0.5px;
 }
 
 .page-desc {
   font-size: 15px;
   color: var(--text-secondary);
-  margin: 0 0 48px;
+  margin: 0 0 40px;
+  line-height: 1.7;
 }
 
 .page-desc.load-summary {
-  margin: 0 0 28px;
+  margin: 0 0 24px;
 }
 
 .page-desc.load-summary.complete {
   color: var(--text-secondary);
 }
 
+// ---- Load telemetry ----
 .load-telemetry {
-  width: min(760px, 100%);
-  padding: 12px 14px;
-  margin: 0 0 28px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
-  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  width: min(620px, 100%);
+  padding: 12px 16px;
+  margin: 0 0 24px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
   text-align: left;
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
 
   p {
-    margin: 4px 0;
+    margin: 3px 0;
   }
 
   .label {
@@ -62,31 +66,32 @@
 }
 
 .load-telemetry.loading {
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border-color));
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border-color));
 }
 
 .load-telemetry.complete {
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border-color));
 }
 
 .load-telemetry.compact {
   margin: 12px 0 0;
-  width: min(560px, 100%);
+  width: min(500px, 100%);
 }
 
+// ---- Report sections ----
 .report-sections {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  width: min(760px, 100%);
+  gap: 20px;
+  width: min(620px, 100%);
 }
 
 .report-section {
   width: 100%;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 28px;
+  border-radius: 16px;
+  padding: 24px;
   text-align: left;
 }
 
@@ -95,57 +100,57 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .section-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .section-desc {
-  margin: 8px 0 0;
-  font-size: 14px;
+  margin: 6px 0 0;
+  font-size: 13px;
   color: var(--text-tertiary);
 }
 
 .section-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  background: var(--primary-light);
   color: var(--primary);
-  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .section-hint {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-tertiary);
 }
 
+// ---- Year cards ----
 .year-grid-with-status {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .year-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 10px;
   justify-content: center;
   max-width: 600px;
-  margin-bottom: 48px;
+  margin-bottom: 40px;
 }
 
 .report-section .year-grid {
@@ -169,7 +174,7 @@
 }
 
 .year-load-status.complete {
-  color: color-mix(in srgb, var(--primary) 80%, var(--text-secondary));
+  color: var(--primary);
 }
 
 .dot-ellipsis {
@@ -187,32 +192,33 @@
 }
 
 .year-card {
-  width: 120px;
-  height: 100px;
+  width: 88px;
+  height: 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--card-bg);
-  border: 2px solid var(--border-color);
-  border-radius: 16px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
+  gap: 2px;
 
   &:hover {
-    border-color: var(--primary);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    border-color: var(--text-tertiary);
+    background: var(--bg-hover);
   }
 
   &.disabled {
     pointer-events: none;
-    opacity: 0.72;
+    opacity: 0.6;
   }
 
   &.selected {
     border-color: var(--primary);
     background: var(--primary-light);
+    box-shadow: 0 0 0 1px var(--primary);
 
     .year-number {
       color: var(--primary);
@@ -220,45 +226,41 @@
   }
 
   .year-number {
-    font-size: 32px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1;
   }
 
   .year-label {
-    font-size: 14px;
+    font-size: 11px;
     color: var(--text-tertiary);
-    margin-top: 4px;
   }
 }
 
+// ---- Generate button ----
 .generate-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 40px;
-  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 80%, #000) 100%);
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 24px;
+  background: var(--primary);
   border: none;
-  border-radius: 50px;
-  color: #fff;
-  font-size: 16px;
+  border-radius: 10px;
+  color: var(--on-primary);
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 30%, transparent);
+  transition: opacity 0.15s ease;
 
   &:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
-  }
-
-  &:active:not(:disabled) {
-    transform: translateY(0);
+    opacity: 0.9;
   }
 
   &:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
@@ -267,13 +269,18 @@
   }
 
   &.secondary {
-    background: var(--card-bg);
+    background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    box-shadow: none;
+
+    &:hover:not(:disabled) {
+      background: var(--bg-hover);
+      opacity: 1;
+    }
   }
 }
 
+// ---- Launch overlay ----
 .report-launch-overlay {
   position: fixed;
   inset: 0;
@@ -281,9 +288,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--bg-primary) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
   backdrop-filter: blur(8px);
-  animation: report-launch-overlay-in 420ms ease-out both;
+  animation: report-launch-overlay-in 350ms ease-out both;
 }
 
 .launch-core {
@@ -293,13 +300,13 @@
   gap: 10px;
   text-align: center;
   color: var(--text-primary);
-  animation: report-launch-core-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: report-launch-core-in 350ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .launch-title {
   margin: 4px 0 0;
-  font-size: 18px;
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .launch-subtitle {
@@ -312,6 +319,7 @@
   animation: spin 1s linear infinite;
 }
 
+// ---- Animations ----
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -329,27 +337,34 @@
   }
   to {
     opacity: 0;
-    filter: blur(8px);
+    filter: blur(6px);
     transform: scale(0.985);
   }
 }
 
 @keyframes report-launch-overlay-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes report-launch-core-in {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.96);
+    transform: translateY(14px) scale(0.97);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes reportFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

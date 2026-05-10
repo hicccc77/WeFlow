@@ -11,7 +11,6 @@
   gap: 24px;
   overflow-y: auto;
   overflow-x: hidden;
-  animation: footprintPageEnter 0.4s ease-out;
 
   .card-surface {
     /* Removing border and strong shadows, just subtle background if any */
@@ -31,7 +30,7 @@
   gap: 20px;
   padding: 10px 0 20px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
-  animation: footprintFadeSlideUp 0.3s ease both;
+  animation: footprintFadeSlideUp 0.22s ease both;
 }
 
 .footprint-title-wrap {
@@ -41,10 +40,10 @@
 
   h1 {
     margin: 0;
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 600;
     line-height: 1.3;
-    letter-spacing: -0.3px;
+    letter-spacing: 0;
     color: var(--text-primary);
   }
 
@@ -84,7 +83,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     color: var(--text-primary);
@@ -93,7 +92,7 @@
   &.active {
     color: var(--text-primary);
     background: var(--bg-primary);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    box-shadow: none;
   }
 }
 
@@ -117,9 +116,9 @@
     padding: 6px 10px;
     font-size: 13px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02) inset;
+    box-shadow: none;
 
     &:hover {
       background: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
@@ -135,7 +134,7 @@
     &::-webkit-calendar-picker-indicator {
       cursor: pointer;
       opacity: 0.5;
-      transition: all 0.2s ease;
+      transition: opacity 0.15s ease, background 0.15s ease;
       padding: 4px;
       margin-left: 4px;
       margin-right: -4px;
@@ -165,7 +164,7 @@
   border-radius: 8px;
   padding: 8px 12px;
   color: var(--text-tertiary);
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:focus-within {
     background: color-mix(in srgb, var(--primary) 8%, transparent);
@@ -201,7 +200,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--text-tertiary) 15%, transparent);
@@ -217,8 +216,8 @@
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 20px;
-  padding: 20px 0;
+  gap: 16px;
+  padding: 18px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
 }
 
@@ -241,11 +240,11 @@
   }
 
   strong {
-    font-size: 32px;
+    font-size: 30px;
     font-weight: 300;
     line-height: 1;
     color: var(--text-primary);
-    letter-spacing: -0.5px;
+    letter-spacing: 0;
   }
 
   small {
@@ -259,7 +258,7 @@
 }
 
 .footprint-ai-result {
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 14px 16px;
   background: color-mix(in srgb, var(--text-tertiary) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
@@ -360,7 +359,7 @@
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     color: var(--text-primary);
@@ -688,11 +687,11 @@
 
 .footprint-export-modal {
   width: min(520px, 100%);
-  border-radius: 16px;
+  border-radius: 10px;
   background: var(--bg-primary);
   border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.2);
-  padding: 22px 22px 18px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.16);
+  padding: 18px 18px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -700,7 +699,7 @@
 
   h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -716,7 +715,7 @@
 .export-modal-icon {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -740,8 +739,8 @@
 .export-modal-path {
   display: block;
   margin-top: 2px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
   font-family: inherit;
   font-weight: 500;
   font-size: 12px;

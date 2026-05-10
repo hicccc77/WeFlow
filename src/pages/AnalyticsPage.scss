@@ -10,7 +10,7 @@
   }
 }
 
-// 加载和错误状态
+// Loading and error states
 .loading-container,
 .error-container {
   display: flex;
@@ -23,7 +23,7 @@
   color: var(--text-secondary);
 
   .spin {
-    animation: spin 1s linear infinite;
+    animation: analyticsSpin 1s linear infinite;
   }
 
   p.loading-status {
@@ -33,13 +33,12 @@
   }
 
   .progress-bar-wrapper {
-    width: 300px;
-    height: 8px;
+    width: 280px;
+    height: 4px;
     background: var(--bg-tertiary);
     border-radius: 999px;
     overflow: hidden;
     position: relative;
-    border: 1px solid var(--border-color);
   }
 
   .progress-bar-fill {
@@ -47,9 +46,9 @@
     left: 0;
     top: 0;
     height: 100%;
-    background: var(--primary-gradient);
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 10px rgba(139, 115, 85, 0.3);
+    background: var(--primary);
+    transition: width 0.3s ease;
+    border-radius: 999px;
   }
 
   .progress-percent {
@@ -65,57 +64,82 @@
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
+@keyframes analyticsSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
-  to {
-    transform: rotate(360deg);
+// Page scroll content
+.page-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
   }
 }
 
-// 统计卡片
+// Stats overview cards
 .stats-overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 12px;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
+  gap: 14px;
+  padding: 18px 16px;
   background: var(--card-bg);
   border-radius: 12px;
   border: 1px solid var(--border-color);
 
   .stat-icon {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--primary-light);
-    border-radius: 12px;
+    border-radius: 10px;
     color: var(--primary);
+    flex-shrink: 0;
   }
 
   .stat-info {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
 
     .stat-value {
-      font-size: 24px;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 700;
       color: var(--text-primary);
+      letter-spacing: -0.5px;
     }
 
     .stat-label {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text-tertiary);
     }
   }
@@ -125,23 +149,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: var(--bg-tertiary);
   border-radius: 8px;
-  margin-bottom: 24px;
   font-size: 13px;
   color: var(--text-secondary);
 
   svg {
     color: var(--text-tertiary);
+    flex-shrink: 0;
   }
 }
 
+// Charts
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 12px;
 }
 
 .chart-card {
@@ -155,30 +179,30 @@
   }
 
   h3 {
-    font-size: 15px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 16px;
+    margin: 0 0 12px;
   }
 }
 
+// Rankings
 .rankings-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .ranking-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-primary);
+  padding: 10px 14px;
   border-radius: 8px;
-  transition: background 0.2s;
+  transition: background 0.15s ease;
 
   &:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
   }
 
   .rank {
@@ -196,13 +220,13 @@
 
     &.top {
       background: var(--primary);
-      color: white;
+      color: var(--on-primary);
     }
   }
 
   .contact-avatar {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     position: relative;
 
@@ -228,8 +252,8 @@
       position: absolute;
       right: -4px;
       bottom: -4px;
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -239,24 +263,21 @@
       &.medal-1 {
         background: linear-gradient(135deg, #ffd700, #ffb800);
         color: #fff;
-        box-shadow: 0 2px 4px rgba(255, 184, 0, 0.4);
       }
 
       &.medal-2 {
         background: linear-gradient(135deg, #c0c0c0, #a8a8a8);
         color: #fff;
-        box-shadow: 0 2px 4px rgba(168, 168, 168, 0.4);
       }
 
       &.medal-3 {
         background: linear-gradient(135deg, #cd7f32, #b87333);
         color: #fff;
-        box-shadow: 0 2px 4px rgba(184, 115, 51, 0.4);
       }
 
       svg {
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
       }
     }
   }
@@ -265,7 +286,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     min-width: 0;
 
     .contact-name {
@@ -284,14 +305,14 @@
   }
 
   .message-count {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--primary);
     flex-shrink: 0;
   }
 }
 
-// 响应式
+// Responsive
 @media (max-width: 1200px) {
   .stats-overview {
     grid-template-columns: repeat(2, 1fr);
@@ -312,11 +333,11 @@
   }
 }
 
-// 排除好友弹窗
+// Exclude friends modal
 .exclude-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -325,13 +346,13 @@
 }
 
 .exclude-modal {
-  width: 560px;
+  width: 520px;
   max-width: calc(100vw - 48px);
-  background: var(--card-bg);
+  background: var(--bg-secondary-solid, var(--bg-secondary));
   border-radius: 16px;
   border: 1px solid var(--border-color);
   padding: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
 
   .exclude-modal-header {
     display: flex;
@@ -342,6 +363,7 @@
     h3 {
       margin: 0;
       font-size: 16px;
+      font-weight: 600;
       color: var(--text-primary);
     }
   }
@@ -349,14 +371,14 @@
   .modal-close {
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: 8px;
     border: none;
-    background: var(--bg-tertiary);
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     transition: all 0.15s;
 
     &:hover {
@@ -370,7 +392,7 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-primary);
     margin-bottom: 12px;
@@ -399,7 +421,7 @@
   }
 
   .exclude-modal-body {
-    max-height: 420px;
+    max-height: 380px;
     overflow: auto;
     padding-right: 4px;
   }
@@ -419,7 +441,7 @@
   .exclude-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
   .exclude-item {
@@ -427,23 +449,23 @@
     align-items: center;
     gap: 12px;
     padding: 8px 10px;
-    border-radius: 10px;
+    border-radius: 8px;
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.15s;
-    background: var(--bg-primary);
 
     &:hover {
-      background: var(--bg-tertiary);
+      background: var(--bg-hover);
     }
 
     &.active {
-      border-color: rgba(7, 193, 96, 0.4);
-      background: rgba(7, 193, 96, 0.08);
+      border-color: rgba(16, 163, 127, 0.3);
+      background: rgba(16, 163, 127, 0.06);
     }
 
     input {
       margin: 0;
+      accent-color: var(--primary);
     }
   }
 
@@ -455,7 +477,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    gap: 2px;
+    gap: 1px;
   }
 
   .exclude-name {
@@ -479,7 +501,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 16px;
+    margin-top: 14px;
   }
 
   .exclude-footer-left {

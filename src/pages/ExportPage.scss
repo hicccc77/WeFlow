@@ -2,15 +2,14 @@
   min-height: 100%;
   height: 100%;
   margin: -24px -24px 0;
-  padding: 18px 22px 12px;
+  padding: 16px 18px 12px;
   background: var(--bg-primary);
   /* Minimal background matching Footprint */
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   overflow-x: hidden;
   overflow-y: hidden;
-  animation: exportPageEnter 0.34s ease-out;
 
   .spin {
     animation: exportSpin 1s linear infinite;
@@ -22,7 +21,7 @@
   flex-shrink: 0;
   position: relative;
   z-index: 55;
-  animation: exportSectionReveal 0.34s ease both;
+  animation: none;
 }
 
 .export-top-bar {
@@ -38,8 +37,8 @@
   justify-content: flex-start;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
-  animation: exportSectionReveal 0.38s ease both;
+  margin-bottom: 6px;
+  animation: none;
 }
 
 .session-load-detail-entry {
@@ -137,7 +136,7 @@
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 
 .section-info-tooltip {
@@ -209,10 +208,10 @@
   width: min(820px, 100%);
   max-height: min(78vh, 860px);
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--bg-primary);
-  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   animation: exportModalPopIn 0.24s cubic-bezier(0.2, 0.78, 0.26, 1) both;
@@ -530,10 +529,10 @@
   width: min(760px, 100%);
   max-height: min(82vh, 900px);
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
   background: var(--bg-primary);
-  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   animation: exportModalPopIn 0.24s cubic-bezier(0.2, 0.78, 0.26, 1) both;
@@ -559,7 +558,7 @@
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  background: var(--bg-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -754,29 +753,28 @@
   --top-inline-control-height: 34px;
   flex: 0 1 980px;
   width: min(980px, 100%);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 75%, var(--bg-primary)) 0%, var(--card-bg) 100%);
+  background: var(--bg-secondary);
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  border-radius: 14px;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
-  padding: 13px;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 10px;
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr) auto;
   gap: 10px;
   align-items: stretch;
-  animation: exportSectionReveal 0.4s ease both;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  animation: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 30%, var(--border-color));
-    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+    box-shadow: none;
   }
 
   .control-label {
     font-size: 11px;
     color: var(--text-secondary);
     font-weight: 600;
-    letter-spacing: 0.2px;
+    letter-spacing: 0;
     width: 78px;
     flex: 0 0 78px;
     line-height: 1.2;
@@ -879,7 +877,7 @@
 
   .more-export-settings-btn {
     min-height: var(--top-inline-control-height);
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     color: var(--text-primary);
@@ -889,13 +887,12 @@
     line-height: 1;
     white-space: nowrap;
     cursor: pointer;
-    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
 
     &:hover {
       border-color: var(--primary);
       color: var(--primary);
       background: color-mix(in srgb, var(--primary) 6%, var(--bg-secondary));
-      transform: translateY(-1px);
     }
   }
 
@@ -934,8 +931,8 @@
     max-width: calc(100vw - 40px);
     background: var(--bg-secondary-solid, #ffffff);
     border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
-    border-radius: 14px;
-    box-shadow: 0 22px 38px rgba(15, 23, 42, 0.2);
+    border-radius: 8px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
     padding: 6px;
     z-index: 3000;
     max-height: 260px;
@@ -1070,14 +1067,13 @@
 
 .task-center-card {
   min-width: 92px;
-  min-height: 42px;
+  min-height: 38px;
   margin-left: auto;
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 80%, var(--bg-primary)) 0%, var(--card-bg) 100%);
+  border-radius: 8px;
+  background: var(--bg-secondary);
   color: var(--text-primary);
-  padding: 10px 12px;
+  padding: 8px 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1087,15 +1083,14 @@
   cursor: pointer;
   flex-shrink: 0;
   align-self: stretch;
-  transition: border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease, background 0.14s ease;
-  animation: exportSectionReveal 0.46s ease both;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+  animation: none;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 48%, var(--border-color));
     color: var(--primary);
-    transform: translateY(-2px);
     background: color-mix(in srgb, var(--primary) 7%, var(--card-bg));
-    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.12);
+    box-shadow: none;
   }
 
   &.has-alert {
@@ -1120,10 +1115,10 @@
   width: min(720px, 100%);
   max-height: min(80vh, 860px);
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--bg-primary);
-  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   animation: exportModalPopIn 0.24s cubic-bezier(0.2, 0.78, 0.26, 1) both;
@@ -1162,6 +1157,30 @@
   padding: 0 16px 16px;
 }
 
+.export-defaults-modal {
+  width: min(740px, calc(100vw - 40px));
+  max-height: min(82vh, 820px);
+  border-radius: 16px;
+  background: var(--bg-primary);
+  border-color: color-mix(in srgb, var(--border-color) 68%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.export-defaults-modal-header {
+  padding: 16px 18px 10px;
+  border-bottom-color: color-mix(in srgb, var(--border-color) 64%, transparent);
+}
+
+.export-defaults-modal-body {
+  padding: 12px 18px 14px;
+  overflow-x: hidden;
+}
+
+.export-defaults-modal-actions {
+  padding: 0 18px 16px;
+  background: var(--bg-primary);
+}
+
 .task-center-card-label {
   line-height: 1;
   white-space: nowrap;
@@ -1180,35 +1199,32 @@
   justify-content: center;
   padding: 0 5px;
   line-height: 1;
-  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.16);
-  animation: exportTaskBadgePulse 1.2s ease-in-out infinite;
+  box-shadow: none;
+  animation: none;
 }
 
 .content-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
-  animation: exportSectionReveal 0.52s ease both;
+  animation: none;
 }
 
 .content-card {
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  border-radius: 13px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 82%, var(--bg-primary)) 0%, var(--card-bg) 100%);
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
-  padding: 11px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
-  animation: exportCardReveal 0.42s ease both;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  animation: none;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 38%, var(--border-color));
-    box-shadow: 0 16px 24px rgba(15, 23, 42, 0.11);
-    transform: translateY(-2px);
     background: color-mix(in srgb, var(--primary) 4%, var(--card-bg));
   }
 
@@ -1263,8 +1279,8 @@
   .card-export-btn {
     margin-top: auto;
     border: 1px solid transparent;
-    border-radius: 9px;
-    padding: 8px 10px;
+    border-radius: 8px;
+    padding: 7px 10px;
     cursor: pointer;
     font-size: 13px;
     font-weight: 600;
@@ -1281,8 +1297,7 @@
 
     &.primary:hover {
       background: var(--primary-hover);
-      transform: translateY(-1px);
-      box-shadow: 0 8px 14px color-mix(in srgb, var(--primary) 24%, transparent);
+      box-shadow: none;
     }
 
     &.secondary {
@@ -1295,7 +1310,6 @@
       border-color: color-mix(in srgb, var(--primary) 28%, transparent);
       color: var(--text-primary);
       background: color-mix(in srgb, var(--bg-primary) 94%, var(--primary) 6%);
-      transform: translateY(-1px);
     }
 
     &:disabled {
@@ -1372,10 +1386,10 @@
 .task-center-modal {
   width: min(980px, calc(100vw - 40px));
   max-height: calc(100vh - 72px);
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
   background: var(--bg-secondary-solid, #ffffff);
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1677,16 +1691,15 @@
   flex-direction: column;
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 72%, var(--bg-primary)) 0%, color-mix(in srgb, var(--card-bg) 90%, var(--bg-primary)) 100%);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.07);
-  animation: exportSectionReveal 0.58s ease both;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+  animation: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 20%, var(--border-color));
-    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.09);
+    box-shadow: none;
   }
 }
 
@@ -1696,24 +1709,24 @@
   gap: 6px;
   margin: 8px 12px 0;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(var(--primary-rgb), 0.1);
   border: 1px solid rgba(var(--primary-rgb), 0.2);
   color: var(--primary);
   font-size: 12px;
   width: fit-content;
-  animation: exportSectionReveal 0.35s ease both;
+  animation: none;
 }
 
 .table-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 88%, var(--card-bg)) 0%, color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary)) 100%);
+  background: var(--bg-secondary);
   transition: border-color 0.16s ease, background 0.16s ease;
 }
 
@@ -1751,7 +1764,7 @@
     color: var(--text-secondary);
     min-height: 32px;
     padding: 7px 12px;
-    border-radius: 999px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 13px;
     font-weight: 500;
@@ -1759,7 +1772,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 
     .tab-btn-content {
       display: inline-flex;
@@ -1791,7 +1804,7 @@
     &.active {
       color: var(--primary);
       background: color-mix(in srgb, var(--primary) 12%, transparent);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+      box-shadow: none;
 
       .tab-btn-content span:last-child {
         background: color-mix(in srgb, var(--primary) 16%, transparent);
@@ -1822,11 +1835,10 @@
 
   .secondary-btn {
     min-height: 34px;
-    border-radius: 10px;
-    transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+    border-radius: 8px;
+    transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
 
     &:hover:not(:disabled) {
-      transform: translateY(-1px);
       border-color: color-mix(in srgb, var(--primary) 36%, var(--border-color));
       color: var(--primary);
       background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
@@ -1842,14 +1854,14 @@
   border-radius: 10px;
   border: none;
   background: color-mix(in srgb, var(--text-tertiary) 4%, transparent);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) inset;
+  box-shadow: none;
   flex: 1;
   min-width: 180px;
   max-width: 320px;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 
   &:focus-within {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent), 0 1px 3px rgba(0, 0, 0, 0.02) inset;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
     background: color-mix(in srgb, var(--text-tertiary) 6%, transparent);
   }
 
@@ -1874,7 +1886,7 @@
     width: 18px;
     height: 18px;
     border-radius: 999px;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 
     &:hover {
       color: var(--primary);
@@ -1909,31 +1921,31 @@
 
 .table-wrap {
   --contacts-native-scrollbar-compensation: 18px;
-  --contacts-row-height: 76px;
-  --contacts-default-visible-rows: 8;
+  --contacts-row-height: 64px;
+  --contacts-default-visible-rows: 9;
   --contacts-default-list-height: calc(var(--contacts-row-height) * var(--contacts-default-visible-rows));
-  --contacts-select-col-width: 34px;
-  --contacts-avatar-col-width: 44px;
-  --contacts-inline-padding: 12px;
-  --contacts-column-gap: 10px;
+  --contacts-select-col-width: 30px;
+  --contacts-avatar-col-width: 38px;
+  --contacts-inline-padding: 10px;
+  --contacts-column-gap: 8px;
   --contacts-name-text-width: 9.5em;
   --contacts-main-col-width: calc(var(--contacts-avatar-col-width) + var(--contacts-column-gap) + var(--contacts-name-text-width));
   --contacts-left-sticky-width: calc(var(--contacts-select-col-width) + var(--contacts-main-col-width) + var(--contacts-column-gap));
-  --contacts-message-col-width: 104px;
-  --contacts-media-col-width: 66px;
-  --contacts-action-col-width: 140px;
-  --contacts-actions-sticky-width: 180px;
-  --contacts-table-min-width: 1240px;
+  --contacts-message-col-width: 94px;
+  --contacts-media-col-width: 58px;
+  --contacts-action-col-width: 126px;
+  --contacts-actions-sticky-width: 160px;
+  --contacts-table-min-width: 1120px;
   overflow: hidden;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   min-height: 320px;
   height: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
-  transition: all 0.2s ease;
+  transition: background 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--text-tertiary) 2%, var(--bg-secondary));
@@ -2012,7 +2024,7 @@
   .issue-card {
     border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 45%, var(--border-color));
     background: color-mix(in srgb, var(--danger, #ef4444) 8%, var(--bg-secondary));
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 14px;
     color: var(--text-primary);
   }
@@ -2068,12 +2080,11 @@
     align-items: center;
     gap: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 
     &:hover {
       color: var(--text-primary);
       background: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
-      transform: translateY(-1px);
     }
 
     &.primary {
@@ -2104,7 +2115,7 @@
     display: flex;
     align-items: center;
     gap: var(--contacts-column-gap);
-    padding: 10px var(--contacts-inline-padding) 8px;
+    padding: 8px var(--contacts-inline-padding) 6px;
     min-width: max(100%, var(--contacts-table-min-width));
     border-bottom: 1px solid color-mix(in srgb, var(--text-tertiary) 6%, transparent);
     background: var(--contacts-header-bg);
@@ -2113,7 +2124,6 @@
     font-weight: 600;
     letter-spacing: 0.01em;
     flex-shrink: 0;
-    backdrop-filter: blur(10px);
 
     &.is-draggable {
       cursor: grab;
@@ -2273,12 +2283,11 @@
     padding: 6px 10px;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 
     &:hover:not(:disabled) {
       color: var(--text-primary);
       background: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
-      transform: translateY(-1px);
     }
 
     &:disabled {
@@ -2301,13 +2310,12 @@
     gap: 6px;
     white-space: nowrap;
     flex-shrink: 0;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px color-mix(in srgb, var(--primary) 20%, transparent);
+    transition: background 0.15s ease;
+    box-shadow: none;
 
     &:hover:not(:disabled) {
       background: color-mix(in srgb, var(--primary) 85%, #fff);
-      transform: translateY(-1px);
-      box-shadow: 0 8px 14px color-mix(in srgb, var(--primary) 30%, transparent);
+      box-shadow: none;
     }
 
     .selection-export-count {
@@ -2382,19 +2390,18 @@
     display: flex;
     align-items: center;
     gap: var(--contacts-column-gap);
-    padding: 12px var(--contacts-inline-padding);
+    padding: 8px var(--contacts-inline-padding);
     min-width: max(100%, var(--contacts-table-min-width));
-    height: 72px;
+    height: 60px;
     box-sizing: border-box;
-    border-radius: 10px;
-    transition: all 0.2s ease;
+    border-radius: 8px;
+    transition: background 0.15s ease;
     cursor: default;
     background: var(--contacts-row-bg);
     box-shadow: none;
 
     &:hover {
       background: color-mix(in srgb, var(--text-tertiary) 6%, transparent);
-      transform: translateX(2px);
     }
   }
 
@@ -2421,10 +2428,10 @@
   }
 
   .contact-avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    width: var(--contacts-avatar-col-width);
+    height: var(--contacts-avatar-col-width);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2438,8 +2445,8 @@
     }
 
     span {
-      color: #fff;
-      font-size: 16px;
+      color: var(--text-secondary);
+      font-size: 14px;
       font-weight: 600;
     }
   }
@@ -2740,7 +2747,7 @@
     border-radius: 8px;
     overflow: hidden;
     flex-shrink: 0;
-    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    background: var(--bg-tertiary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2752,7 +2759,7 @@
     }
 
     span {
-      color: #fff;
+      color: var(--text-secondary);
       font-size: 14px;
       font-weight: 600;
     }
@@ -2811,12 +2818,11 @@
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 
     &:hover {
       color: var(--text-primary);
       background: color-mix(in srgb, var(--text-tertiary) 14%, transparent);
-      transform: translateY(-1px);
     }
 
     &.active {
@@ -2923,7 +2929,7 @@
   height: 100%;
   max-height: calc(100vh - 24px);
   border: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
-  border-radius: 20px;
+  border-radius: 10px;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
@@ -2949,8 +2955,8 @@
     .detail-header-avatar {
       width: 36px;
       height: 36px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+      border-radius: 8px;
+      background: var(--bg-tertiary);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3248,13 +3254,12 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+      transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
 
       &:hover:not(:disabled) {
         border-color: color-mix(in srgb, var(--primary) 38%, var(--border-color));
         color: var(--primary);
         background: color-mix(in srgb, var(--primary) 9%, var(--bg-secondary));
-        transform: translateY(-1px);
       }
 
       &:focus-visible {
@@ -3321,10 +3326,10 @@
 .export-session-sns-dialog {
   width: min(760px, 100%);
   max-height: min(86vh, 860px);
-  border-radius: 20px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--text-tertiary) 8%, transparent);
   background: var(--bg-primary);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3349,8 +3354,8 @@
   .sns-dialog-avatar {
     width: 42px;
     height: 42px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    border-radius: 8px;
+    background: var(--bg-tertiary);
     overflow: hidden;
     flex-shrink: 0;
     display: flex;
@@ -3739,7 +3744,7 @@
   position: fixed;
   inset: 0;
   background: rgba(15, 18, 28, 0.48);
-  backdrop-filter: blur(7px);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3752,9 +3757,9 @@
   max-height: calc(100vh - 40px);
   background: var(--card-bg);
   border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
-  border-radius: 16px;
-  box-shadow: 0 26px 52px rgba(0, 0, 0, 0.3);
-  padding: 16px 16px 14px;
+  border-radius: 10px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  padding: 14px 14px 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3789,9 +3794,9 @@
   h3 {
     margin: 0;
     color: var(--text-primary);
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1.2;
-    letter-spacing: 0.2px;
+    letter-spacing: 0;
   }
 }
 
@@ -3811,7 +3816,7 @@
 .close-icon-btn {
   border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
   background: color-mix(in srgb, var(--bg-secondary) 86%, var(--bg-primary));
-  border-radius: 10px;
+  border-radius: 8px;
   width: 34px;
   height: 34px;
   display: flex;
@@ -3819,20 +3824,19 @@
   justify-content: center;
   cursor: pointer;
   color: var(--text-secondary);
-  transition: border-color 0.16s ease, color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 42%, var(--border-color));
     color: var(--primary);
     background: color-mix(in srgb, var(--primary) 7%, var(--bg-primary));
-    transform: translateY(-1px);
   }
 }
 
 .dialog-section {
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 12px;
-  padding: 13px 14px;
+  border-radius: 8px;
+  padding: 12px;
   background: color-mix(in srgb, var(--bg-secondary) 78%, var(--bg-primary));
 
   h4 {
@@ -3840,7 +3844,7 @@
     font-size: 15px;
     color: var(--text-primary);
     font-weight: 700;
-    letter-spacing: 0.2px;
+    letter-spacing: 0;
     line-height: 1.3;
   }
 }
@@ -3924,7 +3928,7 @@
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease, color 0.15s ease;
   color: var(--text-primary);
   font-size: 14px;
 
@@ -4007,8 +4011,8 @@
   width: 100%;
   min-height: 0;
   border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
-  border-radius: 11px;
-  padding: 10px 11px;
+  border-radius: 8px;
+  padding: 9px 10px;
   text-align: left;
   background: color-mix(in srgb, var(--bg-primary) 70%, var(--bg-secondary));
   cursor: pointer;
@@ -4016,7 +4020,7 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
   .format-label {
     font-size: 14px;
@@ -4034,7 +4038,6 @@
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 36%, var(--border-color));
-    transform: translateY(-1px);
   }
 
   &.active {
@@ -4102,20 +4105,19 @@
 .media-option-card {
   position: relative;
   border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-primary) 72%, var(--bg-secondary));
-  min-height: 74px;
-  padding: 10px 11px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 76%, var(--bg-secondary));
+  min-height: 68px;
+  padding: 9px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 9px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 46%, var(--border-color));
-    transform: translateY(-1px);
   }
 
   &:has(.media-option-input:focus-visible) {
@@ -4126,7 +4128,7 @@
   &.active {
     border-color: color-mix(in srgb, var(--primary) 76%, var(--border-color));
     background: color-mix(in srgb, var(--primary) 12%, var(--bg-secondary));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent);
   }
 }
 
@@ -4147,7 +4149,7 @@
 .media-option-icon {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
   background: color-mix(in srgb, var(--bg-primary) 86%, var(--bg-secondary));
   color: var(--text-secondary);
@@ -4428,7 +4430,7 @@
   font: inherit;
   appearance: none;
   -webkit-appearance: none;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
   &:focus-visible {
     outline: 2px solid rgba(var(--primary-rgb), 0.35);
@@ -4437,7 +4439,6 @@
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 44%, var(--border-color));
-    transform: translateY(-1px);
   }
 
   span {
@@ -4467,14 +4468,12 @@
   justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
-  background: linear-gradient(180deg,
-      transparent,
-      var(--card-bg) 38%);
+  background: var(--card-bg);
 }
 
 .primary-btn,
 .secondary-btn {
-  border-radius: 10px;
+  border-radius: 8px;
   min-height: 38px;
   padding: 8px 14px;
   font-size: 13px;
@@ -4484,7 +4483,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .primary-btn {
@@ -4495,7 +4494,6 @@
 
   &:hover {
     background: var(--primary-hover);
-    transform: translateY(-1px);
   }
 
   &:disabled {
@@ -4513,7 +4511,6 @@
     border-color: var(--primary);
     color: var(--primary);
     background: color-mix(in srgb, var(--primary) 7%, var(--bg-secondary));
-    transform: translateY(-1px);
   }
 }
 
@@ -5028,10 +5025,10 @@
   .table-wrap {
     --contacts-inline-padding: 10px;
     --contacts-name-text-width: 10em;
-    --contacts-main-col-width: calc(44px + 10px + var(--contacts-name-text-width));
-    --contacts-message-col-width: 104px;
-    --contacts-media-col-width: 62px;
-    --contacts-action-col-width: 140px;
+    --contacts-main-col-width: calc(var(--contacts-avatar-col-width) + var(--contacts-column-gap) + var(--contacts-name-text-width));
+    --contacts-message-col-width: 94px;
+    --contacts-media-col-width: 56px;
+    --contacts-action-col-width: 126px;
   }
 
   .table-wrap .contacts-list-header {
@@ -5094,7 +5091,7 @@
     width: calc(100vw - 20px);
     max-height: calc(100vh - 20px);
     padding: 12px 10px 10px;
-    border-radius: 14px;
+    border-radius: 8px;
   }
 
   .dialog-header {
@@ -5266,10 +5263,10 @@
 .automation-modal {
   width: min(680px, 100%);
   max-height: min(80vh, 820px);
-  border-radius: 20px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--text-tertiary) 8%, transparent);
   background: var(--bg-primary);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -5320,9 +5317,9 @@
 }
 
 .automation-task-card {
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--text-tertiary) 5%, transparent);
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -5411,10 +5408,10 @@
 .automation-editor-modal {
   width: min(560px, 100%);
   max-height: min(88vh, 900px);
-  border-radius: 20px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--text-tertiary) 8%, transparent);
   background: var(--bg-primary);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -5683,7 +5680,7 @@
     border-radius: 4px;
     border: 1px solid color-mix(in srgb, var(--text-tertiary) 30%, transparent);
     background: transparent;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
     position: relative;
 
     &:hover {
@@ -5724,7 +5721,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--text-tertiary) 14%, transparent);
@@ -5749,7 +5746,7 @@
 
 .automation-draft-summary {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--text-tertiary) 5%, transparent);
   font-size: 12px;
   color: var(--text-secondary);
@@ -5768,7 +5765,7 @@
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.18s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
@@ -5778,20 +5775,19 @@
 
 .primary-btn {
   border: none;
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 8px 18px;
   background: var(--primary);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--primary) 20%, transparent);
+  transition: background 0.15s ease;
+  box-shadow: none;
 
   &:hover:not(:disabled) {
     background: color-mix(in srgb, var(--primary) 85%, #fff);
-    transform: translateY(-1px);
-    box-shadow: 0 8px 14px color-mix(in srgb, var(--primary) 30%, transparent);
+    box-shadow: none;
   }
 
   &:disabled {
@@ -5819,7 +5815,7 @@
     padding: 0 10px;
     font-size: 13px;
     outline: none;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
     font-variant-numeric: tabular-nums;
 
     &:hover {

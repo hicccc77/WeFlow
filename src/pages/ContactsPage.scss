@@ -7,8 +7,8 @@
 
   // 左侧联系人面板
   .contacts-panel {
-    width: 350px;
-    min-width: 350px;
+    width: 324px;
+    min-width: 324px;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border-color);
@@ -19,7 +19,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 24px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border-color);
 
     h2 {
@@ -40,7 +40,7 @@
       align-items: center;
       justify-content: center;
       color: var(--text-secondary);
-      transition: all 0.2s;
+      transition: background 0.15s ease, color 0.15s ease;
 
       &:hover {
         background: var(--bg-hover);
@@ -67,10 +67,10 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 16px 20px;
-    padding: 10px 14px;
+    margin: 12px 16px;
+    padding: 8px 10px;
     background: var(--bg-secondary);
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     transition: border-color 0.2s;
 
@@ -117,9 +117,9 @@
   .type-filters {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 0 20px 16px;
-    max-width: 300px;
+    gap: 6px;
+    padding: 0 16px 12px;
+    max-width: 292px;
 
     &::-webkit-scrollbar {
       display: none;
@@ -129,16 +129,16 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 14px;
+      padding: 7px 10px;
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
+      border-radius: 8px;
       cursor: pointer;
       user-select: none;
       font-size: 13px;
       font-weight: 500;
       color: var(--text-secondary);
-      transition: all 0.2s ease;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
       white-space: nowrap;
 
       input[type="checkbox"] {
@@ -167,7 +167,7 @@
         color: var(--text-primary);
 
         svg {
-          transform: translateY(-1px);
+          transform: none;
         }
       }
 
@@ -185,7 +185,7 @@
   }
 
   .contacts-count {
-    padding: 0 20px 12px;
+    padding: 0 16px 10px;
     font-size: 13px;
     color: var(--text-secondary);
 
@@ -211,7 +211,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 0 20px 12px;
+    padding: 0 16px 10px;
 
     .checkbox-item {
       font-size: 13px;
@@ -249,7 +249,7 @@
   .issue-card {
     border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 45%, var(--border-color));
     background: color-mix(in srgb, var(--danger, #ef4444) 8%, var(--card-bg));
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 14px;
     color: var(--text-primary);
 
@@ -303,7 +303,7 @@
       align-items: center;
       gap: 6px;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
       &:hover {
         color: var(--text-primary);
@@ -335,7 +335,7 @@
   .contacts-list {
     flex: 1;
     overflow-y: auto;
-    padding: 0 12px 12px;
+    padding: 0 10px 10px;
     position: relative;
 
     &::-webkit-scrollbar {
@@ -358,7 +358,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 76px;
+    height: 64px;
     padding-bottom: 4px;
     will-change: transform;
   }
@@ -366,12 +366,12 @@
   .contact-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px;
-    height: 72px;
+    gap: 10px;
+    padding: 8px 10px;
+    height: 60px;
     box-sizing: border-box;
-    border-radius: 10px;
-    transition: all 0.2s;
+    border-radius: 8px;
+    transition: background 0.15s ease;
     cursor: pointer;
     margin-bottom: 0;
 
@@ -402,10 +402,10 @@
     }
 
     .contact-avatar {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: var(--bg-tertiary);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -419,8 +419,8 @@
       }
 
       span {
-        color: #fff;
-        font-size: 16px;
+        color: var(--text-secondary);
+        font-size: 14px;
         font-weight: 600;
       }
     }
@@ -484,23 +484,23 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    padding-bottom: 24px;
+    gap: 10px;
+    padding-bottom: 18px;
     border-bottom: 1px solid var(--border-color);
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 
     .detail-avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+      width: 68px;
+      height: 68px;
+      border-radius: 8px;
+      background: var(--bg-tertiary);
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
 
       img { width: 100%; height: 100%; object-fit: cover; }
-      span { color: #fff; font-size: 28px; font-weight: 600; }
+      span { color: var(--text-secondary); font-size: 24px; font-weight: 600; }
     }
 
     .detail-name {
@@ -511,7 +511,7 @@
   }
 
   .detail-info-list {
-    margin-bottom: 24px;
+    margin-bottom: 18px;
 
     .detail-row {
       display: flex;
@@ -565,15 +565,15 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 12px;
+    padding: 10px 12px;
     background: var(--primary);
     color: #fff;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s ease;
 
     &:hover { background: var(--primary-hover); }
   }
@@ -600,7 +600,7 @@
   .settings-content {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 24px;
+    padding: 16px 18px;
 
     &::-webkit-scrollbar {
       width: 6px;
@@ -613,7 +613,7 @@
   }
 
   .setting-section {
-    margin-bottom: 28px;
+    margin-bottom: 22px;
 
     h3 {
       font-size: 13px;
@@ -621,7 +621,7 @@
       color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin: 0 0 14px;
+      margin: 0 0 10px;
     }
   }
 
@@ -631,10 +631,9 @@
 
     .select-trigger {
       width: 100%;
-      padding: 10px 16px;
+      padding: 9px 12px;
       border: 1px solid var(--border-color);
-      border-radius: 9999px;
-      /* Rounded pill shape */
+      border-radius: 8px;
       font-size: 14px;
       background: var(--bg-primary);
       color: var(--text-primary);
@@ -643,7 +642,7 @@
       justify-content: space-between;
       gap: 8px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
       &:hover {
         border-color: var(--text-tertiary);
@@ -671,14 +670,12 @@
       right: 0;
       background: color-mix(in srgb, var(--bg-primary) 85%, var(--bg-secondary));
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 8px;
       padding: 6px;
-      box-shadow: var(--shadow-md);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
       z-index: 20;
       max-height: 260px;
       overflow-y: auto;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
     }
 
     .select-option {
@@ -689,10 +686,10 @@
       gap: 4px;
       padding: 10px 12px;
       border: none;
-      border-radius: 10px;
+      border-radius: 8px;
       background: transparent;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: background 0.15s ease, color 0.15s ease;
       color: var(--text-primary);
       font-size: 14px;
 
@@ -740,9 +737,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 16px;
+    padding: 10px 12px;
     background: var(--bg-secondary);
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 13px;
     color: var(--text-primary);
     margin-bottom: 12px;
@@ -774,7 +771,7 @@
     font-weight: 500;
     color: var(--text-primary);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
     &:hover {
       background: var(--bg-hover);
@@ -786,10 +783,6 @@
       }
     }
 
-    &:active {
-      transform: scale(0.98);
-    }
-
     svg {
       color: var(--text-secondary);
       transition: color 0.2s;
@@ -797,7 +790,7 @@
   }
 
   .export-action {
-    padding: 20px 24px;
+    padding: 16px 18px;
     border-top: 1px solid var(--border-color);
   }
 
@@ -807,15 +800,15 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    padding: 14px 24px;
+    padding: 12px 16px;
     background: var(--primary);
     color: #fff;
     border: none;
-    border-radius: 12px;
+    border-radius: 8px;
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s ease;
 
     &:hover:not(:disabled) {
       background: var(--primary-hover);
@@ -839,5 +832,194 @@
 
   to {
     transform: rotate(360deg);
+  }
+}
+
+// UI rebuild polish for the contact detail surface.
+.contacts-page {
+  background: var(--bg-primary);
+
+  .contact-detail-panel {
+    background: var(--bg-primary);
+  }
+
+  .contact-detail-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+      border-radius: 3px;
+    }
+  }
+
+  .contact-detail-hero {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 22px;
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  }
+
+  .contact-detail-hero .detail-avatar {
+    width: 84px;
+    height: 84px;
+    border-radius: 16px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    span {
+      color: var(--text-secondary);
+      font-size: 28px;
+      font-weight: 650;
+    }
+  }
+
+  .contact-detail-heading {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    h2 {
+      margin: 0;
+      color: var(--text-primary);
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .detail-type {
+    width: fit-content;
+    border-radius: 999px;
+    padding: 5px 10px;
+  }
+
+  .contact-action-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+  }
+
+  .contact-action-row .goto-chat-btn,
+  .contact-action-row .detail-entry-btn {
+    min-height: 44px;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .contact-action-row .goto-chat-btn {
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: var(--on-primary, #fff);
+
+    &:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+  }
+
+  .contact-action-row .detail-entry-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+
+    &:hover {
+      color: var(--primary);
+      border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+      background: color-mix(in srgb, var(--primary) 7%, var(--bg-secondary));
+    }
+  }
+
+  .contact-detail-section {
+    padding: 18px;
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  }
+
+  .section-title {
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .contact-detail-section .detail-info-list {
+    margin: 0;
+    display: grid;
+    gap: 8px;
+  }
+
+  .contact-detail-section .detail-row {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: none;
+    border-radius: 12px;
+    background: var(--bg-primary);
+    font-size: 13px;
+  }
+
+  .contact-detail-section .detail-label {
+    min-width: 0;
+    color: var(--text-tertiary);
+  }
+
+  .contact-detail-section .detail-value {
+    color: var(--text-primary);
+    line-height: 1.55;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  @media (max-width: 860px) {
+    .contact-detail-hero {
+      align-items: flex-start;
+      flex-direction: column;
+    }
   }
 }

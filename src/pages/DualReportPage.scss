@@ -1,6 +1,7 @@
 .dual-report-page {
   padding: 32px 28px;
   color: var(--text-primary);
+  animation: dualFadeIn 0.35s ease-out;
 }
 
 .dual-report-page.loading {
@@ -22,25 +23,26 @@
 
   h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
+    letter-spacing: -0.3px;
   }
 
   p {
-    margin: 8px 0 0;
+    margin: 6px 0 0;
     color: var(--text-secondary);
+    font-size: 14px;
   }
 }
 
 .year-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  background: var(--primary-light);
   color: var(--primary);
-  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -50,11 +52,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  margin-bottom: 20px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  color: var(--text-tertiary);
 
   input {
     flex: 1;
@@ -69,7 +72,7 @@
 .ranking-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
 }
 
 .ranking-item {
@@ -77,42 +80,41 @@
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
   text-align: left;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s ease;
+  width: 100%;
 
   &:hover {
-    border-color: var(--primary);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-    transform: translateY(-1px);
+    background: var(--bg-hover);
   }
 }
 
 .rank-badge {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--border-color);
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
 
   &.top {
-    background: color-mix(in srgb, var(--primary) 18%, transparent);
-    color: var(--primary);
+    background: var(--primary);
+    color: var(--on-primary);
   }
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--primary-light);
@@ -121,6 +123,7 @@
   justify-content: center;
   color: var(--primary);
   font-weight: 700;
+  font-size: 14px;
 
   img {
     width: 100%;
@@ -132,11 +135,11 @@
 .info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0; // 允许 flex 子项缩小，配合 ellipsis
+  gap: 1px;
+  min-width: 0;
 
   .name {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -146,29 +149,29 @@
 
   .sub {
     font-size: 12px;
-    color: var(--text-secondary); // 从 tertiary 改为 secondary 以增强对比度
+    color: var(--text-tertiary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    opacity: 0.8;
   }
 }
 
 .meta {
   text-align: right;
   font-size: 12px;
-  color: var(--text-secondary); // 改为 secondary
+  color: var(--text-secondary);
   flex-shrink: 0;
 
   .count {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
-    color: var(--primary); // 使用主题色更醒目
-    margin-bottom: 2px;
+    color: var(--primary);
+    margin-bottom: 1px;
   }
 
   .hint {
-    opacity: 0.7;
+    color: var(--text-tertiary);
+    font-size: 11px;
   }
 }
 
@@ -176,6 +179,7 @@
   text-align: center;
   color: var(--text-tertiary);
   padding: 40px 0;
+  font-size: 14px;
 }
 
 .spin {
@@ -183,11 +187,17 @@
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
+@keyframes dualFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
   to {
-    transform: rotate(360deg);
+    opacity: 1;
+    transform: translateY(0);
   }
 }

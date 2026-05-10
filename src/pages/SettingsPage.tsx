@@ -199,6 +199,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [transcribeLanguages, setTranscribeLanguages] = useState<string[]>(['zh'])
 
   const [notificationEnabled, setNotificationEnabled] = useState(true)
+  const [aiInsightNotificationEnabled, setAiInsightNotificationEnabled] = useState(true)
   const [notificationPosition, setNotificationPosition] = useState<'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center'>('top-right')
   const [notificationFilterMode, setNotificationFilterMode] = useState<'all' | 'whitelist' | 'blacklist'>('all')
   const [notificationFilterList, setNotificationFilterList] = useState<string[]>([])
@@ -326,7 +327,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [weiboBindingLoadingSessionId, setWeiboBindingLoadingSessionId] = useState<string | null>(null)
   const [aiFootprintEnabled, setAiFootprintEnabled] = useState(false)
   const [aiFootprintSystemPrompt, setAiFootprintSystemPrompt] = useState('')
-  const [aiInsightDebugLogEnabled, setAiInsightDebugLogEnabled] = useState(false)
 
   // 自动下载图片
   const [autoDownloadStatus, setAutoDownloadStatus] = useState<{ isHooked: boolean; pid: number | null; supported: boolean } | null>(null)
@@ -458,6 +458,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       const savedAutoTranscribe = await configService.getAutoTranscribeVoice()
       const savedTranscribeLanguages = await configService.getTranscribeLanguages()
       const savedNotificationEnabled = await configService.getNotificationEnabled()
+      const savedAiInsightNotificationEnabled = await configService.getAiInsightNotificationEnabled()
       const savedNotificationPosition = await configService.getNotificationPosition()
       const savedNotificationFilterMode = await configService.getNotificationFilterMode()
       const savedNotificationFilterList = await configService.getNotificationFilterList()
@@ -512,6 +513,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       setTranscribeLanguages(savedTranscribeLanguages)
 
       setNotificationEnabled(savedNotificationEnabled)
+      setAiInsightNotificationEnabled(savedAiInsightNotificationEnabled)
       setNotificationPosition(savedNotificationPosition)
       setNotificationFilterMode(savedNotificationFilterMode)
       setNotificationFilterList(savedNotificationFilterList)
@@ -588,7 +590,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       const savedAiInsightWeiboBindings = await configService.getAiInsightWeiboBindings()
       const savedAiFootprintEnabled = await configService.getAiFootprintEnabled()
       const savedAiFootprintSystemPrompt = await configService.getAiFootprintSystemPrompt()
-      const savedAiInsightDebugLogEnabled = await configService.getAiInsightDebugLogEnabled()
 
       setAiInsightEnabled(savedAiInsightEnabled)
       setAiModelApiBaseUrl(savedAiModelApiBaseUrl)
@@ -615,7 +616,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       setAiInsightWeiboBindings(savedAiInsightWeiboBindings)
       setAiFootprintEnabled(savedAiFootprintEnabled)
       setAiFootprintSystemPrompt(savedAiFootprintSystemPrompt)
-      setAiInsightDebugLogEnabled(savedAiInsightDebugLogEnabled)
 
     } catch (e: any) {
       console.error('加载配置失败:', e)
@@ -1904,6 +1904,29 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
         </div>
 
         <div className="form-group">
+          <label>AI 见解消息通知</label>
+          <span className="form-hint">仅控制 AI 见解弹窗，不影响新消息通知、会话过滤或 Telegram 推送</span>
+          <div className="log-toggle-line">
+            <span className="log-status">{aiInsightNotificationEnabled ? '已开启' : '已关闭'}</span>
+            <label className="switch" htmlFor="ai-insight-notification-enabled-toggle">
+              <input
+                id="ai-insight-notification-enabled-toggle"
+                className="switch-input"
+                type="checkbox"
+                checked={aiInsightNotificationEnabled}
+                onChange={async (e) => {
+                  const val = e.target.checked
+                  setAiInsightNotificationEnabled(val)
+                  await configService.setAiInsightNotificationEnabled(val)
+                  showMessage(val ? '已开启 AI 见解消息通知' : '已关闭 AI 见解消息通知', true)
+                }}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
+        </div>
+
+        <div className="form-group">
           <label>通知显示位置</label>
           <span className="form-hint">选择通知弹窗在屏幕上的显示位置</span>
           <div className="custom-select">
@@ -2189,23 +2212,32 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               />
             </div>
             <div className="anti-revoke-toolbar-actions">
-              <div className="anti-revoke-btn-group">
-                <button className="btn btn-secondary btn-sm" onClick={() => void handleRefreshAntiRevokeStatus()} disabled={busy}>
-                  <RefreshCw size={14} /> {isAntiRevokeRefreshing ? '刷新中...' : '刷新状态'}
-                </button>
-              </div>
-              <div className="anti-revoke-btn-group">
-                <button className="btn btn-secondary btn-sm" onClick={selectAllFiltered} disabled={busy || filteredSessionIds.length === 0 || allFilteredSelected}>
-                  全选
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={clearSelection} disabled={busy || selectedCount === 0}>
-                  清空选择
-                </button>
-              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => void handleRefreshAntiRevokeStatus()} disabled={busy}>
+                <RefreshCw size={14} /> {isAntiRevokeRefreshing ? '刷新中...' : '刷新状态'}
+              </button>
+            </div>
+          </div>
+
+          <div className="anti-revoke-selection-strip">
+            <div className="anti-revoke-selected-count">
+              <span>已选 <strong>{selectedCount}</strong> 个会话</span>
+              <span>筛选命中 <strong>{selectedInFilteredCount}</strong> / {filteredSessionIds.length}</span>
+            </div>
+            <div className="anti-revoke-selection-actions">
+              <button className="btn btn-secondary btn-sm" onClick={selectAllFiltered} disabled={busy || filteredSessionIds.length === 0 || allFilteredSelected}>
+                全选
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={clearSelection} disabled={busy || selectedCount === 0}>
+                清空选择
+              </button>
             </div>
           </div>
 
           <div className="anti-revoke-batch-actions">
+            <div className="anti-revoke-batch-copy">
+              <span className="anti-revoke-section-label">批量部署</span>
+              <span>对已选会话执行防撤回安装或卸载</span>
+            </div>
             <div className="anti-revoke-btn-group anti-revoke-batch-btns">
               <button className="btn btn-primary btn-sm" onClick={() => void handleInstallAntiRevokeTriggers()} disabled={busy || selectedCount === 0}>
                 {isAntiRevokeInstalling ? '安装中...' : '批量安装'}
@@ -2213,10 +2245,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               <button className="btn btn-secondary btn-sm" onClick={() => void handleUninstallAntiRevokeTriggers()} disabled={busy || selectedCount === 0}>
                 {isAntiRevokeUninstalling ? '卸载中...' : '批量卸载'}
               </button>
-            </div>
-            <div className="anti-revoke-selected-count">
-              <span>已选 <strong>{selectedCount}</strong> 个会话</span>
-              <span>筛选命中 <strong>{selectedInFilteredCount}</strong> / {filteredSessionIds.length}</span>
             </div>
           </div>
         </div>
@@ -2517,11 +2545,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const renderModelsTab = () => (
     <div className="tab-content">
       <div className="form-group">
-        <label>模型管理</label>
-        <span className="form-hint">管理语音识别模型</span>
-      </div>
-
-      <div className="form-group">
         <label>语音识别模型 (Whisper)</label>
         <span className="form-hint">用于语音消息转文字功能</span>
 
@@ -2537,12 +2560,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                   <span className="status-indicator success"><Check size={14} /> 已安装</span>
                 ) : (
                   <span className="status-indicator warning">未安装</span>
-                )}
-                {resolvedWhisperModelPath && (
-                  <div className="model-path-block">
-                    <span className="path-label">模型目录</span>
-                    <div className="path-text" title={resolvedWhisperModelPath}>{resolvedWhisperModelPath}</div>
-                  </div>
                 )}
               </div>
             </div>
@@ -2574,25 +2591,21 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                 )}
               </div>
             )}
-          </div>
 
-          <div className="sub-setting">
-            <div className="sub-label">自定义模型目录</div>
-            <div className="path-selector">
+            <div className="model-directory-control">
               <input
                 type="text"
-                value={whisperModelDir}
+                value={resolvedWhisperModelPath}
                 readOnly
                 placeholder="默认目录"
+                title={resolvedWhisperModelPath || '默认目录'}
               />
-              <button className="btn-icon" onClick={handleSelectWhisperModelDir} title="选择目录">
-                <FolderOpen size={18} />
+              <button className="btn btn-secondary btn-sm" onClick={handleSelectWhisperModelDir} title="选择自定义目录">
+                <FolderOpen size={14} /> 选择自定义目录
               </button>
-              {whisperModelDir && (
-                <button className="btn-icon danger" onClick={handleResetWhisperModelDir} title="重置为默认">
-                  <RotateCcw size={18} />
-                </button>
-              )}
+              <button className="btn btn-secondary btn-sm" onClick={handleResetWhisperModelDir} disabled={!whisperModelDir} title="恢复默认">
+                <RotateCcw size={14} /> 恢复默认
+              </button>
             </div>
           </div>
         </div>
@@ -3209,7 +3222,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       <div className="form-group">
         <label>AI 见解</label>
         <span className="form-hint">
-          开启后，AI 会在后台默默分析聊天数据，在合适的时机通过右下角弹窗送出一针见血的见解——例如提醒你久未联系的朋友，或对你刚刚的对话提出回复建议。默认关闭，所有分析均在本地发起请求，不经过任何第三方中间服务。
+          开启后，AI 会在后台默默分析聊天数据，在合适的时机通过应用通知送出一针见血的见解——例如提醒你久未联系的朋友，或对你刚刚的对话提出回复建议。默认关闭，所有分析均在本地发起请求，不经过任何第三方中间服务。
         </span>
         <div className="log-toggle-line">
           <span className="log-status">{aiInsightEnabled ? '已开启' : '已关闭'}</span>
@@ -3920,32 +3933,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               <strong>隐私</strong> — 所有分析请求均直接从你的电脑发往你填写的 API 地址，不经过任何 WeFlow 服务器。
             </p>
           </div>
-        </div>
-      </div>
-
-      <div className="divider" />
-
-      <div className="form-group">
-        <label>调试日志导出</label>
-        <span className="form-hint">
-          开启后，AI 见解链路会额外把完整调试日志写到桌面上的 <code>weflow-ai-insight-debug-YYYY-MM-DD.log</code>。
-          其中会包含发送给 AI 的完整提示词原文、近期对话上下文原文和模型输出原文，但不会记录 API Key。
-        </span>
-        <div className="log-toggle-line">
-          <span className="log-status">{aiInsightDebugLogEnabled ? '已开启' : '已关闭'}</span>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={aiInsightDebugLogEnabled}
-              onChange={async (e) => {
-                const val = e.target.checked
-                setAiInsightDebugLogEnabled(val)
-                await configService.setAiInsightDebugLogEnabled(val)
-                showMessage(val ? '已开启 AI 见解调试日志，后续日志将写入桌面' : '已关闭 AI 见解调试日志', true)
-              }}
-            />
-            <span className="switch-slider" />
-          </label>
         </div>
       </div>
 

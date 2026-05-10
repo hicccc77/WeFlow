@@ -344,6 +344,7 @@ const FRIEND_EXCLUDE_USERNAMES = new Set(['medianote', 'floatbottle', 'qmessage'
 
 class ChatService {
   private configService: ConfigService
+  private runtimeConfig?: { dbPath?: string; decryptKey?: string; myWxid?: string }
   private connected = false
   private readonly dbMonitorListeners = new Set<(type: string, json: string) => void>()
   private messageCursors: Map<string, { cursor: number; fetched: number; batchSize: number; startTime?: number; endTime?: number; ascending?: boolean; bufferedMessages?: any[] }> = new Map()
@@ -452,6 +453,10 @@ class ChatService {
     this.voiceTranscriptCache = new LRUCache(1000) // 最多缓存1000条转写记录
   }
 
+  setRuntimeConfig(config: { dbPath?: string; decryptKey?: string; myWxid?: string }): void {
+    this.runtimeConfig = config
+  }
+
   /**
    * 清理账号目录名
    */
@@ -537,12 +542,9 @@ class ChatService {
    */
   async connect(): Promise<{ success: boolean; error?: string }> {
     try {
-      if (this.connected && wcdbService.isReady()) {
-        return { success: true }
-      }
-      const wxid = this.configService.get('myWxid')
-      const dbPath = this.configService.get('dbPath')
-      const decryptKey = this.configService.get('decryptKey')
+      const wxid = String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
+      const dbPath = String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()
+      const decryptKey = String(this.runtimeConfig?.decryptKey || this.configService.get('decryptKey') || '').trim()
       if (!wxid) {
         return { success: false, error: '请先在设置页面配置微信ID' }
       }
@@ -553,8 +555,17 @@ class ChatService {
         return { success: false, error: '请先在设置页面配置解密密钥' }
       }
 
-      const cleanedWxid = this.cleanAccountDirName(wxid)
-      const openOk = await wcdbService.open(dbPath, decryptKey, cleanedWxid)
+      if (this.connected && wcdbService.isReady()) {
+        return { success: true }
+      }
+
+      // 使用 ConfigService 统一解析账号目录
+      const accountDir = this.configService.getAccountDir(dbPath, wxid)
+      if (!accountDir) {
+        return { success: false, error: '未找到账号目录，请检查数据库路径和微信ID配置' }
+      }
+
+      const openOk = await wcdbService.open(accountDir, decryptKey)
       if (!openOk) {
         const detailedError = this.toCodeOnlyMessage(await wcdbService.getLastInitError())
         await this.maybeShowInitFailureDialog(detailedError)
@@ -963,6 +974,23 @@ class ChatService {
       }
     } catch (e) {
       console.error('ChatService: 获取防撤回会话列表失败:', e)
+      return { success: false, error: String(e) }
+    }
+  }
+
+  async markAllSessionsRead(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const connectResult = await this.ensureConnected()
+      if (!connectResult.success) {
+        return { success: false, error: connectResult.error }
+      }
+      const result = await wcdbService.markAllSessionsRead()
+      if (result.success) {
+        this.syntheticUnreadState.clear()
+      }
+      return result
+    } catch (e) {
+      console.error('ChatService: 一键已读失败:', e)
       return { success: false, error: String(e) }
     }
   }
@@ -2502,7 +2530,7 @@ class ChatService {
     const rawRows = result.messages as Record<string, any>[]
     const hasMore = rawRows.length > pageLimit
     const selectedRows = hasMore ? rawRows.slice(0, pageLimit) : rawRows
-    const mapped = this.mapRowsToMessages(selectedRows)
+    const mapped = this.mapRowsToMessages(selectedRows, sessionId)
     const visible = mapped.filter((msg) => this.isMessageVisibleForSession(sessionId, msg))
     const outputMessages = (visible.length === 0 && mapped.length > 0)
       ? mapped
@@ -2513,6 +2541,7 @@ class ChatService {
     const normalized = this.normalizeMessageOrder(outputMessages)
     if (normalized.length > 0) {
       await this.repairEmojiMessages(normalized)
+      await this.resolveQuotedMessages(normalized, sessionId)
     }
 
     return {
@@ -2569,7 +2598,7 @@ class ChatService {
       }
 
       // 转换为 Message 对象
-      const messages = this.mapRowsToMessages(res.messages as Record<string, any>[])
+      const messages = this.mapRowsToMessages(res.messages as Record<string, any>[], sessionId)
       const normalized = this.normalizeMessageOrder(messages)
 
       // 并发检查并修复缺失 CDN URL 的表情包
@@ -2806,7 +2835,7 @@ class ChatService {
 
       const rowsToProcess = queuedRows
       queuedRows = []
-      const mappedMessages = this.mapRowsToMessages(rowsToProcess)
+      const mappedMessages = this.mapRowsToMessages(rowsToProcess, sessionId)
       for (let index = 0; index < mappedMessages.length; index += 1) {
         const msg = mappedMessages[index]
         rawRowsConsumed += 1
@@ -4797,8 +4826,8 @@ class ChatService {
   /**
    * HTTP API 复用消息解析逻辑，确保和应用内展示一致。
    */
-  mapRowsToMessagesForApi(rows: Record<string, any>[]): Message[] {
-    return this.mapRowsToMessages(rows)
+  mapRowsToMessagesForApi(rows: Record<string, any>[], sessionId: string): Message[] {
+    return this.mapRowsToMessages(rows, sessionId)
   }
 
   mapRowsToMessagesLiteForApi(rows: Record<string, any>[]): Message[] {
@@ -4852,7 +4881,7 @@ class ChatService {
     return messages
   }
 
-  private mapRowsToMessages(rows: Record<string, any>[]): Message[] {
+  private mapRowsToMessages(rows: Record<string, any>[], sessionId: string): Message[] {
     const myWxid = this.configService.get('myWxid')
 
     const messages: Message[] = []
@@ -4972,11 +5001,23 @@ class ChatService {
         encrypVer = imageInfo.encrypVer
         cdnThumbUrl = imageInfo.cdnThumbUrl
         imageDatName = this.parseImageDatNameFromRow(row)
+        // 解析图片消息中的引用信息
+        const quoteInfo = this.parseMediaQuoteMessage(content, sessionId)
+        if (quoteInfo.content) quotedContent = quoteInfo.content
+        if (quoteInfo.sender) quotedSender = quoteInfo.sender
       } else if (localType === 43) {
         // 视频消息：优先从 packed_info_data 提取真实文件名（32位十六进制），再回退 XML
         videoMd5 = this.parseVideoFileNameFromRow(row, content)
+        // 解析视频消息中的引用信息
+        const quoteInfo = this.parseMediaQuoteMessage(content, sessionId)
+        if (quoteInfo.content) quotedContent = quoteInfo.content
+        if (quoteInfo.sender) quotedSender = quoteInfo.sender
       } else if (localType === 34 && content) {
         voiceDurationSeconds = this.parseVoiceDurationSeconds(content)
+        // 解析语音消息中的引用信息
+        const quoteInfo = this.parseMediaQuoteMessage(content, sessionId)
+        if (quoteInfo.content) quotedContent = quoteInfo.content
+        if (quoteInfo.sender) quotedSender = quoteInfo.sender
       } else if (localType === 42 && content) {
         // 名片消息
         const cardInfo = this.parseCardInfo(content)
@@ -5697,9 +5738,18 @@ class ChatService {
         case '47':
           displayContent = '[动画表情]'
           break
-        case '49':
-          displayContent = '[链接]'
+        case '49': {
+          // 链接类消息 (type=49)：需区分真正的链接和嵌套引用
+          // 嵌套引用的 referContent 中 xmlType=57，真正的链接 xmlType=49 或 5
+          const decodedReferContent = this.decodeHtmlEntities(referContent || '')
+          const innerInfo = this.parseType49Message(decodedReferContent)
+          if (innerInfo.xmlType === '57' && innerInfo.linkTitle) {
+            displayContent = innerInfo.linkTitle
+          } else {
+            displayContent = '[链接]'
+          }
           break
+        }
         case '42':
           displayContent = '[名片]'
           break
@@ -5721,6 +5771,116 @@ class ChatService {
     } catch {
       return {}
     }
+  }
+
+  /**
+   * 解析媒体消息(图片/视频/语音)中的引用信息
+   * 这些消息的引用信息在 <extcommoninfo><refermsg> 中
+   */
+  private parseMediaQuoteMessage(content: string, sessionId: string): { content?: string; sender?: string } {
+    try {
+      const normalizedContent = this.decodeHtmlEntities(content || '')
+      const referMsgStart = normalizedContent.indexOf('<refermsg>')
+      const referMsgEnd = normalizedContent.indexOf('</refermsg>')
+
+      if (referMsgStart === -1 || referMsgEnd === -1) {
+        return {}
+      }
+
+      const referMsgXml = normalizedContent.substring(referMsgStart, referMsgEnd + 11)
+      const svrid = this.extractXmlValue(referMsgXml, 'svrid')
+
+      console.log('[DEBUG] parseMediaQuoteMessage - svrid:', svrid)
+
+      if (!svrid) {
+        return {}
+      }
+
+      // 简化方案:返回 svrid 标记
+      console.log('[DEBUG] parseMediaQuoteMessage - 返回标记:', `__SVRID__${svrid}__`)
+      return { content: `__SVRID__${svrid}__` }
+    } catch {
+      return {}
+    }
+  }
+
+  async resolveQuotedMessages(messages: Message[], sessionId: string): Promise<void> {
+    console.log('[DEBUG] resolveQuotedMessages - 开始解析,消息数量:', messages.length)
+    const svridsToResolve: Array<{ msg: Message; svrid: string }> = []
+
+    for (const msg of messages) {
+      if (msg.quotedContent && msg.quotedContent.startsWith('__SVRID__')) {
+        const match = msg.quotedContent.match(/__SVRID__(.+?)__/)
+        if (match) {
+          console.log('[DEBUG] resolveQuotedMessages - 找到需要解析的svrid:', match[1])
+          svridsToResolve.push({ msg, svrid: match[1] })
+        }
+      }
+    }
+
+    console.log('[DEBUG] resolveQuotedMessages - 需要解析的数量:', svridsToResolve.length)
+
+    if (svridsToResolve.length === 0) return
+
+    const results = await Promise.allSettled(
+      svridsToResolve.map(({ svrid }) => {
+        console.log('[DEBUG] resolveQuotedMessages - 查询svrid:', svrid, 'sessionId:', sessionId)
+        return wcdbService.getMessageByServerId(sessionId, svrid)
+      })
+    )
+
+    console.log('[DEBUG] resolveQuotedMessages - 查询结果数量:', results.length)
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      const { msg, svrid } = svridsToResolve[i]
+
+      console.log('[DEBUG] resolveQuotedMessages - 处理结果', i, ':', {
+        status: result.status,
+        success: result.status === 'fulfilled' ? result.value.success : false,
+        hasRow: result.status === 'fulfilled' && result.value.row ? true : false,
+        error: result.status === 'fulfilled' ? result.value.error : undefined,
+        svrid
+      })
+
+      if (result.status === 'fulfilled' && result.value.success && result.value.row) {
+        const localType = parseInt(result.value.row.local_type || '0', 10)
+        const rawMessageContent = result.value.row.message_content
+        const rawCompressContent = result.value.row.compress_content
+
+        console.log('[DEBUG] resolveQuotedMessages - 原始数据:', {
+          hasMessageContent: !!rawMessageContent,
+          hasCompressContent: !!rawCompressContent,
+          messageContentType: typeof rawMessageContent,
+          messageContentLength: rawMessageContent ? rawMessageContent.length : 0
+        })
+
+        const content = this.decodeMessageContent(rawMessageContent, rawCompressContent)
+
+        console.log('[DEBUG] resolveQuotedMessages - 解码后:', { localType, contentLength: content.length, contentPreview: content.substring(0, 50) })
+
+        if (localType === 1) {
+          msg.quotedContent = this.sanitizeQuotedContent(content)
+        } else if (localType === 3) {
+          msg.quotedContent = '[图片]'
+        } else if (localType === 34) {
+          msg.quotedContent = '[语音]'
+        } else if (localType === 43) {
+          msg.quotedContent = '[视频]'
+        } else if (localType === 47) {
+          msg.quotedContent = '[动画表情]'
+        } else if (localType === 49) {
+          msg.quotedContent = '[链接]'
+        } else {
+          msg.quotedContent = '[消息]'
+        }
+        console.log('[DEBUG] resolveQuotedMessages - 更新后的quotedContent:', msg.quotedContent)
+      } else {
+        msg.quotedContent = '[引用消息]'
+        console.log('[DEBUG] resolveQuotedMessages - 查询失败,使用占位符')
+      }
+    }
+    console.log('[DEBUG] resolveQuotedMessages - 完成')
   }
 
   private extractPreferredQuotedText(referMsgXml: string): string {
@@ -6652,15 +6812,33 @@ class ChatService {
   }
 
   private cleanSystemMessage(content: string): string {
+    if (!content) return '[系统消息]'
+
+    const normalized = this.cleanUtf16(this.decodeHtmlEntities(String(content)))
+    const readableSysmsg = this.extractReadableSystemMessageText(normalized)
+    if (readableSysmsg) {
+      return readableSysmsg
+    }
+
     // 移除 XML 声明
-    let cleaned = content.replace(/<\?xml[^?]*\?>/gi, '')
+    let cleaned = normalized.replace(/<\?xml[^?]*\?>/gi, '')
     // 移除所有 XML/HTML 标签
     cleaned = cleaned.replace(/<[^>]+>/g, '')
     // 移除尾部的数字（如撤回消息后的时间戳）
     cleaned = cleaned.replace(/\d+\s*$/, '')
     // 清理多余空白
-    cleaned = cleaned.replace(/\s+/g, ' ').trim()
+    cleaned = this.stripSenderPrefix(cleaned).replace(/\s+/g, ' ').trim()
     return cleaned || '[系统消息]'
+  }
+
+  private extractReadableSystemMessageText(content: string): string {
+    const sysmsgMatch = /<sysmsg\b[^>]*>([\s\S]*?)<\/sysmsg>/i.exec(content)
+    const source = sysmsgMatch?.[1] || content
+    const text =
+      this.extractXmlValue(source, 'plain') ||
+      this.extractXmlValue(source, 'text') ||
+      ''
+    return this.stripSenderPrefix(text).replace(/\s+/g, ' ').trim()
   }
 
   private stripSenderPrefix(content: string): string {
@@ -8737,7 +8915,7 @@ class ChatService {
         return { success: false, error: result.error || '查询语音消息失败' }
       }
 
-      let allVoiceMessages: Message[] = this.mapRowsToMessages(result.rows as Record<string, any>[])
+      let allVoiceMessages: Message[] = this.mapRowsToMessages(result.rows as Record<string, any>[], sessionId)
 
       // 按 createTime 降序排序
       allVoiceMessages.sort((a, b) => b.createTime - a.createTime)
@@ -8780,7 +8958,7 @@ class ChatService {
         return { success: false, error: result.error || '查询图片消息失败' }
       }
 
-      const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[])
+      const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[], sessionId)
       let allImages: Array<{ imageMd5?: string; imageDatName?: string; createTime?: number }> = mapped
         .filter(msg => msg.localType === 3)
         .map(msg => ({
@@ -8905,7 +9083,7 @@ class ChatService {
           if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
           if (result.rows.length >= perTypeFetch) maybeHasMore = true
 
-          const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[])
+          const mapped = this.mapRowsToMessages(result.rows as Record<string, any>[], sessionId)
           for (const message of mapped) {
             const resourceType = this.resolveResourceType(message)
             if (!resourceType || !typeSet.has(resourceType)) continue

@@ -6,10 +6,13 @@ export interface LinuxNotificationData {
   title: string;
   content: string;
   avatarUrl?: string;
+  channel?: string;
+  insightRecordId?: string;
+  targetRoute?: string;
   expireTimeout?: number;
 }
 
-type NotificationCallback = (sessionId: string) => void;
+type NotificationCallback = (payload: unknown) => void;
 
 let notificationCallbacks: NotificationCallback[] = [];
 let notificationCounter = 1;
@@ -31,10 +34,10 @@ function clearNotificationState(notificationId: number): void {
   }
 }
 
-function triggerNotificationCallback(sessionId: string): void {
+function triggerNotificationCallback(payload: unknown): void {
   for (const callback of notificationCallbacks) {
     try {
-      callback(sessionId);
+      callback(payload);
     } catch (error) {
       console.error("[LinuxNotification] Callback error:", error);
     }
@@ -69,6 +72,15 @@ export async function showLinuxNotification(
     activeNotifications.set(notificationId, notification);
 
     notification.on("click", () => {
+      if (data.channel === "ai-insight" && data.insightRecordId) {
+        triggerNotificationCallback({
+          sessionId: data.sessionId,
+          channel: data.channel,
+          insightRecordId: data.insightRecordId,
+          targetRoute: data.targetRoute,
+        });
+        return;
+      }
       if (data.sessionId) {
         triggerNotificationCallback(data.sessionId);
       }

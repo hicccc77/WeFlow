@@ -1,7 +1,7 @@
 .backup-page {
   height: 100%;
   overflow: auto;
-  padding: 24px;
+  padding: 20px;
   color: var(--text-primary);
   background: var(--bg-primary);
 }
@@ -10,13 +10,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 16px;
 
   h1 {
     margin: 0;
-    font-size: 26px;
-    font-weight: 700;
+    font-size: 22px;
+    font-weight: 650;
     letter-spacing: 0;
   }
 
@@ -30,7 +30,7 @@
 .backup-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -38,17 +38,17 @@
 .resource-options {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin: -8px 0 18px;
+  margin: -6px 0 14px;
 
   label {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-secondary);
     color: var(--text-primary);
-    min-height: 36px;
-    padding: 8px 10px;
+    min-height: 34px;
+    padding: 7px 10px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -69,7 +69,7 @@
 .secondary-btn {
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 9px 12px;
+  padding: 8px 11px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -100,19 +100,19 @@
 }
 
 .backup-status-band {
-  min-height: 88px;
+  min-height: 76px;
   border-top: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
-  padding: 16px 0;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 0;
 }
 
 .status-icon {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   background: var(--bg-secondary);
   color: var(--primary);
@@ -142,8 +142,8 @@
 }
 
 .progress-track {
-  margin-top: 12px;
-  height: 6px;
+  margin-top: 10px;
+  height: 5px;
   background: var(--bg-tertiary);
   border-radius: 999px;
   overflow: hidden;
@@ -160,7 +160,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .summary-item,
@@ -168,8 +168,8 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary);
-  padding: 14px;
-  min-height: 74px;
+  padding: 12px;
+  min-height: 66px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -185,14 +185,14 @@
 
   strong {
     color: var(--text-primary);
-    font-size: 20px;
+    font-size: 18px;
     line-height: 1.1;
   }
 }
 
 .backup-detail {
   border-top: 1px solid var(--border-color);
-  padding-top: 18px;
+  padding-top: 14px;
 }
 
 .detail-heading {
@@ -200,11 +200,11 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 
   h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: 17px;
   }
 
   span {
@@ -217,7 +217,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 
   div {
     border: 1px solid var(--border-color);
@@ -246,7 +246,7 @@
 .db-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .db-row {
@@ -255,7 +255,7 @@
   gap: 10px;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
-  padding: 9px 0;
+  padding: 8px 0;
   font-size: 13px;
 
   span {
