@@ -1178,7 +1178,7 @@ class SnsService {
             const targetContactResult = await wcdbService.getContact(commentByUsername);
             if (targetContactResult.success && targetContactResult.contact) {
                 const c = targetContactResult.contact;
-                const names = [c.nickname, c.nickName, c.nick_name, c.NickName, c.remark, c.Remark, c.displayName, c.alias, c.Alias];
+                const names = [c.nickname, c.nickName, c.nick_name, c.NickName];
                 for (const n of names) {
                     if (n) targetNicknames.push(n);
                 }
@@ -1186,7 +1186,7 @@ class SnsService {
             }
             const cacheContact = this.contactCache.get(commentByUsername);
             if (cacheContact && cacheContact.displayName) {
-                targetNicknames.push(cacheContact.displayName);
+                // 不将 displayName 放入 targetNicknames，避免错误匹配
                 if (!targetDisplayNameOverride || targetDisplayNameOverride === commentByUsername) {
                     targetDisplayNameOverride = cacheContact.displayName;
                 }
@@ -1209,9 +1209,7 @@ class SnsService {
             const batchLimit = 200;
             let currentEndTime = endTime;
             // 合并搜索词：如果有全局搜索词，也需要满足；否则用联系人昵称作为底层 SQL LIKE 的第一道防线，避免拉取太多无用数据
-            // 放宽限制，如果 keyword 和 commentSearchKeyword 都没有，直接传空，在内存中过滤
-            // 此时如果指定了特定人的评论，为了避免全局拉取太多导致内存爆炸，如果不传入 keyword 到数据库层面过滤，就只传空字符串。
-            const mergedKeyword = keyword || '';
+            const mergedKeyword = keyword || commentSearchKeyword || '';
 
             let retryCount = 0;
             const MAX_RETRIES = 50;
@@ -1244,18 +1242,6 @@ class SnsService {
                             break;
                         }
                     }
-                    if (!match && post.rawXml) {
-                         const xmlComments = parseCommentsFromXml(post.rawXml);
-                         for (const c of xmlComments) {
-                             const isHit = c.username 
-                                 ? c.username === commentByUsername
-                                 : (targetNicknames.includes(c.nickname) || c.nickname === commentSearchKeyword || c.nickname === commentByUsername);
-                             if (isHit) {
-                                 match = true;
-                                 break;
-                             }
-                         }
-                    }
 
                     // 如果该动态匹配了，再检查它是否满足原始 keyword（因为我们刚才把 mergedKeyword 传给了底层，如果是 OR 关系，需要重新验证）
                     if (match && keyword) {
@@ -1264,14 +1250,6 @@ class SnsService {
                         if (!keywordMatch) {
                             // 检查评论是否包含 keyword
                             for (const c of dllComments) {
-                                if (c.content?.includes(keyword) || c.nickname?.includes(keyword)) {
-                                    keywordMatch = true; break;
-                                }
-                            }
-                        }
-                        if (!keywordMatch && post.rawXml) {
-                            const xmlComments = parseCommentsFromXml(post.rawXml);
-                            for (const c of xmlComments) {
                                 if (c.content?.includes(keyword) || c.nickname?.includes(keyword)) {
                                     keywordMatch = true; break;
                                 }
