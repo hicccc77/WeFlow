@@ -224,7 +224,8 @@ export default defineConfig({
                 'koffi',
                 'fsevents',
                 'exceljs',
-                'ffmpeg-static'
+                'ffmpeg-static',
+                'silk-wasm'
               ],
               output: {
                 entryFileNames: 'exportWorker.js',

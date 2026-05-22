@@ -254,6 +254,27 @@ export class VoiceTranscribeService {
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
           serialization: 'advanced'
         })
+
+        let settled = false
+        const finish = (result: { success: boolean; transcript?: string; error?: string }) => {
+          if (settled) return
+          settled = true
+          resolve(result)
+        }
+
+        const shutdownWorker = () => {
+          try {
+            worker.disconnect()
+          } catch {
+            // ignore
+          }
+          try {
+            worker.kill()
+          } catch {
+            // ignore
+          }
+        }
+
         worker.send({
           modelPath,
           tokensPath,
@@ -262,39 +283,65 @@ export class VoiceTranscribeService {
           languages: supportedLanguages
         })
 
-        let finalTranscript = ''
+        const timeoutMs = 120_000
+        const timeout = setTimeout(() => {
+          if (settled) return
+          console.error('[VoiceTranscribe] Worker 超时，强制结束')
+          shutdownWorker()
+          finish({ success: false, error: '转写超时，请稍后重试' })
+        }, timeoutMs)
 
         worker.on('message', (msg: any) => {
           if (msg.type === 'partial') {
             onPartial?.(msg.text)
-          } else if (msg.type === 'final') {
-            finalTranscript = msg.text
-            resolve({ success: true, transcript: finalTranscript })
-            worker.disconnect()
-            worker.kill()
-          } else if (msg.type === 'error') {
+            return
+          }
+          if (msg.type === 'final') {
+            clearTimeout(timeout)
+            finish({ success: true, transcript: String(msg.text || '') })
+            shutdownWorker()
+            return
+          }
+          if (msg.type === 'error') {
+            clearTimeout(timeout)
             console.error('[VoiceTranscribe] Worker 错误:', msg.error)
-            resolve({ success: false, error: msg.error })
-            worker.disconnect()
-            worker.kill()
+            finish({ success: false, error: String(msg.error || '转写失败') })
+            shutdownWorker()
           }
         })
 
-        worker.on('error', (err: Error) => resolve({ success: false, error: String(err) }))
+        worker.on('error', (err: Error) => {
+          clearTimeout(timeout)
+          finish({ success: false, error: String(err) })
+          shutdownWorker()
+        })
+
         worker.on('exit', (code: number | null, signal: string | null) => {
-          if (code === null || signal === 'SIGSEGV') {
-
-            console.error(`[VoiceTranscribe] Worker 异常崩溃，信号: ${signal}。可能是由于底层 C++ 运行库在当前系统上发生段错误。`);
-            resolve({
-              success: false,
-              error: 'SEGFAULT_ERROR'
-            });
-            return;
+          clearTimeout(timeout)
+          if (settled) {
+            // 正常结束：父进程在收到 final/error 后会主动 kill，信号多为 SIGTERM，不是崩溃
+            return
           }
 
-          if (code !== 0) {
-            resolve({ success: false, error: `Worker exited with code ${code}` });
+          if (signal === 'SIGSEGV' || signal === 'SIGBUS' || signal === 'SIGABRT') {
+            console.error(
+              `[VoiceTranscribe] Worker 异常崩溃，信号: ${signal}。可能是 sherpa-onnx 原生库与当前系统不兼容。`
+            )
+            finish({ success: false, error: 'SEGFAULT_ERROR' })
+            return
           }
+
+          if (code !== 0 && code !== null) {
+            finish({ success: false, error: `Worker exited with code ${code}` })
+            return
+          }
+
+          finish({
+            success: false,
+            error: signal
+              ? `转写进程意外退出 (${signal})`
+              : '转写进程意外退出'
+          })
         })
 
       } catch (error) {
