@@ -3038,9 +3038,16 @@ function registerIpcHandlers() {
   })
   ipcMain.handle(
     'image:preloadHardlinkMd5s',
-    async (_, md5List?: string[]) => {
-      await imageDecryptService.preloadImageHardlinkMd5s(Array.isArray(md5List) ? md5List : [])
-      return true
+    async (event, md5List?: string[], options?: { batchSize?: number }) => {
+      const sender = event.sender
+      return imageDecryptService.preloadImageHardlinkMd5s(Array.isArray(md5List) ? md5List : [], {
+        batchSize: options?.batchSize,
+        onProgress: (payload) => {
+          if (!sender.isDestroyed()) {
+            sender.send('image:preloadHardlinkProgress', payload)
+          }
+        }
+      })
     }
   )
 

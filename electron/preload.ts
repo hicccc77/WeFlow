@@ -341,8 +341,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageOriginSourceMd5?: string; imageDatName?: string; createTime?: number }>,
       options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => ipcRenderer.invoke('image:preload', payloads, options),
-    preloadHardlinkMd5s: (md5List: string[]) =>
-      ipcRenderer.invoke('image:preloadHardlinkMd5s', md5List),
+    preloadHardlinkMd5s: (
+      md5List: string[],
+      options?: { batchSize?: number }
+    ) => ipcRenderer.invoke('image:preloadHardlinkMd5s', md5List, options),
+    onPreloadHardlinkProgress: (
+      callback: (payload: { current: number; total: number; hits: number }) => void
+    ) => {
+      const listener = (_: unknown, payload: { current: number; total: number; hits: number }) => callback(payload)
+      ipcRenderer.on('image:preloadHardlinkProgress', listener)
+      return () => ipcRenderer.removeListener('image:preloadHardlinkProgress', listener)
+    },
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => {
       const listener = (_: unknown, payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => callback(payload)
       ipcRenderer.on('image:updateAvailable', listener)

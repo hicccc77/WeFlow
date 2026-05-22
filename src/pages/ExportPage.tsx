@@ -575,6 +575,42 @@ const formatDurationMs = (ms: number): string => {
   return `${seconds}秒`
 }
 
+const BACKGROUND_TASK_ACTIVE_STATUSES = new Set<BackgroundTaskRecord['status']>([
+  'running',
+  'pause_requested',
+  'paused',
+  'cancel_requested'
+])
+
+const EXPORT_TASK_ACTIVE_STATUSES = new Set<TaskStatus>([
+  'queued',
+  'running',
+  'pause_requested',
+  'paused',
+  'cancel_requested'
+])
+
+const getTaskElapsedMs = (
+  startedAt: number,
+  finishedAt: number | undefined,
+  nowTick: number,
+  isActive: boolean
+): number => {
+  const safeStart = Number.isFinite(startedAt) ? startedAt : nowTick
+  const end = isActive ? nowTick : (finishedAt || nowTick)
+  return Math.max(0, end - safeStart)
+}
+
+const formatTaskElapsedLabel = (
+  startedAt: number,
+  finishedAt: number | undefined,
+  nowTick: number,
+  isActive: boolean
+): string => {
+  const elapsedMs = getTaskElapsedMs(startedAt, finishedAt, nowTick, isActive)
+  return `${isActive ? '已运行' : '耗时'} ${formatDurationMs(elapsedMs)}`
+}
+
 const getTaskStatusLabel = (task: ExportTask): string => {
   if (task.status === 'queued') return '排队中'
   if (task.status === 'running') return '进行中'
@@ -1993,6 +2029,14 @@ const TaskCenterModal = memo(function TaskCenterModal({
                   task.status === 'paused' ||
                   task.status === 'cancel_requested'
                 )
+                const exportTaskStartedAt = task.startedAt || task.createdAt
+                const exportTaskIsActive = EXPORT_TASK_ACTIVE_STATUSES.has(task.status)
+                const exportTaskElapsedLabel = formatTaskElapsedLabel(
+                  exportTaskStartedAt,
+                  task.finishedAt,
+                  nowTick,
+                  exportTaskIsActive
+                )
                 return (
                   <div key={task.id} className={`task-card ${taskCardClass}`}>
                     <div className="task-main">
@@ -2003,11 +2047,14 @@ const TaskCenterModal = memo(function TaskCenterModal({
                       </div>
                       {canShowProgress && (
                         <>
-                          <div className="task-progress-bar">
-                            <div
-                              className="task-progress-fill"
-                              style={{ width: `${normalizedProgressTotal > 0 ? (normalizedProgressCurrent / normalizedProgressTotal) * 100 : 0}%` }}
-                            />
+                          <div className="task-progress-row">
+                            <div className="task-progress-bar">
+                              <div
+                                className="task-progress-fill"
+                                style={{ width: `${normalizedProgressTotal > 0 ? (normalizedProgressCurrent / normalizedProgressTotal) * 100 : 0}%` }}
+                              />
+                            </div>
+                            <span className="task-elapsed">{exportTaskElapsedLabel}</span>
                           </div>
                           <div className="task-progress-text">
                             {`${sessionProgressLabel} · ${effectiveMessageProgressLabel}`}
@@ -2022,6 +2069,11 @@ const TaskCenterModal = memo(function TaskCenterModal({
                             {task.progress.phaseLabel ? ` · ${task.progress.phaseLabel}` : ''}
                           </div>
                         </>
+                      )}
+                      {!canShowProgress && (
+                        <div className="task-elapsed-row">
+                          <span className="task-elapsed">{exportTaskElapsedLabel}</span>
+                        </div>
                       )}
                       {imageTimingLabel && task.status !== 'queued' && (
                         <div className="task-perf-summary">
@@ -2142,6 +2194,13 @@ const TaskCenterModal = memo(function TaskCenterModal({
                   task.status === 'paused' ||
                   task.status === 'cancel_requested'
                 )
+                const backgroundTaskIsActive = BACKGROUND_TASK_ACTIVE_STATUSES.has(task.status)
+                const backgroundTaskElapsedLabel = formatTaskElapsedLabel(
+                  task.startedAt,
+                  task.finishedAt,
+                  nowTick,
+                  backgroundTaskIsActive
+                )
                 return (
                   <div key={task.id} className={`task-card ${taskCardClass}`}>
                     <div className="task-main">
@@ -2151,14 +2210,17 @@ const TaskCenterModal = memo(function TaskCenterModal({
                         <span>{backgroundTaskSourceLabels[task.sourcePage] || backgroundTaskSourceLabels.other}</span>
                         <span>{new Date(task.startedAt).toLocaleString('zh-CN')}</span>
                       </div>
-                      {progress.ratio !== null && (
-                        <div className="task-progress-bar">
-                          <div
-                            className="task-progress-fill"
-                            style={{ width: `${progress.ratio * 100}%` }}
-                          />
-                        </div>
-                      )}
+                      <div className={progress.ratio !== null ? 'task-progress-row' : 'task-elapsed-row'}>
+                        {progress.ratio !== null && (
+                          <div className="task-progress-bar">
+                            <div
+                              className="task-progress-fill"
+                              style={{ width: `${progress.ratio * 100}%` }}
+                            />
+                          </div>
+                        )}
+                        <span className="task-elapsed">{backgroundTaskElapsedLabel}</span>
+                      </div>
                       <div className="task-progress-text">
                         {task.detail || '任务进行中'}
                         {task.progressText ? ` · ${task.progressText}` : ''}
@@ -3013,6 +3075,13 @@ function ExportPage() {
     const timer = setInterval(() => setNowTick(Date.now()), 60 * 1000)
     return () => clearInterval(timer)
   }, [isExportRoute])
+
+  useEffect(() => {
+    if (!isTaskCenterOpen) return
+    setNowTick(Date.now())
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [isTaskCenterOpen])
 
   useEffect(() => {
     if (!isTaskCenterOpen || !expandedPerfTaskId) return

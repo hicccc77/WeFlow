@@ -31,6 +31,7 @@ import {
 } from '../services/exportBridge'
 import ChatHeader from './Chat/ChatHeader'
 import ChatMessageBubble from './Chat/ChatMessageBubble'
+import { runHardlinkPreloadIfNeeded } from '../utils/runHardlinkPreload'
 import '../styles/batchTranscribe.scss'
 import './ChatPage.scss'
 
@@ -6478,14 +6479,19 @@ function ChatPage(props: ChatPageProps) {
         })
         return
       }
-      updateDecryptTaskStatus(
-        `正在预热图片索引（${hardlinkMd5Set.size} 个标识）...`,
-        `0 / ${totalImages}`
+      await runHardlinkPreloadIfNeeded(
+        Array.from(hardlinkMd5Set),
+        (detail) => updateDecryptTaskStatus(detail, `0 / ${totalImages}`)
       )
-      try {
-        await window.electronAPI.image.preloadHardlinkMd5s(Array.from(hardlinkMd5Set))
-      } catch {
-        // ignore preload failures and continue decrypt
+      await waitIfPaused()
+      if (controlState.cancelRequested) {
+        const remaining = Math.max(0, totalImages - completed)
+        finishDecrypt(successCount, failCount, {
+          status: 'canceled',
+          detail: `图片批量解密已中断：已处理 ${completed}/${totalImages}（成功 ${successCount}，未找到 ${notFoundCount}，解密失败 ${decryptFailedCount}，未处理 ${remaining}）`,
+          progressText: `成功 ${successCount} / 未找到 ${notFoundCount} / 解密失败 ${decryptFailedCount}`
+        })
+        return
       }
     }
     updateDecryptTaskStatus(`开始批量解密图片（0/${totalImages}）`, `0 / ${totalImages}`)
@@ -8018,7 +8024,7 @@ function ChatPage(props: ChatPageProps) {
               </div>
               <div className="batch-warning">
                 <AlertCircle size={16} />
-                <span>批量解密可能需要较长时间，进度会自动写入导出页任务中心（含准备阶段状态）。</span>
+                <span>批量解密可能需要较长时间；超过 2000 个图片标识将跳过索引预热并直接解密。进度会写入导出页任务中心。</span>
               </div>
             </div>
             <div className="batch-modal-footer">

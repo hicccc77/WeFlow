@@ -717,7 +717,18 @@ export interface ElectronAPI {
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageOriginSourceMd5?: string; imageDatName?: string; createTime?: number }>,
       options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => Promise<boolean>
-    preloadHardlinkMd5s: (md5List: string[]) => Promise<boolean>
+    preloadHardlinkMd5s: (
+      md5List: string[],
+      options?: { batchSize?: number }
+    ) => Promise<{
+      success: boolean
+      total: number
+      hits: number
+      error?: string
+    }>
+    onPreloadHardlinkProgress: (
+      callback: (payload: { current: number; total: number; hits: number }) => void
+    ) => () => void
     onUpdateAvailable: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string }) => void) => () => void
     onCacheResolved: (callback: (payload: { cacheKey: string; imageMd5?: string; imageDatName?: string; localPath: string }) => void) => () => void
     onDecryptProgress: (callback: (payload: {

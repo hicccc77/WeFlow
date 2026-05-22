@@ -9,6 +9,7 @@ import { getEmojiPath } from 'wechat-emojis'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { imageDecryptService } from './imageDecryptService'
+import { runHardlinkPreloadIfNeeded } from '../utils/runHardlinkPreload'
 import { chatService } from './chatService'
 import { videoService } from './videoService'
 import { voiceTranscribeService } from './voiceTranscribeService'
@@ -4434,13 +4435,9 @@ class ExportService {
 
     }
 
-    const preloadTasks: Array<Promise<void>> = []
     if (imageMd5Set.size > 0) {
-      preloadTasks.push(imageDecryptService.preloadImageHardlinkMd5s(Array.from(imageMd5Set)))
+      await runHardlinkPreloadIfNeeded(Array.from(imageMd5Set)).catch(() => { })
     }
-    if (preloadTasks.length === 0) return
-
-    await Promise.all(preloadTasks.map((task) => task.catch(() => { })))
     this.throwIfStopRequested(control)
   }
 

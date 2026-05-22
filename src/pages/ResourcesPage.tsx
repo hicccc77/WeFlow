@@ -2,6 +2,7 @@ import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, ty
 import { Calendar, Image as ImageIcon, Info, Loader2, PlayCircle, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { VirtuosoGrid } from 'react-virtuoso'
 import { finishBackgroundTask, registerBackgroundTask, updateBackgroundTask } from '../services/backgroundTaskMonitor'
+import { runHardlinkPreloadIfNeeded } from '../utils/runHardlinkPreload'
 import './ResourcesPage.scss'
 
 type MediaTab = 'image' | 'video'
@@ -1273,11 +1274,10 @@ function ResourcesPage() {
         }
       }
       if (hardlinkMd5Set.size > 0) {
-        try {
-          await window.electronAPI.image.preloadHardlinkMd5s(Array.from(hardlinkMd5Set))
-        } catch {
-          // ignore preload failures and continue decrypt
-        }
+        await runHardlinkPreloadIfNeeded(
+          Array.from(hardlinkMd5Set),
+          (detail) => updateBackgroundTask(taskId, { detail })
+        )
       }
 
       const concurrency = Math.max(1, Math.min(BATCH_IMAGE_DECRYPT_CONCURRENCY, imageItems.length))

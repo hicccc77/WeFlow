@@ -8,6 +8,7 @@ import crypto from 'crypto'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { decryptDatViaNative, nativeAddonLocation } from './nativeImageDecrypt'
+import { IMAGE_HARDLINK_PRELOAD_BATCH_SIZE } from '../constants/imageDecrypt'
 
 // 获取 ffmpeg-static 的路径
 function getStaticFfmpegBinaryName(): string {
@@ -143,7 +144,7 @@ export class ImageDecryptService {
     const errorStr = error ? ` Error: ${String(error)}` : ''
     const metaStr = meta ? ` ${JSON.stringify(meta)}` : ''
     const logLine = `[${timestamp}] [ImageDecrypt] ERROR: ${message}${errorStr}${metaStr}\n`
-    console.error(message, error, meta)
+    console.error(`[ImageDecrypt] ERROR: ${message}${errorStr}${metaStr}`)
     this.writeLog(logLine)
   }
 
@@ -291,37 +292,105 @@ export class ImageDecryptService {
     }
   }
 
-  async preloadImageHardlinkMd5s(md5List: string[]): Promise<void> {
+  private cacheHardlinkHitFromResolveData(accountDir: string, md5: string, data: unknown): boolean {
+    const normalizedMd5 = String(md5 || '').trim().toLowerCase()
+    if (!this.looksLikeMd5(normalizedMd5)) return false
+
+    const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
+    if (!record) return false
+
+    const fileName = String(record.file_name || record.fileName || '').trim()
+    const fullPath = String(record.full_path || record.fullPath || '').trim()
+    if (!fileName || !fullPath) return false
+
+    const lowerFileName = fileName.toLowerCase()
+    if (lowerFileName.endsWith('.dat')) {
+      const normalizedBase = this.normalizeDatBase(lowerFileName.slice(0, -4))
+      if (!this.looksLikeMd5(normalizedBase)) return false
+    }
+
+    const selectedPath = this.normalizeHardlinkDatPathByFileName(fullPath, fileName)
+    if (!existsSync(selectedPath)) return false
+
+    this.cacheDatPath(accountDir, normalizedMd5, selectedPath)
+    const cachedFileName = basename(selectedPath).toLowerCase()
+    if (cachedFileName) this.cacheDatPath(accountDir, cachedFileName, selectedPath)
+    return true
+  }
+
+  /**
+   * 仅通过 WCDB hardlink 批量预热路径缓存（不做目录扫描）。
+   */
+  async preloadImageHardlinkMd5s(
+    md5List: string[],
+    options?: {
+      batchSize?: number
+      onProgress?: (payload: { current: number; total: number; hits: number }) => void
+    }
+  ): Promise<{ success: boolean; total: number; hits: number; error?: string }> {
     const normalizedList = Array.from(
-      new Set((md5List || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))
+      new Set(
+        (md5List || [])
+          .map((item) => String(item || '').trim().toLowerCase())
+          .filter((item) => this.looksLikeMd5(item))
+      )
     )
-    if (normalizedList.length === 0) return
+    if (normalizedList.length === 0) {
+      return { success: true, total: 0, hits: 0 }
+    }
 
     const wxid = this.getConfiguredMyWxid()
     const dbPath = this.getConfiguredDbPath()
-    if (!wxid || !dbPath) return
+    if (!wxid || !dbPath) {
+      return { success: false, total: normalizedList.length, hits: 0, error: '未配置账号或数据库路径' }
+    }
 
     const accountDir = this.resolveAccountDir(dbPath, wxid)
-    if (!accountDir) return
+    if (!accountDir) {
+      return { success: false, total: normalizedList.length, hits: 0, error: '未找到账号目录' }
+    }
+
+    const ready = await this.ensureWcdbReady()
+    if (!ready) {
+      return { success: false, total: normalizedList.length, hits: 0, error: 'WCDB 未就绪' }
+    }
+
+    const batchSize = Math.max(
+      20,
+      Math.min(1000, Math.floor(Number(options?.batchSize) || IMAGE_HARDLINK_PRELOAD_BATCH_SIZE))
+    )
+    const total = normalizedList.length
+    let hits = 0
+    let processed = 0
+
+    const emitProgress = () => {
+      options?.onProgress?.({ current: processed, total, hits })
+    }
+
+    emitProgress()
 
     try {
-      for (const md5 of normalizedList) {
-        if (!this.looksLikeMd5(md5)) continue
-        const hardlinkPath = await this.resolveHardlinkPath(accountDir, md5)
-        if (hardlinkPath) {
-          this.cacheDatPath(accountDir, md5, hardlinkPath)
-          const fileName = basename(hardlinkPath).toLowerCase()
-          if (fileName) this.cacheDatPath(accountDir, fileName, hardlinkPath)
-          continue
+      for (let offset = 0; offset < normalizedList.length; offset += batchSize) {
+        const chunk = normalizedList.slice(offset, offset + batchSize)
+        const requests = chunk.map((md5) => ({ md5, accountDir }))
+        const batchResult = await wcdbService.resolveImageHardlinkBatch(requests)
+        const rows = Array.isArray(batchResult.rows) ? batchResult.rows : []
+
+        for (let i = 0; i < chunk.length; i += 1) {
+          const md5 = chunk[i]
+          const row = rows[i]
+          if (row?.success && row.data && this.cacheHardlinkHitFromResolveData(accountDir, md5, row.data)) {
+            hits += 1
+          }
+          processed += 1
         }
-        const selectedPath = this.selectBestDatPathByBase(accountDir, md5, undefined, undefined, true)
-        if (!selectedPath) continue
-        this.cacheDatPath(accountDir, md5, selectedPath)
-        const fileName = basename(selectedPath).toLowerCase()
-        if (fileName) this.cacheDatPath(accountDir, fileName, selectedPath)
+
+        emitProgress()
       }
-    } catch {
-      // ignore preload failures
+
+      return { success: true, total, hits }
+    } catch (e) {
+      return { success: false, total, hits, error: String(e) }
     }
   }
 

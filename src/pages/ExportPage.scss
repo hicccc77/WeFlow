@@ -1533,6 +1533,33 @@
   }
 }
 
+.task-progress-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .task-progress-bar {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+  }
+}
+
+.task-elapsed-row {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.task-elapsed {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .task-progress-bar {
   margin-top: 8px;
   height: 6px;

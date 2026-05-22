@@ -12,6 +12,7 @@ import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
 import { videoService } from './videoService'
 import { imageDecryptService } from './imageDecryptService'
+import { runHardlinkPreloadIfNeeded } from '../utils/runHardlinkPreload'
 import { groupAnalyticsService } from './groupAnalyticsService'
 import { snsService } from './snsService'
 
@@ -1466,11 +1467,7 @@ class HttpService {
         }
       }
       if (imageMd5Set.size > 0) {
-        try {
-          await imageDecryptService.preloadImageHardlinkMd5s(Array.from(imageMd5Set))
-        } catch {
-          // ignore preload failures
-        }
+        await runHardlinkPreloadIfNeeded(Array.from(imageMd5Set)).catch(() => { })
       }
     }
 
