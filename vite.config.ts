@@ -83,7 +83,8 @@ export default defineConfig({
   base: './',
   server: {
     port: 3000,
-    strictPort: false  // 如果3000被占用，自动尝试下一个
+    strictPort: false, // 如果3000被占用，自动尝试下一个
+    allowedHosts: ['.monkeycode-ai.online']
   },
   build: {
     chunkSizeWarningLimit: 900,
