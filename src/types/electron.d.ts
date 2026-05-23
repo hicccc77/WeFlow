@@ -1325,6 +1325,7 @@ export interface ElectronAPI {
 
 export interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
+  engine?: 'auto' | 'typescript' | 'rust'
   contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji' | 'file'
   dateRange?: { start: number; end: number } | null
   senderUsername?: string
@@ -1353,6 +1354,8 @@ export interface ExportProgress {
   total: number
   currentSession: string
   currentSessionId?: string
+  exportEngine?: 'rust' | 'typescript'
+  exportEngineLabel?: string
   phase: 'preparing' | 'exporting' | 'exporting-media' | 'exporting-voice' | 'writing' | 'complete'
   phaseProgress?: number
   phaseTotal?: number

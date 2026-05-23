@@ -3191,6 +3191,7 @@ function registerIpcHandlers() {
     const dbPath = String(cfg.get('dbPath') || '').trim()
     const decryptKey = String(cfg.get('decryptKey') || '').trim()
     const myWxid = String(cfg.getMyWxidCleaned() || '').trim()
+    const accountDir = cfg.getAccountDir(dbPath, myWxid) || ''
     const imageKeys = cfg.getImageKeysForCurrentWxid()
     const resourcesPath = app.isPackaged
       ? join(process.resourcesPath, 'resources')
@@ -3207,6 +3208,7 @@ function registerIpcHandlers() {
             options,
             taskId,
             dbPath,
+            accountDir,
             decryptKey,
             myWxid,
             imageXorKey: imageKeys.xorKey,

@@ -9,6 +9,7 @@ interface ExportWorkerConfig {
   options?: any
   taskId?: string
   dbPath?: string
+  accountDir?: string
   decryptKey?: string
   myWxid?: string
   imageXorKey?: unknown
@@ -137,10 +138,31 @@ if (config.userDataPath) {
 }
 process.env.WEFLOW_PROJECT_NAME = process.env.WEFLOW_PROJECT_NAME || 'WeFlow'
 
+function isExportControlInterruption(error: unknown): boolean {
+  const text = error instanceof Error
+    ? `${(error as Error & { code?: string }).code || ''} ${error.message}`
+    : String(error || '')
+  return (
+    text.includes('WEFLOW_EXPORT_STOP_REQUESTED') ||
+    text.includes('WEFLOW_EXPORT_PAUSE_REQUESTED') ||
+    text.includes('导出任务已停止') ||
+    text.includes('导出任务已暂停')
+  )
+}
+
 async function run() {
-  const [{ wcdbService }, { exportService }] = await Promise.all([
+  const [
+    { wcdbService },
+    { exportService },
+    { chooseExportEngine, getRustExportDisabledReason },
+    { exportSessionsWithRustStreaming },
+    { canUseTypeScriptStreamingExport, exportSessionsWithTypeScriptStreaming }
+  ] = await Promise.all([
     import('./services/wcdbService'),
-    import('./services/exportService')
+    import('./services/exportService'),
+    import('./services/export/exportEngineRouter'),
+    import('./services/export/rustStreamingExporter'),
+    import('./services/export/typescriptStreamingExporter')
   ])
 
   wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
@@ -188,13 +210,115 @@ async function run() {
       taskControl
     )
   } else {
-    result = await exportService.exportSessions(
+    const options = config.options || { format: 'json' }
+    const requestedEngine = String(options.engine || 'auto')
+    const resolvedEngine = chooseExportEngine(options)
+    const rustDisabledReason = getRustExportDisabledReason(options)
+    const rustProgress = (progress: any) => onProgress({
+      ...progress,
+      exportEngine: 'rust',
+      exportEngineLabel: 'Rust'
+    })
+    let typeScriptEngineLabel = requestedEngine === 'typescript'
+      ? 'TypeScript · 手动指定'
+      : rustDisabledReason
+        ? `TypeScript · Rust未启用：${rustDisabledReason}`
+        : 'TypeScript'
+    const typeScriptProgress = (progress: any) => onProgress({
+      ...progress,
+      exportEngine: 'typescript',
+      exportEngineLabel: typeScriptEngineLabel
+    })
+    const runTypeScriptExport = async () => exportService.exportSessions(
       Array.isArray(config.sessionIds) ? config.sessionIds : [],
       String(config.outputDir || ''),
-      config.options || { format: 'json' },
-      onProgress,
+      options,
+      typeScriptProgress,
       taskControl
     )
+    const runTypeScriptStreamingExport = async () => exportSessionsWithTypeScriptStreaming({
+      source: wcdbService,
+      sessionIds: Array.isArray(config.sessionIds) ? config.sessionIds : [],
+      outputDir: String(config.outputDir || ''),
+      options,
+      accountDir: String(config.accountDir || config.dbPath || ''),
+      decryptKey: String(config.decryptKey || ''),
+      cleanedMyWxid: String(config.myWxid || ''),
+      onProgress: typeScriptProgress,
+      control: taskControl
+    })
+    const runRustStreamingExport = async () => exportSessionsWithRustStreaming({
+      source: wcdbService,
+      sessionIds: Array.isArray(config.sessionIds) ? config.sessionIds : [],
+      outputDir: String(config.outputDir || ''),
+      options,
+      accountDir: String(config.accountDir || config.dbPath || ''),
+      decryptKey: String(config.decryptKey || ''),
+      cleanedMyWxid: String(config.myWxid || ''),
+      resourcesPath: String(config.resourcesPath || ''),
+      onProgress: rustProgress,
+      control: taskControl
+    })
+
+    if (resolvedEngine === 'rust') {
+      try {
+        onProgress({
+          current: 0,
+          total: 100,
+          currentSession: '',
+          currentSessionId: '',
+          phase: 'preparing',
+          phaseLabel: 'Rust 引擎准备导出',
+          exportEngine: 'rust',
+          exportEngineLabel: 'Rust'
+        })
+        result = await runRustStreamingExport()
+      } catch (error) {
+        if (requestedEngine === 'rust' || isExportControlInterruption(error)) {
+          throw error
+        }
+        const fallbackReason = error instanceof Error ? error.message : String(error)
+        typeScriptEngineLabel = `TypeScript · Rust回退：${fallbackReason.slice(0, 160)}`
+        console.warn(`[exportWorker] Rust exporter unavailable, falling back to TypeScript: ${fallbackReason}`)
+        onProgress({
+          current: 0,
+          total: 100,
+          currentSession: '',
+          currentSessionId: '',
+          phase: 'preparing',
+          phaseLabel: `Rust 引擎不可用，已回退 TypeScript：${fallbackReason.slice(0, 160)}`,
+          exportEngine: 'typescript',
+          exportEngineLabel: typeScriptEngineLabel
+        })
+        result = await runTypeScriptExport()
+      }
+    } else {
+      if (requestedEngine === 'auto' && rustDisabledReason) {
+        onProgress({
+          current: 0,
+          total: 100,
+          currentSession: '',
+          currentSessionId: '',
+          phase: 'preparing',
+          phaseLabel: `TypeScript 引擎导出（Rust 未启用：${rustDisabledReason}）`
+        })
+      }
+      if (requestedEngine === 'typescript') {
+        onProgress({
+          current: 0,
+          total: 100,
+          currentSession: '',
+          currentSessionId: '',
+          phase: 'preparing',
+          phaseLabel: canUseTypeScriptStreamingExport(options)
+            ? 'TypeScript 流式引擎准备导出'
+            : 'TypeScript 引擎准备导出'
+        })
+      }
+      result = requestedEngine === 'typescript' && canUseTypeScriptStreamingExport(options)
+        ? await runTypeScriptStreamingExport()
+        : await runTypeScriptExport()
+    }
   }
 
   flushProgress()

@@ -15,6 +15,10 @@ import { voiceTranscribeService } from './voiceTranscribeService'
 import { exportRecordService } from './exportRecordService'
 import { EXPORT_HTML_STYLES } from './exportHtmlStyles'
 import { LRUCache } from '../utils/LRUCache.js'
+import {
+  cleanSystemMessageContent,
+  extractReadableSystemMessageText as extractReadableSystemMessageTextValue
+} from './systemMessageFormatter'
 
 // ChatLab 格式类型定义
 interface ChatLabHeader {
@@ -95,6 +99,7 @@ const FILE_APP_LOCAL_TYPE_SET = new Set<number>(FILE_APP_LOCAL_TYPES)
 
 export interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'arkme-json' | 'html' | 'txt' | 'excel' | 'weclone' | 'sql'
+  engine?: 'auto' | 'typescript' | 'rust'
   contentType?: 'text' | 'voice' | 'image' | 'video' | 'emoji' | 'file'
   dateRange?: { start: number; end: number } | null
   senderUsername?: string
@@ -165,6 +170,8 @@ export interface ExportProgress {
   total: number
   currentSession: string
   currentSessionId?: string
+  exportEngine?: 'rust' | 'typescript'
+  exportEngineLabel?: string
   phase: 'preparing' | 'exporting' | 'exporting-media' | 'exporting-voice' | 'writing' | 'complete'
   phaseProgress?: number
   phaseTotal?: number
@@ -525,6 +532,25 @@ class ExportService {
     if (control?.shouldPause?.()) {
       throw this.createPauseError()
     }
+  }
+
+  private isExportPerfLogEnabled(): boolean {
+    return this.configService.get('logEnabled') === true
+  }
+
+  private getMemorySnapshotMb(): { rss: number; heapUsed: number; external: number } {
+    const memory = process.memoryUsage()
+    const toMb = (value: number) => Math.round(value / 1024 / 1024)
+    return {
+      rss: toMb(memory.rss),
+      heapUsed: toMb(memory.heapUsed),
+      external: toMb(memory.external)
+    }
+  }
+
+  private logExportPerf(label: string, fields: Record<string, unknown>): void {
+    if (!this.isExportPerfLogEnabled()) return
+    console.info(`[ExportPerf] ${label}`, fields)
   }
 
   private async ensureExportDir(dirPath: string, control?: ExportTaskControl, dirCache?: Set<string>): Promise<void> {
@@ -3043,64 +3069,11 @@ class ExportService {
   }
 
   private cleanSystemMessage(content: string): string {
-    if (!content) return '[系统消息]'
-
-    // 先尝试提取特定的系统消息内容
-    // 1. 提取 sysmsg 中的文本内容
-    const sysmsgTextMatch = /<sysmsg[^>]*>([\s\S]*?)<\/sysmsg>/i.exec(content)
-    if (sysmsgTextMatch) {
-      content = sysmsgTextMatch[1]
-    }
-
-    // 2. 提取 revokemsg 撤回消息
-    const revokeMatch = /<replacemsg><!\[CDATA\[(.*?)\]\]><\/replacemsg>/i.exec(content)
-    if (revokeMatch) {
-      return revokeMatch[1].trim()
-    }
-
-    // 3. 提取 pat 拍一拍消息（sysmsg 内的 template 格式）
-    const patMatch = /<template><!\[CDATA\[(.*?)\]\]><\/template>/i.exec(content)
-    if (patMatch) {
-      // 移除模板变量占位符
-      return patMatch[1]
-        .replace(/\$\{([^}]+)\}/g, (_, varName) => {
-          const varMatch = new RegExp(`<${varName}><!\\\[CDATA\\\[([^\]]*)\\\]\\\]><\/${varName}>`, 'i').exec(content)
-          return varMatch ? varMatch[1] : ''
-        })
-        .replace(/<[^>]+>/g, '')
-        .trim()
-    }
-
-    // 3.5 提取 <title> 内容（适用于 appmsg 格式的拍一拍等消息）
-    const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(content)
-    if (titleMatch) {
-      const title = titleMatch[1].replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
-      if (title) {
-        return title
-      }
-    }
-
-    // 4. 处理 CDATA 内容
-    content = content.replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '')
-
-    // 5. 移除所有 XML 标签
-    return content
-      .replace(/<img[^>]*>/gi, '')
-      .replace(/<\/?[a-zA-Z0-9_:]+[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim() || '[系统消息]'
+    return cleanSystemMessageContent(content)
   }
 
   private extractReadableSystemMessageText(content: string): string {
-    if (!content) return ''
-    const normalized = this.normalizeAppMessageContent(content)
-    const sysmsgMatch = /<sysmsg\b[^>]*>([\s\S]*?)<\/sysmsg>/i.exec(this.stripSenderPrefix(normalized))
-    const source = sysmsgMatch?.[1] || normalized
-    const text =
-      this.extractXmlValue(source, 'plain') ||
-      this.extractXmlValue(source, 'text') ||
-      ''
-    return this.stripSenderPrefix(text).replace(/\s+/g, ' ').trim()
+    return extractReadableSystemMessageTextValue(content)
   }
 
   /**
@@ -5412,6 +5385,15 @@ class ExportService {
     useCursorTimeRange = true,
     allowModeFallback = true
   ): Promise<{ rows: any[]; memberSet: Map<string, { member: ChatLabMember; avatarUrl?: string }>; firstTime: number | null; lastTime: number | null; error?: string }> {
+    const collectStartedAt = Date.now()
+    const collectMemoryStart = this.getMemorySnapshotMb()
+    this.logExportPerf('collect:start', {
+      sessionId,
+      collectMode,
+      hasDateRange: Boolean(dateRange),
+      hasSenderFilter: Boolean(String(senderUsernameFilter || '').trim()),
+      memory: collectMemoryStart
+    })
     const rows: any[] = []
     const memberSet = new Map<string, { member: ChatLabMember; avatarUrl?: string }>()
     const senderSet = new Set<string>()
@@ -5837,6 +5819,15 @@ class ExportService {
       })
     }
 
+    this.logExportPerf('collect:end', {
+      sessionId,
+      collectMode,
+      rows: rows.length,
+      members: memberSet.size,
+      durationMs: Date.now() - collectStartedAt,
+      memoryStart: collectMemoryStart,
+      memoryEnd: this.getMemorySnapshotMb()
+    })
     return { rows, memberSet, firstTime, lastTime }
   }
 

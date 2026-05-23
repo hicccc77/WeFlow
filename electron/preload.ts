@@ -494,6 +494,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       total: number
       currentSession: string
       currentSessionId?: string
+      exportEngine?: 'rust' | 'typescript'
+      exportEngineLabel?: string
       phase: string
       phaseProgress?: number
       phaseTotal?: number
