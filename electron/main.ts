@@ -413,6 +413,7 @@ if (process.platform === 'darwin') {
 let mainWindowReady = false
 let shouldShowMain = true
 let isAppQuitting = false
+let isShutdownHandled = false
 let shutdownPromise: Promise<void> | null = null
 let tray: Tray | null = null
 let isClosePromptVisible = false
@@ -840,12 +841,47 @@ function resolveAppIconPath(iconName?: string): string {
     return join(process.resourcesPath, resolvedName)
   }
 
+  const candidates: string[] = []
   if (process.platform === 'darwin' && resolvedName === 'icon.icns') {
-    const macIconPath = join(__dirname, '../resources/icons/macos/icon.icns')
-    if (existsSync(macIconPath)) return macIconPath
+    candidates.push(
+      join(__dirname, '../resources/icons/macos/icon.icns'),
+      join(process.cwd(), 'resources/icons/macos/icon.icns')
+    )
+  }
+  candidates.push(
+    join(__dirname, `../public/${resolvedName}`),
+    join(process.cwd(), `public/${resolvedName}`)
+  )
+  if (resolvedName !== 'icon.png') {
+    candidates.push(
+      join(__dirname, '../public/icon.png'),
+      join(process.cwd(), 'public/icon.png')
+    )
   }
 
-  return join(__dirname, `../public/${resolvedName}`)
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+
+  return candidates[0] || join(__dirname, `../public/${resolvedName}`)
+}
+
+function resolveTrayIcon(): Electron.NativeImage | string {
+  const iconPath = resolveAppIconPath()
+  const image = nativeImage.createFromPath(iconPath)
+  if (!image.isEmpty()) return image
+
+  const pngCandidates = [
+    join(__dirname, '../public/icon.png'),
+    join(process.cwd(), 'public/icon.png')
+  ]
+  for (const pngPath of pngCandidates) {
+    if (!existsSync(pngPath)) continue
+    const png = nativeImage.createFromPath(pngPath)
+    if (!png.isEmpty()) return png
+  }
+
+  return iconPath
 }
 
 function createWindow(options: { autoShow?: boolean } = {}) {
@@ -4272,7 +4308,7 @@ app.whenReady().then(async () => {
   ensureWeChatRequestHeaderInterceptor()
   mainWindow = createWindow({ autoShow: false })
 
-  const resolvedTrayIcon = resolveAppIconPath()
+  const resolvedTrayIcon = resolveTrayIcon()
 
 
   try {
@@ -4356,10 +4392,22 @@ app.whenReady().then(async () => {
   })
 })
 
+const broadcastAppShuttingDown = (): void => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    try {
+      win.webContents.send('app:shutting-down')
+    } catch (error) {
+      logOptionalError('App.broadcastShuttingDown', error)
+    }
+  }
+}
+
 const shutdownAppServices = async (): Promise<void> => {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
     isAppQuitting = true
+    broadcastAppShuttingDown()
     // 销毁 tray 图标
     if (tray) {
       try { tray.destroy() } catch (error) { logOptionalError('App.shutdown.tray', error) }
@@ -4388,8 +4436,13 @@ const shutdownAppServices = async (): Promise<void> => {
   return shutdownPromise
 }
 
-app.on('before-quit', () => {
-  void shutdownAppServices()
+app.on('before-quit', (event) => {
+  if (isShutdownHandled) return
+  event.preventDefault()
+  isShutdownHandled = true
+  void shutdownAppServices().finally(() => {
+    app.exit(0)
+  })
 })
 
 app.on('window-all-closed', () => {

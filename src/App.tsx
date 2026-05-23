@@ -5,9 +5,10 @@ import Sidebar from './components/Sidebar'
 import RouteGuard from './components/RouteGuard'
 import WelcomePage from './pages/WelcomePage'
 import HomePage from './pages/HomePage'
-import ChatPage from './pages/ChatPage'
 import AgreementPage from './pages/AgreementPage'
 import ChatHistoryPage from './pages/ChatHistoryPage'
+
+const ChatPage = lazy(() => import('./pages/ChatPage'))
 
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
 const AnalyticsWelcomePage = lazy(() => import('./pages/AnalyticsWelcomePage'))
@@ -43,6 +44,7 @@ import UpdateProgressCapsule from './components/UpdateProgressCapsule'
 import LockScreen from './components/LockScreen'
 import { GlobalSessionMonitor } from './components/GlobalSessionMonitor'
 import WindowCloseDialog from './components/WindowCloseDialog'
+import { setAutoMediaTasksPaused } from './pages/Chat/chatPageCacheUtils'
 
 function RouteStateRedirect({ to }: { to: string }) {
   const location = useLocation()
@@ -103,6 +105,8 @@ function App() {
     ? settingsRouteState?.backgroundLocation ?? settingsBackgroundRef.current
     : location
   const isExportRoute = routeLocation.pathname === '/export'
+  const isChatRoute = routeLocation.pathname === '/chat'
+  const [chatKeepAliveMounted, setChatKeepAliveMounted] = useState(false)
   const [themeHydrated, setThemeHydrated] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showCloseDialog, setShowCloseDialog] = useState(false)
@@ -129,6 +133,12 @@ function App() {
       settingsBackgroundRef.current = location
     }
   }, [location])
+
+  useEffect(() => {
+    if (isChatRoute) {
+      setChatKeepAliveMounted(true)
+    }
+  }, [isChatRoute])
 
   useEffect(() => {
     const removeCloseConfirmListener = window.electronAPI.window.onCloseConfirmRequested((payload) => {
@@ -222,6 +232,15 @@ function App() {
     }
     saveTheme()
   }, [currentTheme, themeMode, themeHydrated])
+
+  useEffect(() => {
+    const removeShuttingDownListener = window.electronAPI?.app?.onShuttingDown?.(() => {
+      setAutoMediaTasksPaused(true)
+      setChatKeepAliveMounted(false)
+    })
+
+    return () => removeShuttingDownListener?.()
+  }, [])
 
   // 检查是否已同意协议
   useEffect(() => {
@@ -533,14 +552,16 @@ function App() {
     const standaloneInitialAvatarUrl = params.get('initialAvatarUrl')
     const standaloneInitialContactType = params.get('initialContactType')
     return (
-      <ChatPage
-        standaloneSessionWindow
-        initialSessionId={sessionId}
-        standaloneSource={standaloneSource}
-        standaloneInitialDisplayName={standaloneInitialDisplayName}
-        standaloneInitialAvatarUrl={standaloneInitialAvatarUrl}
-        standaloneInitialContactType={standaloneInitialContactType}
-      />
+      <LazyPage>
+        <ChatPage
+          standaloneSessionWindow
+          initialSessionId={sessionId}
+          standaloneSource={standaloneSource}
+          standaloneInitialDisplayName={standaloneInitialDisplayName}
+          standaloneInitialAvatarUrl={standaloneInitialAvatarUrl}
+          standaloneInitialContactType={standaloneInitialContactType}
+        />
+      </LazyPage>
     )
   }
 
@@ -732,11 +753,19 @@ function App() {
               </LazyPage>
             </div>
 
+            {chatKeepAliveMounted && (
+              <div className={`chat-keepalive-page ${isChatRoute ? 'active' : 'hidden'}`} aria-hidden={!isChatRoute}>
+                <LazyPage>
+                  <ChatPage isPageActive={isChatRoute} />
+                </LazyPage>
+              </div>
+            )}
+
             <Routes location={routeLocation}>
               <Route path="/" element={<HomePage />} />
               <Route path="/home" element={<HomePage />} />
               <Route path="/account-management" element={<LazyPage><AccountManagementPage /></LazyPage>} />
-              <Route path="/chat" element={<ChatPage />} />
+              <Route path="/chat" element={<div className="chat-route-anchor" aria-hidden="true" />} />
 
               <Route path="/analytics" element={<LazyPage><ChatAnalyticsHubPage /></LazyPage>} />
               <Route path="/analytics/private" element={<LazyPage><AnalyticsWelcomePage /></LazyPage>} />

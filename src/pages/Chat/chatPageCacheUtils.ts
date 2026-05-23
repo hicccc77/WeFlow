@@ -104,8 +104,17 @@ export function createBoundedCache<V>(options: BoundedCacheOptions<V>): BoundedC
 
 const autoMediaTaskQueue: Array<() => void> = []
 let autoMediaTaskRunningCount = 0
+let autoMediaTasksPaused = false
+
+export function setAutoMediaTasksPaused(paused: boolean): void {
+  autoMediaTasksPaused = paused
+}
 
 export function enqueueAutoMediaTask<T>(task: () => Promise<T>): Promise<T> {
+  if (autoMediaTasksPaused) {
+    return Promise.reject(new Error('AUTO_MEDIA_TASKS_PAUSED'))
+  }
+
   return new Promise<T>((resolve, reject) => {
     const runTask = () => {
       autoMediaTaskRunningCount += 1

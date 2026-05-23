@@ -1,11 +1,23 @@
-import { parentPort, workerData } from 'worker_threads'
+import { parentPort } from 'worker_threads'
 import { WcdbCore } from './services/wcdbCore'
 
 const core = new WcdbCore()
 
 if (parentPort) {
-    parentPort.on('message', async (msg) => {
+    let isShuttingDown = false
+    let messageChain = Promise.resolve()
+
+    const processMessage = async (msg: { id: number; type: string; payload: any }) => {
         const { id, type, payload } = msg
+
+        if (isShuttingDown && type !== 'close') {
+            parentPort!.postMessage({ id, error: 'Worker shutting down' })
+            return
+        }
+
+        if (type === 'close') {
+            isShuttingDown = true
+        }
 
         try {
             let result: any
@@ -307,5 +319,13 @@ if (parentPort) {
         } catch (e) {
             parentPort!.postMessage({ id, error: String(e) })
         }
+    }
+
+    parentPort.on('message', (msg) => {
+        messageChain = messageChain
+            .then(() => processMessage(msg))
+            .catch((error) => {
+                console.error('[wcdbWorker] Unhandled message error:', error)
+            })
     })
 }

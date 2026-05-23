@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 
 export function GlobalSessionMonitor() {
     const navigate = useNavigate()
+    const isShuttingDownRef = useRef(false)
     const {
         sessions,
         setSessions,
@@ -28,6 +29,7 @@ export function GlobalSessionMonitor() {
     // 处理数据库变更
     useEffect(() => {
         const handleDbChange = (_event: any, data: { type: string; json: string }) => {
+            if (isShuttingDownRef.current) return
             try {
                 const payload = JSON.parse(data.json)
                 const tableName = payload.table
@@ -50,7 +52,15 @@ export function GlobalSessionMonitor() {
         return () => { }
     }, [])
 
+    useEffect(() => {
+        const removeListener = window.electronAPI?.app?.onShuttingDown?.(() => {
+            isShuttingDownRef.current = true
+        })
+        return () => removeListener?.()
+    }, [])
+
     const refreshSessions = async () => {
+        if (isShuttingDownRef.current) return
         try {
             const result = await window.electronAPI.chat.getSessions()
             if (result.success && result.sessions && Array.isArray(result.sessions)) {

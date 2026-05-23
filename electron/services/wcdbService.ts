@@ -24,6 +24,7 @@ export class WcdbService {
   private userDataPath: string | null = null
   private logEnabled = false
   private monitorListener: ((type: string, json: string) => void) | null = null
+  private isShuttingDown = false
 
   constructor() {}
 
@@ -75,8 +76,7 @@ export class WcdbService {
       })
 
       this.worker.on('exit', (code) => {
-        // Worker 退出，需要 reject 所有 pending promises
-        if (code !== 0) {
+        if (code !== 0 && !this.isShuttingDown) {
           console.error('WCDB Worker 异常退出，退出码:', code)
           const errorMsg = `Worker 异常退出 (退出码: ${code})。可能是数据服务加载失败，请检查是否安装了 Visual C++ Redistributable。`
           for (const [id, p] of this.pending) {
@@ -105,7 +105,20 @@ export class WcdbService {
    * 发送消息到 Worker 并等待响应
    */
   private callWorker<T>(type: string, payload: any = {}): Promise<T> {
+    if (this.isShuttingDown) {
+      return Promise.reject(new Error('WCDB Worker 正在关闭'))
+    }
     if (!this.worker) this.initWorker()
+    if (!this.worker) return Promise.reject(new Error('WCDB Worker 不可用'))
+
+    return new Promise((resolve, reject) => {
+      const id = ++this.messageId
+      this.pending.set(id, { resolve, reject })
+      this.worker!.postMessage({ id, type, payload })
+    })
+  }
+
+  private postWorkerMessage<T>(type: string, payload: any = {}): Promise<T> {
     if (!this.worker) return Promise.reject(new Error('WCDB Worker 不可用'))
 
     return new Promise((resolve, reject) => {
@@ -182,11 +195,28 @@ export class WcdbService {
    * 关闭服务
    */
   async shutdown(): Promise<void> {
-    try { await this.close() } catch {}
-    if (this.worker) {
-      try { await this.worker.terminate() } catch {}
-      this.worker = null
+    if (this.isShuttingDown) return
+    this.isShuttingDown = true
+
+    for (const [, pending] of this.pending) {
+      pending.reject(new Error('WCDB Worker 正在关闭'))
     }
+    this.pending.clear()
+
+    if (!this.worker) return
+
+    try {
+      await Promise.race([
+        this.postWorkerMessage<{ success?: boolean }>('close'),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000))
+      ])
+    } catch {}
+
+    const worker = this.worker
+    this.worker = null
+    try {
+      await worker.terminate()
+    } catch {}
   }
 
   /**

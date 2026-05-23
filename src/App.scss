@@ -32,7 +32,8 @@
   background: var(--bg-primary);
 }
 
-.export-keepalive-page {
+.export-keepalive-page,
+.chat-keepalive-page {
   height: 100%;
 
   &.hidden {
@@ -40,7 +41,8 @@
   }
 }
 
-.export-route-anchor {
+.export-route-anchor,
+.chat-route-anchor {
   display: none;
 }
 

@@ -47,7 +47,8 @@ import {
   createBoundedCache,
   enqueueAutoMediaTask,
   estimateStringBytes,
-  scheduleWhenIdle
+  scheduleWhenIdle,
+  setAutoMediaTasksPaused
 } from './Chat/chatPageCacheUtils'
 import { runHardlinkPreloadIfNeeded } from '../utils/runHardlinkPreload'
 import { collectImageHardlinkMd5s } from '../utils/collectImageHardlinkMd5s'
@@ -645,6 +646,7 @@ interface ChatPageProps {
   standaloneInitialDisplayName?: string | null
   standaloneInitialAvatarUrl?: string | null
   standaloneInitialContactType?: string | null
+  isPageActive?: boolean
 }
 
 type StandaloneLoadStage = 'idle' | 'connecting' | 'loading' | 'ready'
@@ -1260,7 +1262,8 @@ function ChatPage(props: ChatPageProps) {
     standaloneSource = null,
     standaloneInitialDisplayName = null,
     standaloneInitialAvatarUrl = null,
-    standaloneInitialContactType = null
+    standaloneInitialContactType = null,
+    isPageActive
   } = props
   const normalizedInitialSessionId = useMemo(() => String(initialSessionId || '').trim(), [initialSessionId])
   const normalizedStandaloneSource = useMemo(() => String(standaloneSource || '').trim().toLowerCase(), [standaloneSource])
@@ -1270,6 +1273,12 @@ function ChatPage(props: ChatPageProps) {
   const shouldHideStandaloneDetailButton = standaloneSessionWindow && normalizedStandaloneSource === 'export'
   const navigate = useNavigate()
   const location = useLocation()
+
+  useEffect(() => {
+    if (isPageActive === undefined) return
+    setAutoMediaTasksPaused(!isPageActive)
+    return () => setAutoMediaTasksPaused(false)
+  }, [isPageActive])
 
   const {
     isConnected,
