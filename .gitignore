@@ -29,6 +29,7 @@ test/
 # Build output
 out
 release
+native/**/target/
 
 # Database
 *.db
