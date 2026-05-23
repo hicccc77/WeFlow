@@ -15,6 +15,9 @@ import DualReportPage from './pages/DualReportPage'
 import DualReportWindow from './pages/DualReportWindow'
 import AgreementPage from './pages/AgreementPage'
 import GroupAnalyticsPage from './pages/GroupAnalyticsPage'
+import GroupAiRunnerPage from './pages/GroupAiRunnerPage'
+import GroupAiHistoryPage from './pages/GroupAiHistoryPage'
+import GroupAiSettingsPage from './pages/GroupAiSettingsPage'
 import SettingsPage from './pages/SettingsPage'
 import ExportPage from './pages/ExportPage'
 import MyFootprintPage from './pages/MyFootprintPage'
@@ -707,6 +710,9 @@ function App() {
               <Route path="/analytics/private" element={<AnalyticsWelcomePage />} />
               <Route path="/analytics/private/view" element={<AnalyticsPage />} />
               <Route path="/analytics/group" element={<GroupAnalyticsPage />} />
+              <Route path="/analytics/group/ai-runner" element={<GroupAiRunnerPage />} />
+              <Route path="/analytics/group/ai-history" element={<GroupAiHistoryPage />} />
+              <Route path="/analytics/group/ai-settings" element={<GroupAiSettingsPage />} />
               <Route path="/analytics/view" element={<RouteStateRedirect to="/analytics/private/view" />} />
               <Route path="/group-analytics" element={<RouteStateRedirect to="/analytics/group" />} />
               <Route path="/annual-report" element={<AnnualReportPage />} />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Users, BarChart3, Clock, Image, Loader2, RefreshCw, Medal, Search, X, ChevronLeft, Copy, Check, Download, ChevronDown, MessageSquare, Calendar, PieChart, Hash, Smile } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import ReactECharts from 'echarts-for-react'
@@ -147,6 +147,7 @@ const getMemberMessagePreview = (message: Message) => {
 
 function GroupAnalyticsPage() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [groups, setGroups] = useState<GroupChatInfo[]>([])
   const [filteredGroups, setFilteredGroups] = useState<GroupChatInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -1148,6 +1149,25 @@ function GroupAnalyticsPage() {
           <p>{selectedGroup?.memberCount} 位成员</p>
         </div>
       </div>
+      <div className="ai-entry-row">
+        <button
+          className="ai-entry-btn"
+          onClick={() => navigate('/analytics/group/ai-runner', {
+            state: {
+              groupId: selectedGroup?.username,
+              groupName: selectedGroup?.displayName
+            }
+          })}
+        >
+          AI识别
+        </button>
+        <button className="ai-entry-btn" onClick={() => navigate('/analytics/group/ai-history')}>
+          分析历史
+        </button>
+        <button className="ai-entry-btn" onClick={() => navigate('/analytics/group/ai-settings')}>
+          AI设置
+        </button>
+      </div>
       <div className="function-grid">
         <div className="function-card" onClick={() => handleFunctionSelect('members')}>
           <Users size={32} />
@@ -1849,4 +1869,3 @@ function GroupAnalyticsPage() {
 }
 
 export default GroupAnalyticsPage
-

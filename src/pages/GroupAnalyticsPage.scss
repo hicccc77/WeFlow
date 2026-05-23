@@ -587,6 +587,28 @@
     gap: 16px;
   }
 
+  .ai-entry-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ai-entry-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: var(--bg-hover);
+      border-color: var(--primary);
+    }
+  }
+
   .function-card {
     min-height: 148px;
     padding: 20px 18px;
