@@ -17,10 +17,12 @@
     "rebuild": "electron-rebuild",
     "dev": "node scripts/prepare-electron-runtime.cjs && vite",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "node scripts/prepare-electron-runtime.cjs && vite --mode electron",
-    "electron:build": "npm run build"
+    "electron:build": "npm run build",
+    "build:rust-exporter": "node scripts/build-rust-exporter.cjs"
   },
   "dependencies": {
     "@vscode/sudo-prompt": "^9.3.2",
@@ -60,7 +62,8 @@
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
     "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "vitest": "^4.1.7"
   },
   "pnpm": {
     "overrides": {
