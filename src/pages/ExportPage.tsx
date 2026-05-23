@@ -122,6 +122,7 @@ interface TaskProgress {
   current: number
   total: number
   currentName: string
+  engineLabel: string
   phase: ExportProgress['phase'] | ''
   phaseLabel: string
   phaseProgress: number
@@ -316,6 +317,7 @@ const createEmptyProgress = (): TaskProgress => ({
   current: 0,
   total: 0,
   currentName: '',
+  engineLabel: '',
   phase: '',
   phaseLabel: '',
   phaseProgress: 0,
@@ -345,6 +347,7 @@ const areTaskProgressEqual = (left: TaskProgress, right: TaskProgress): boolean 
   left.current === right.current &&
   left.total === right.total &&
   left.currentName === right.currentName &&
+  left.engineLabel === right.engineLabel &&
   left.phase === right.phase &&
   left.phaseLabel === right.phaseLabel &&
   left.phaseProgress === right.phaseProgress &&
@@ -378,6 +381,7 @@ const buildProgressPayloadSignature = (payload: ExportProgress): string => ([
   String(payload.phase || ''),
   String(payload.currentSessionId || ''),
   String(payload.currentSession || ''),
+  String(payload.exportEngineLabel || ''),
   String(payload.phaseLabel || ''),
   normalizeProgressFloat(payload.current, 4),
   normalizeProgressFloat(payload.total, 4),
@@ -1956,6 +1960,7 @@ const TaskCenterModal = memo(function TaskCenterModal({
                 const sessionProgressLabel = completedSessionTotal > 0
                   ? `会话 ${completedSessionCount}/${completedSessionTotal}`
                   : '会话处理中'
+                const engineLabel = String(task.progress.engineLabel || '').trim()
                 const currentSessionRatio = task.progress.phaseTotal > 0
                   ? Math.max(0, Math.min(1, task.progress.phaseProgress / task.progress.phaseTotal))
                   : null
@@ -2010,6 +2015,7 @@ const TaskCenterModal = memo(function TaskCenterModal({
                             />
                           </div>
                           <div className="task-progress-text">
+                            {engineLabel ? `引擎：${engineLabel} · ` : ''}
                             {`${sessionProgressLabel} · ${effectiveMessageProgressLabel}`}
                             {phaseMetricLabel ? ` · ${phaseMetricLabel}` : ''}
                             {mediaLiveMetricLabel ? ` · ${mediaLiveMetricLabel}` : ''}
@@ -2296,6 +2302,7 @@ function ExportPage() {
   const [exportDefaultVoiceAsText, setExportDefaultVoiceAsText] = useState(false)
   const [exportDefaultExcelCompactColumns, setExportDefaultExcelCompactColumns] = useState(true)
   const [exportDefaultConcurrency, setExportDefaultConcurrency] = useState(2)
+  const [exportEnginePreference, setExportEnginePreference] = useState<configService.ExportEnginePreference>('auto')
 
   const [options, setOptions] = useState<ExportOptions>({
     format: 'json',
@@ -3034,7 +3041,7 @@ function ExportPage() {
     automationTasksReadyRef.current = false
     let isReady = true
     try {
-      const [savedPath, savedFormat, savedAvatars, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedTxtColumns, savedConcurrency, savedSessionMap, savedContentMap, savedSessionRecordMap, savedSnsPostCount, savedWriteLayout, savedSessionNameWithTypePrefix, savedDefaultDateRange, savedFileNamingMode, exportCacheScope] = await Promise.all([
+      const [savedPath, savedFormat, savedAvatars, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedTxtColumns, savedConcurrency, savedEnginePreference, savedSessionMap, savedContentMap, savedSessionRecordMap, savedSnsPostCount, savedWriteLayout, savedSessionNameWithTypePrefix, savedDefaultDateRange, savedFileNamingMode, exportCacheScope] = await Promise.all([
         configService.getExportPath(),
         configService.getExportDefaultFormat(),
         configService.getExportDefaultAvatars(),
@@ -3043,6 +3050,7 @@ function ExportPage() {
         configService.getExportDefaultExcelCompactColumns(),
         configService.getExportDefaultTxtColumns(),
         configService.getExportDefaultConcurrency(),
+        configService.getExportEnginePreference(),
         configService.getExportLastSessionRunMap(),
         configService.getExportLastContentRunMap(),
         configService.getExportSessionRecordMap(),
@@ -3082,6 +3090,7 @@ function ExportPage() {
       setExportDefaultVoiceAsText(savedVoiceAsText ?? false)
       setExportDefaultExcelCompactColumns(savedExcelCompactColumns ?? true)
       setExportDefaultConcurrency(savedConcurrency ?? 2)
+      setExportEnginePreference(savedEnginePreference)
       setExportDefaultFileNamingMode(savedFileNamingMode ?? 'classic')
       setAutomationTasks(automationTaskItem?.tasks || [])
       automationTasksReadyRef.current = true
@@ -5177,6 +5186,7 @@ function ExportPage() {
 
     const base: ElectronExportOptions = {
       format: sourceOptions.format,
+      engine: exportEnginePreference,
       exportAvatars: sourceOptions.exportAvatars,
       exportMedia: exportMediaEnabled,
       exportImages: sourceOptions.exportImages,
@@ -5211,7 +5221,7 @@ function ExportPage() {
           ...base,
           contentType,
           exportConcurrency: textExportConcurrency,
-          exportAvatars: base.exportAvatars,
+          exportAvatars: false,
           exportMedia: false,
           exportImages: false,
           exportVoices: false,
@@ -5711,6 +5721,7 @@ function ExportPage() {
           current: payload.current,
           total: payload.total,
           currentName: payload.currentSession || '',
+          engineLabel: String(payload.exportEngineLabel || task.progress.engineLabel || ''),
           phase: payload.phase,
           phaseLabel: payload.phaseLabel || '',
           phaseProgress: payload.phaseProgress || 0,
@@ -8704,6 +8715,9 @@ function ExportPage() {
     }
     if (typeof patch.concurrency === 'number') {
       setExportDefaultConcurrency(patch.concurrency)
+    }
+    if (patch.engine) {
+      setExportEnginePreference(patch.engine)
     }
   }, [])
 

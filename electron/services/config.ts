@@ -58,6 +58,7 @@ interface ConfigSchema {
   autoTranscribeVoice: boolean
   transcribeLanguages: string[]
   exportDefaultConcurrency: number
+  exportEngine: 'auto' | 'rust' | 'typescript'
   analyticsExcludedUsernames: string[]
 
   // 安全相关
@@ -198,6 +199,7 @@ export class ConfigService {
       autoTranscribeVoice: false,
       transcribeLanguages: ['zh'],
       exportDefaultConcurrency: 4,
+      exportEngine: 'auto',
       analyticsExcludedUsernames: [],
       authEnabled: false,
       authPassword: '',

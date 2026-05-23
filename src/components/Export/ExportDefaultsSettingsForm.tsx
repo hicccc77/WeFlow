@@ -20,6 +20,7 @@ export interface ExportDefaultsSettingsPatch {
   voiceAsText?: boolean
   excelCompactColumns?: boolean
   concurrency?: number
+  engine?: configService.ExportEnginePreference
 }
 
 interface ExportDefaultsSettingsFormProps {
@@ -52,6 +53,12 @@ const exportFileNamingModeOptions: Array<{ value: configService.ExportFileNaming
 
 const exportConcurrencyOptions = [1, 2, 3, 4, 5, 6] as const
 
+const exportEngineOptions: Array<{ value: configService.ExportEnginePreference; label: string; desc: string }> = [
+  { value: 'auto', label: '自动', desc: '纯文本 JSON/TXT/HTML/JSONL/WeClone 优先 Rust，其他情况使用 TypeScript；Rust 失败会回退。' },
+  { value: 'rust', label: 'Rust', desc: '高速流式写入，适合超大文本导出；仅支持无媒体、无头像、无语音转文字的 JSON/TXT/HTML/JSONL/WeClone，失败不回退。' },
+  { value: 'typescript', label: 'TypeScript', desc: '完整兼容旧导出能力，支持媒体、头像、语音转文字和所有格式；手动选择后不会调用 Rust。' }
+]
+
 const getOptionLabel = (options: ReadonlyArray<{ value: string; label: string }>, value: string) => {
   return options.find((option) => option.value === value)?.label ?? value
 }
@@ -81,11 +88,12 @@ export function ExportDefaultsSettingsForm({
   const [exportDefaultVoiceAsText, setExportDefaultVoiceAsText] = useState(false)
   const [exportDefaultExcelCompactColumns, setExportDefaultExcelCompactColumns] = useState(true)
   const [exportDefaultConcurrency, setExportDefaultConcurrency] = useState(2)
+  const [exportEnginePreference, setExportEnginePreference] = useState<configService.ExportEnginePreference>('auto')
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const [savedFormat, savedAvatars, savedDateRange, savedFileNamingMode, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedConcurrency] = await Promise.all([
+      const [savedFormat, savedAvatars, savedDateRange, savedFileNamingMode, savedMedia, savedVoiceAsText, savedExcelCompactColumns, savedConcurrency, savedEnginePreference] = await Promise.all([
         configService.getExportDefaultFormat(),
         configService.getExportDefaultAvatars(),
         configService.getExportDefaultDateRange(),
@@ -93,7 +101,8 @@ export function ExportDefaultsSettingsForm({
         configService.getExportDefaultMedia(),
         configService.getExportDefaultVoiceAsText(),
         configService.getExportDefaultExcelCompactColumns(),
-        configService.getExportDefaultConcurrency()
+        configService.getExportDefaultConcurrency(),
+        configService.getExportEnginePreference()
       ])
 
       if (cancelled) return
@@ -112,6 +121,7 @@ export function ExportDefaultsSettingsForm({
       setExportDefaultVoiceAsText(savedVoiceAsText ?? false)
       setExportDefaultExcelCompactColumns(savedExcelCompactColumns ?? true)
       setExportDefaultConcurrency(savedConcurrency ?? 2)
+      setExportEnginePreference(savedEnginePreference)
     })()
 
     return () => {
@@ -166,6 +176,34 @@ export function ExportDefaultsSettingsForm({
                 }}
               >
                 {option}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="form-group export-engine-setting-group">
+        <div className="form-copy">
+          <label>导出器引擎</label>
+          <span className="form-hint">手动指定 Rust 或 TypeScript 后严格按所选引擎执行；所选引擎报错时不自动回退。</span>
+        </div>
+        <div className="form-control">
+          <div className="engine-grid" role="radiogroup" aria-label="导出器引擎">
+            {exportEngineOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`engine-card ${exportEnginePreference === option.value ? 'active' : ''}`}
+                aria-pressed={exportEnginePreference === option.value}
+                onClick={async () => {
+                  setExportEnginePreference(option.value)
+                  await configService.setExportEnginePreference(option.value)
+                  onDefaultsChanged?.({ engine: option.value })
+                  notify(`已切换导出器引擎：${option.label}`, true)
+                }}
+              >
+                <span className="engine-label">{option.label}</span>
+                <span className="engine-desc">{option.desc}</span>
               </button>
             ))}
           </div>

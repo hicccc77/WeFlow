@@ -38,6 +38,7 @@ export const CONFIG_KEYS = {
   EXPORT_DEFAULT_EXCEL_COMPACT_COLUMNS: 'exportDefaultExcelCompactColumns',
   EXPORT_DEFAULT_TXT_COLUMNS: 'exportDefaultTxtColumns',
   EXPORT_DEFAULT_CONCURRENCY: 'exportDefaultConcurrency',
+  EXPORT_ENGINE: 'exportEngine',
   EXPORT_WRITE_LAYOUT: 'exportWriteLayout',
   EXPORT_SESSION_NAME_PREFIX_ENABLED: 'exportSessionNamePrefixEnabled',
   EXPORT_LAST_SESSION_RUN_MAP: 'exportLastSessionRunMap',
@@ -152,6 +153,7 @@ export interface ExportDefaultMediaConfig {
 }
 
 export type ExportFileNamingMode = 'classic' | 'date-range'
+export type ExportEnginePreference = 'auto' | 'rust' | 'typescript'
 
 export type WindowCloseBehavior = 'ask' | 'tray' | 'quit'
 export type QuoteLayout = 'quote-top' | 'quote-bottom'
@@ -606,6 +608,16 @@ export async function getExportDefaultConcurrency(): Promise<number | null> {
 // 设置导出默认并发数
 export async function setExportDefaultConcurrency(concurrency: number): Promise<void> {
   await config.set(CONFIG_KEYS.EXPORT_DEFAULT_CONCURRENCY, concurrency)
+}
+
+export async function getExportEnginePreference(): Promise<ExportEnginePreference> {
+  const value = await config.get(CONFIG_KEYS.EXPORT_ENGINE)
+  if (value === 'rust' || value === 'typescript') return value
+  return 'auto'
+}
+
+export async function setExportEnginePreference(engine: ExportEnginePreference): Promise<void> {
+  await config.set(CONFIG_KEYS.EXPORT_ENGINE, engine)
 }
 
 export type ExportWriteLayout = 'A' | 'B' | 'C'

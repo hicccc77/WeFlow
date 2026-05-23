@@ -120,7 +120,16 @@
     margin-bottom: 10px;
   }
 
-  .format-card {
+  .engine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  .format-card,
+  .engine-card {
     width: 100%;
     min-height: 0;
     border: 1px solid var(--border-color);
@@ -145,14 +154,16 @@
     }
   }
 
-  .format-label {
+  .format-label,
+  .engine-label {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
   }
 
-  .format-desc {
+  .format-desc,
+  .engine-desc {
     margin-top: 1px;
     font-size: 11px;
     color: var(--text-tertiary);
@@ -397,11 +408,24 @@
       align-items: stretch;
     }
 
-    .format-setting-group .form-control {
+    .format-setting-group .form-control,
+    .export-engine-setting-group .form-control {
       justify-content: flex-start;
     }
 
     .format-grid {
+      max-width: none;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-bottom: 0;
+    }
+
+    .export-engine-setting-group {
+      grid-template-columns: 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .engine-grid {
       max-width: none;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       margin-bottom: 0;
@@ -454,6 +478,10 @@
 
     .format-grid {
       grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+    }
+
+    .engine-grid {
+      grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
     }
   }
 }
@@ -537,14 +565,21 @@
     gap: 10px;
   }
 
-  .format-grid {
+  .export-engine-setting-group {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .format-grid,
+  .engine-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     width: 100%;
   }
 
-  .format-card {
+  .format-card,
+  .engine-card {
     min-height: 68px;
     padding: 10px 12px;
     border-radius: 8px;
@@ -552,7 +587,9 @@
   }
 
   .format-label,
-  .format-desc {
+  .format-desc,
+  .engine-label,
+  .engine-desc {
     max-width: 100%;
     overflow-wrap: anywhere;
   }
@@ -581,6 +618,10 @@
 
     .format-grid {
       grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+    }
+
+    .engine-grid {
+      grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
     }
   }
 }
