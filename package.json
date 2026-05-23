@@ -12,6 +12,10 @@
     "url": "https://github.com/hicccc77/WeFlow"
   },
   "//": "二改不应改变此处的作者与应用信息",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "postinstall": "electron-builder install-app-deps && node scripts/prepare-electron-runtime.cjs",
     "rebuild": "electron-rebuild",
@@ -195,6 +199,10 @@
   "overrides": {
     "picomatch": "^4.0.4",
     "tar": "^7.5.13",
-    "immutable": "^5.1.5"
+    "immutable": "^5.1.5",
+    "uuid": "^11.1.1",
+    "brace-expansion": "^5.0.6",
+    "fast-uri": "^3.1.2",
+    "ip-address": "^10.1.1"
   }
 }
