@@ -1227,6 +1227,38 @@
         }
     }
 
+    .search-mode-row {
+        display: flex;
+        gap: 4px;
+        margin-top: 6px;
+    }
+
+    .search-mode-btn {
+        flex: 1;
+        height: 26px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-tertiary);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        padding: 0 6px;
+        text-align: center;
+
+        &:hover {
+            color: var(--text-secondary);
+            border-color: var(--text-tertiary);
+        }
+
+        &.active {
+            background: rgba(var(--primary-rgb), 0.12);
+            border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+            color: var(--primary);
+            font-weight: 600;
+        }
+    }
+
     /* Contact Widget - Refactored */
     .contact-widget {
         display: flex;

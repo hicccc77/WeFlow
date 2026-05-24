@@ -521,8 +521,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 朋友圈
   sns: {
-    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) =>
-      ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime),
+    getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, searchMode?: string) =>
+      ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime, searchMode),
     getSnsUsernames: () => ipcRenderer.invoke('sns:getSnsUsernames'),
     getUserPostCounts: () => ipcRenderer.invoke('sns:getUserPostCounts'),
     getExportStatsFast: () => ipcRenderer.invoke('sns:getExportStatsFast'),

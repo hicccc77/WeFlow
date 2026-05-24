@@ -1165,65 +1165,136 @@ class SnsService {
         })
     }
 
-    async getTimeline(limit: number = 20, offset: number = 0, usernames?: string[], keyword?: string, startTime?: number, endTime?: number): Promise<{ success: boolean; timeline?: SnsPost[]; error?: string }> {
-        const result = await wcdbService.getSnsTimeline(limit, offset, usernames, keyword, startTime, endTime)
-        if (!result.success || !result.timeline || result.timeline.length === 0) return result
+    // 富集单条帖子数据
+    private enrichPost(post: any): any {
+        const contact = this.contactCache.get(post.username)
+        const isVideoPost = post.type === 15
+        const rawXml = post.rawXml || ''
+        const videoKey = extractVideoKey(rawXml)
+        const location = this.mergeLocation(
+            this.normalizeLocation((post as { location?: unknown }).location),
+            this.parseLocationFromXml(rawXml)
+        )
 
-        const enrichedTimeline = result.timeline.map((post: any) => {
-            const contact = this.contactCache.get(post.username)
-            const isVideoPost = post.type === 15
-            const rawXml = post.rawXml || ''
-            const videoKey = extractVideoKey(rawXml)
-            const location = this.mergeLocation(
-                this.normalizeLocation((post as { location?: unknown }).location),
-                this.parseLocationFromXml(rawXml)
-            )
+        const fixedMedia = (post.media || []).map((m: any) => ({
+            url: fixSnsUrl(m.url, m.token, isVideoPost),
+            thumb: fixSnsUrl(m.thumb, m.token, false),
+            md5: m.md5,
+            token: m.token,
+            key: isVideoPost ? (videoKey || m.key) : m.key,
+            encIdx: m.encIdx || m.enc_idx,
+            livePhoto: m.livePhoto ? {
+                ...m.livePhoto,
+                url: fixSnsUrl(m.livePhoto.url, m.livePhoto.token, true),
+                thumb: fixSnsUrl(m.livePhoto.thumb, m.livePhoto.token, false),
+                token: m.livePhoto.token,
+                key: videoKey || m.livePhoto.key || m.key,
+                encIdx: m.livePhoto.encIdx || m.livePhoto.enc_idx
+            } : undefined
+        }))
 
-            const fixedMedia = (post.media || []).map((m: any) => ({
-                url: fixSnsUrl(m.url, m.token, isVideoPost),
-                thumb: fixSnsUrl(m.thumb, m.token, false),
-                md5: m.md5,
-                token: m.token,
-                key: isVideoPost ? (videoKey || m.key) : m.key,
-                encIdx: m.encIdx || m.enc_idx,
-                livePhoto: m.livePhoto ? {
-                    ...m.livePhoto,
-                    url: fixSnsUrl(m.livePhoto.url, m.livePhoto.token, true),
-                    thumb: fixSnsUrl(m.livePhoto.thumb, m.livePhoto.token, false),
-                    token: m.livePhoto.token,
-                    key: videoKey || m.livePhoto.key || m.key,
-                    encIdx: m.livePhoto.encIdx || m.livePhoto.enc_idx
-                } : undefined
-            }))
+        const dllComments: any[] = post.comments || []
+        const hasEmojisInDll = dllComments.some((c: any) => c.emojis && c.emojis.length > 0)
 
-            //数据服务已返回完整评论数据（含 emojis、refNickname）
-            // 如果数据服务评论缺少表情包信息，回退到从 rawXml 重新解析
-            const dllComments: any[] = post.comments || []
-            const hasEmojisInDll = dllComments.some((c: any) => c.emojis && c.emojis.length > 0)
+        let finalComments: any[]
+        if (dllComments.length > 0 && (hasEmojisInDll || !rawXml)) {
+            finalComments = this.fixCommentRefs(dllComments)
+        } else if (rawXml) {
+            const xmlComments = parseCommentsFromXml(rawXml)
+            finalComments = xmlComments.length > 0 ? xmlComments : this.fixCommentRefs(dllComments)
+        } else {
+            finalComments = this.fixCommentRefs(dllComments)
+        }
 
-            let finalComments: any[]
-            if (dllComments.length > 0 && (hasEmojisInDll || !rawXml)) {
-                //数据服务数据完整，直接使用
-                finalComments = this.fixCommentRefs(dllComments)
-            } else if (rawXml) {
-                // 回退：从 rawXml 重新解析（兼容旧版 DLL）
-                const xmlComments = parseCommentsFromXml(rawXml)
-                finalComments = xmlComments.length > 0 ? xmlComments : this.fixCommentRefs(dllComments)
-            } else {
-                finalComments = this.fixCommentRefs(dllComments)
-            }
+        return {
+            ...post,
+            avatarUrl: contact?.avatarUrl,
+            nickname: post.nickname || contact?.displayName || post.username,
+            media: fixedMedia,
+            comments: finalComments,
+            location
+        }
+    }
 
-            return {
-                ...post,
-                avatarUrl: contact?.avatarUrl,
-                nickname: post.nickname || contact?.displayName || post.username,
-                media: fixedMedia,
-                comments: finalComments,
-                location
-            }
+    // 检查帖子是否匹配关键词（正文或评论）
+    private postMatchesKeyword(post: any, kw: string, searchMode: string): boolean {
+        const contentMatch = (post.contentDesc || '').toLowerCase().includes(kw)
+        if (searchMode === 'content') return contentMatch
+        const commentMatch = post.comments && post.comments.some((c: any) => {
+            return (c.content || '').toLowerCase().includes(kw) ||
+                   (c.nickname || '').toLowerCase().includes(kw)
         })
+        if (searchMode === 'comment') return commentMatch
+        return contentMatch || commentMatch
+    }
 
-        return { ...result, timeline: enrichedTimeline }
+    async getTimeline(limit: number = 20, offset: number = 0, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, searchMode?: string): Promise<{ success: boolean; timeline?: SnsPost[]; error?: string }> {
+        // 纯正文模式或无关键词：直接用 DLL 搜索（全库）
+        const mode = searchMode || 'content'
+        if (mode === 'content' || !keyword) {
+            const result = await wcdbService.getSnsTimeline(limit, offset, usernames, keyword, startTime, endTime)
+            if (!result.success || !result.timeline || result.timeline.length === 0) return result
+            return { ...result, timeline: result.timeline.map((post: any) => this.enrichPost(post)) }
+        }
+
+        const kw = keyword.toLowerCase()
+        const seen = new Set<string>()
+
+        if (mode === 'all') {
+            // 全部模式：DLL 正文搜索（全库） + 全库扫描补评论
+            const [contentResult] = await Promise.all([
+                wcdbService.getSnsTimeline(100000, 0, usernames, keyword, startTime, endTime)
+            ])
+            const merged: any[] = []
+            if (contentResult.success && contentResult.timeline) {
+                for (const post of contentResult.timeline) {
+                    if (!seen.has(post.id)) {
+                        seen.add(post.id)
+                        merged.push(post)
+                    }
+                }
+            }
+            // 全库扫描找评论匹配的帖子（不限上限，扫全库）
+            const BATCH_SIZE = 200
+            let dllOffset = 0
+            while (true) {
+                const result = await wcdbService.getSnsTimeline(BATCH_SIZE, dllOffset, usernames, '', startTime, endTime)
+                if (!result.success || !result.timeline || result.timeline.length === 0) break
+                for (const post of result.timeline) {
+                    if (seen.has(post.id)) continue
+                    if (this.postMatchesKeyword(post, kw, mode)) {
+                        seen.add(post.id)
+                        merged.push(post)
+                    }
+                }
+                dllOffset += BATCH_SIZE
+                if (result.timeline.length < BATCH_SIZE) break
+            }
+            const page = merged.slice(offset, offset + limit)
+            return { success: true, timeline: page.map((post: any) => this.enrichPost(post)) }
+        }
+
+        // 评论模式：全库扫描 + 客户端过滤评论
+        const BATCH_SIZE = 200
+        const matches: any[] = []
+        let dllOffset = 0
+
+        while (true) {
+            const result = await wcdbService.getSnsTimeline(BATCH_SIZE, dllOffset, usernames, '', startTime, endTime)
+            if (!result.success || !result.timeline || result.timeline.length === 0) break
+
+            for (const post of result.timeline) {
+                if (this.postMatchesKeyword(post, kw, mode)) {
+                    matches.push(post)
+                }
+            }
+
+            dllOffset += BATCH_SIZE
+            if (result.timeline.length < BATCH_SIZE) break
+        }
+
+        const page = matches.slice(offset, offset + limit)
+        return { success: true, timeline: page.map((post: any) => this.enrichPost(post)) }
     }
 
     async debugResource(url: string): Promise<{ success: boolean; status?: number; headers?: any; error?: string }> {

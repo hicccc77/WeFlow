@@ -2695,8 +2695,8 @@ function registerIpcHandlers() {
     return chatService.exportMyFootprint(beginTimestamp, endTimestamp, format, filePath)
   })
 
-  ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) => {
-    return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+  ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number, searchMode?: string) => {
+    return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime, searchMode)
   })
 
   ipcMain.handle('sns:getSnsUsernames', async () => {

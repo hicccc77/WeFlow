@@ -173,6 +173,7 @@ export default function SnsPage() {
 
     // Filter states
     const [searchKeyword, setSearchKeyword] = useState('')
+    const [searchMode, setSearchMode] = useState<'all' | 'content' | 'comment'>('all')
     const [jumpTargetDate, setJumpTargetDate] = useState<Date | undefined>(undefined)
 
     // Contacts state
@@ -240,6 +241,7 @@ export default function SnsPage() {
     const overviewStatsRef = useRef<SnsOverviewStats>(overviewStats)
     const overviewStatsStatusRef = useRef<OverviewStatsStatus>(overviewStatsStatus)
     const searchKeywordRef = useRef(searchKeyword)
+    const searchModeRef = useRef<'all' | 'content' | 'comment'>(searchMode)
     const jumpTargetDateRef = useRef<Date | undefined>(jumpTargetDate)
     const selectedContactUsernamesRef = useRef<string[]>(selectedContactUsernames)
     const cacheScopeKeyRef = useRef('')
@@ -280,6 +282,9 @@ export default function SnsPage() {
     useEffect(() => {
         searchKeywordRef.current = searchKeyword
     }, [searchKeyword])
+    useEffect(() => {
+        searchModeRef.current = searchMode
+    }, [searchMode])
     useEffect(() => {
         jumpTargetDateRef.current = jumpTargetDate
     }, [jumpTargetDate])
@@ -1027,8 +1032,9 @@ export default function SnsPage() {
         else setLoading(true)
 
         try {
+            const currentSearchMode = searchModeRef.current
+            const effectiveKeyword = searchKeywordRef.current
             const limit = 20
-            const currentSearchKeyword = searchKeywordRef.current
             const currentJumpTargetDate = jumpTargetDateRef.current
             const currentSelectedContactUsernames = selectedContactUsernamesRef.current
             const selectedUsernames = currentSelectedContactUsernames.length > 0
@@ -1051,9 +1057,10 @@ export default function SnsPage() {
                         limit,
                         0,
                         selectedUsernames,
-                        currentSearchKeyword,
+                        effectiveKeyword,
                         topTs + 1,
-                        undefined
+                        undefined,
+                        currentSearchMode
                     );
 
                     if (result.success && result.timeline && result.timeline.length > 0) {
@@ -1092,9 +1099,10 @@ export default function SnsPage() {
                 limit,
                 0,
                 selectedUsernames,
-                currentSearchKeyword,
+                effectiveKeyword,
                 startTs, // default undefined
-                endTs
+                endTs,
+                currentSearchMode
             )
 
             if (result.success && result.timeline) {
@@ -1106,7 +1114,7 @@ export default function SnsPage() {
                     // Check for newer items above topTs
                     const topTs = result.timeline[0]?.createTime || 0;
                     if (topTs > 0) {
-                        const checkResult = await window.electronAPI.sns.getTimeline(1, 0, selectedUsernames, currentSearchKeyword, topTs + 1, undefined);
+                        const checkResult = await window.electronAPI.sns.getTimeline(1, 0, selectedUsernames, effectiveKeyword, topTs + 1, undefined, currentSearchMode);
                         setHasNewer(!!(checkResult.success && checkResult.timeline && checkResult.timeline.length > 0));
                     } else {
                         setHasNewer(false);
@@ -1735,7 +1743,7 @@ export default function SnsPage() {
             setContacts([])
             setPosts([]); setHasMore(true); setHasNewer(false);
             setSelectedContactUsernames([])
-            setSearchKeyword(''); setJumpTargetDate(undefined);
+            setSearchKeyword(''); setSearchMode('all'); setJumpTargetDate(undefined);
             void hydrateSnsPageCache()
             loadContacts();
             loadOverviewStats();
@@ -1750,7 +1758,7 @@ export default function SnsPage() {
             loadPosts({ reset: true })
         }, 500)
         return () => clearTimeout(timer)
-    }, [searchKeyword, jumpTargetDate, loadPosts])
+    }, [searchKeyword, searchMode, jumpTargetDate, loadPosts])
 
     const selectedContactUsernamesKey = useMemo(
         () => selectedContactUsernames.join('||'),
@@ -2031,6 +2039,8 @@ export default function SnsPage() {
             <SnsFilterPanel
                 searchKeyword={searchKeyword}
                 setSearchKeyword={setSearchKeyword}
+                searchMode={searchMode}
+                setSearchMode={setSearchMode}
                 totalFriendsLabel={
                     overviewStatsStatus === 'loading'
                         ? '统计中'
