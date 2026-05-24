@@ -20,6 +20,8 @@ interface ContactsCountProgress {
 interface SnsFilterPanelProps {
     searchKeyword: string
     setSearchKeyword: (val: string) => void
+    searchMode: 'all' | 'content' | 'comment'
+    setSearchMode: (mode: 'all' | 'content' | 'comment') => void
     totalFriendsLabel?: string
     contacts: Contact[]
     contactSearch: string
@@ -38,6 +40,8 @@ interface SnsFilterPanelProps {
 export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
     searchKeyword,
     setSearchKeyword,
+    searchMode,
+    setSearchMode,
     totalFriendsLabel,
     contacts,
     contactSearch,
@@ -162,6 +166,23 @@ export const SnsFilterPanel: React.FC<SnsFilterPanelProps> = ({
                                 <X size={14} />
                             </button>
                         )}
+                    </div>
+                    <div className="search-mode-row">
+                        <button
+                            type="button"
+                            className={`search-mode-btn${searchMode === 'all' ? ' active' : ''}`}
+                            onClick={() => setSearchMode('all')}
+                        >全部</button>
+                        <button
+                            type="button"
+                            className={`search-mode-btn${searchMode === 'content' ? ' active' : ''}`}
+                            onClick={() => setSearchMode('content')}
+                        >正文</button>
+                        <button
+                            type="button"
+                            className={`search-mode-btn${searchMode === 'comment' ? ' active' : ''}`}
+                            onClick={() => setSearchMode('comment')}
+                        >评论</button>
                     </div>
                 </div>
                 {/* Contact Widget */}
