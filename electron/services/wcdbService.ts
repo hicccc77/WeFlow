@@ -24,6 +24,7 @@ export class WcdbService {
   private userDataPath: string | null = null
   private logEnabled = false
   private monitorListener: ((type: string, json: string) => void) | null = null
+  private shuttingDown = false
 
   constructor() {}
 
@@ -75,16 +76,20 @@ export class WcdbService {
       })
 
       this.worker.on('exit', (code) => {
-        // Worker 退出，需要 reject 所有 pending promises
-        if (code !== 0) {
-          console.error('WCDB Worker 异常退出，退出码:', code)
-          const errorMsg = `Worker 异常退出 (退出码: ${code})。可能是数据服务加载失败，请检查是否安装了 Visual C++ Redistributable。`
-          for (const [id, p] of this.pending) {
+        if (this.pending.size > 0) {
+          const errorMsg = code === 0
+            ? 'Worker 已退出'
+            : `Worker 异常退出 (退出码: ${code})。可能是数据服务加载失败，请检查是否安装了 Visual C++ Redistributable。`
+          if (code !== 0 && !this.shuttingDown) {
+            console.error('WCDB Worker 异常退出，退出码:', code)
+          }
+          for (const [, p] of this.pending) {
             p.reject(new Error(errorMsg))
           }
           this.pending.clear()
         }
         this.worker = null
+        this.shuttingDown = false
       })
 
       // 如果已有路径配置，重新发送给新的 worker
@@ -182,11 +187,14 @@ export class WcdbService {
    * 关闭服务
    */
   async shutdown(): Promise<void> {
+    if (!this.worker) return
+    this.shuttingDown = true
     try { await this.close() } catch {}
     if (this.worker) {
       try { await this.worker.terminate() } catch {}
       this.worker = null
     }
+    this.shuttingDown = false
   }
 
   /**

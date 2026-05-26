@@ -137,80 +137,92 @@ if (config.userDataPath) {
 }
 process.env.WEFLOW_PROJECT_NAME = process.env.WEFLOW_PROJECT_NAME || 'WeFlow'
 
-async function run() {
-  const [{ wcdbService }, { exportService }] = await Promise.all([
-    import('./services/wcdbService'),
-    import('./services/exportService')
-  ])
-
-  wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
-  wcdbService.setLogEnabled(config.logEnabled === true)
-  exportService.setRuntimeConfig({
-    dbPath: config.dbPath,
-    decryptKey: config.decryptKey,
-    myWxid: config.myWxid,
-    imageXorKey: config.imageXorKey,
-    imageAesKey: config.imageAesKey
-  })
-
-  const onProgress = (progress: any) => queueProgress(progress)
-
-  const taskControl = config.taskId
-    ? {
-        shouldPause: () => controlState.pauseRequested,
-        shouldStop: () => controlState.stopRequested,
-        recordCreatedFile: queueCreatedFile,
-        recordCreatedDir: queueCreatedDir
-      }
-    : undefined
-
-  let result: any
-  if (config.mode === 'contacts') {
-    const [{ contactExportService }, { chatService }] = await Promise.all([
-      import('./services/contactExportService'),
-      import('./services/chatService')
-    ])
-    chatService.setRuntimeConfig({
-      dbPath: config.dbPath,
-      decryptKey: config.decryptKey,
-      myWxid: config.myWxid
-    })
-    result = await contactExportService.exportContacts(
-      String(config.outputDir || ''),
-      config.options || {}
-    )
-  } else if (config.mode === 'single') {
-    result = await exportService.exportSessionToChatLab(
-      String(config.sessionId || '').trim(),
-      String(config.outputPath || '').trim(),
-      config.options || { format: 'chatlab' },
-      onProgress,
-      taskControl
-    )
-  } else {
-    result = await exportService.exportSessions(
-      Array.isArray(config.sessionIds) ? config.sessionIds : [],
-      String(config.outputDir || ''),
-      config.options || { format: 'json' },
-      onProgress,
-      taskControl
-    )
-  }
-
-  flushProgress()
-  flushCreatedPaths()
-
-  parentPort?.postMessage({
-    type: 'export:result',
-    data: result
-  })
+async function shutdownWcdbService(service: { shutdown: () => Promise<void> } | null): Promise<void> {
+  if (!service) return
+  try { await service.shutdown() } catch {}
 }
 
-run().catch((error) => {
-  flushProgress()
-  flushCreatedPaths()
-  parentPort?.postMessage({
-    type: 'export:error',
-    error: String(error)
-  })
-})
+async function run() {
+  let wcdbServiceRef: { shutdown: () => Promise<void> } | null = null
+
+  try {
+    const [{ wcdbService }, { exportService }] = await Promise.all([
+      import('./services/wcdbService'),
+      import('./services/exportService')
+    ])
+
+    wcdbServiceRef = wcdbService
+    wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
+    wcdbService.setLogEnabled(config.logEnabled === true)
+    exportService.setRuntimeConfig({
+      dbPath: config.dbPath,
+      decryptKey: config.decryptKey,
+      myWxid: config.myWxid,
+      imageXorKey: config.imageXorKey,
+      imageAesKey: config.imageAesKey
+    })
+
+    const onProgress = (progress: any) => queueProgress(progress)
+
+    const taskControl = config.taskId
+      ? {
+          shouldPause: () => controlState.pauseRequested,
+          shouldStop: () => controlState.stopRequested,
+          recordCreatedFile: queueCreatedFile,
+          recordCreatedDir: queueCreatedDir
+        }
+      : undefined
+
+    let result: any
+    if (config.mode === 'contacts') {
+      const [{ contactExportService }, { chatService }] = await Promise.all([
+        import('./services/contactExportService'),
+        import('./services/chatService')
+      ])
+      chatService.setRuntimeConfig({
+        dbPath: config.dbPath,
+        decryptKey: config.decryptKey,
+        myWxid: config.myWxid
+      })
+      result = await contactExportService.exportContacts(
+        String(config.outputDir || ''),
+        config.options || {}
+      )
+    } else if (config.mode === 'single') {
+      result = await exportService.exportSessionToChatLab(
+        String(config.sessionId || '').trim(),
+        String(config.outputPath || '').trim(),
+        config.options || { format: 'chatlab' },
+        onProgress,
+        taskControl
+      )
+    } else {
+      result = await exportService.exportSessions(
+        Array.isArray(config.sessionIds) ? config.sessionIds : [],
+        String(config.outputDir || ''),
+        config.options || { format: 'json' },
+        onProgress,
+        taskControl
+      )
+    }
+
+    flushProgress()
+    flushCreatedPaths()
+    await shutdownWcdbService(wcdbServiceRef)
+
+    parentPort?.postMessage({
+      type: 'export:result',
+      data: result
+    })
+  } catch (error) {
+    flushProgress()
+    flushCreatedPaths()
+    await shutdownWcdbService(wcdbServiceRef)
+    parentPort?.postMessage({
+      type: 'export:error',
+      error: String(error)
+    })
+  }
+}
+
+void run()

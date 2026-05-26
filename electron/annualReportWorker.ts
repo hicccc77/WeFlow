@@ -21,23 +21,31 @@ if (config.resourcesPath) {
 wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
 wcdbService.setLogEnabled(config.logEnabled === true)
 
-async function run() {
-  const result = await annualReportService.generateReportWithConfig({
-    year: config.year,
-    dbPath: config.dbPath,
-    decryptKey: config.decryptKey,
-    wxid: config.myWxid,
-    onProgress: (status: string, progress: number) => {
-      parentPort?.postMessage({
-        type: 'annualReport:progress',
-        data: { status, progress }
-      })
-    }
-  })
-
-  parentPort?.postMessage({ type: 'annualReport:result', data: result })
+async function shutdownWorkerServices(): Promise<void> {
+  try { await wcdbService.shutdown() } catch {}
 }
 
-run().catch((err) => {
-  parentPort?.postMessage({ type: 'annualReport:error', error: String(err) })
-})
+async function run() {
+  try {
+    const result = await annualReportService.generateReportWithConfig({
+      year: config.year,
+      dbPath: config.dbPath,
+      decryptKey: config.decryptKey,
+      wxid: config.myWxid,
+      onProgress: (status: string, progress: number) => {
+        parentPort?.postMessage({
+          type: 'annualReport:progress',
+          data: { status, progress }
+        })
+      }
+    })
+
+    await shutdownWorkerServices()
+    parentPort?.postMessage({ type: 'annualReport:result', data: result })
+  } catch (err) {
+    await shutdownWorkerServices()
+    parentPort?.postMessage({ type: 'annualReport:error', error: String(err) })
+  }
+}
+
+void run()

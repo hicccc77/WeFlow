@@ -23,25 +23,33 @@ if (config.resourcesPath) {
 wcdbService.setPaths(config.resourcesPath || '', config.userDataPath || '')
 wcdbService.setLogEnabled(config.logEnabled === true)
 
-async function run() {
-  const result = await dualReportService.generateReportWithConfig({
-    year: config.year,
-    friendUsername: config.friendUsername,
-    dbPath: config.dbPath,
-    decryptKey: config.decryptKey,
-    wxid: config.myWxid,
-    excludeWords: config.excludeWords,
-    onProgress: (status: string, progress: number) => {
-      parentPort?.postMessage({
-        type: 'dualReport:progress',
-        data: { status, progress }
-      })
-    }
-  })
-
-  parentPort?.postMessage({ type: 'dualReport:result', data: result })
+async function shutdownWorkerServices(): Promise<void> {
+  try { await wcdbService.shutdown() } catch {}
 }
 
-run().catch((err) => {
-  parentPort?.postMessage({ type: 'dualReport:error', error: String(err) })
-})
+async function run() {
+  try {
+    const result = await dualReportService.generateReportWithConfig({
+      year: config.year,
+      friendUsername: config.friendUsername,
+      dbPath: config.dbPath,
+      decryptKey: config.decryptKey,
+      wxid: config.myWxid,
+      excludeWords: config.excludeWords,
+      onProgress: (status: string, progress: number) => {
+        parentPort?.postMessage({
+          type: 'dualReport:progress',
+          data: { status, progress }
+        })
+      }
+    })
+
+    await shutdownWorkerServices()
+    parentPort?.postMessage({ type: 'dualReport:result', data: result })
+  } catch (err) {
+    await shutdownWorkerServices()
+    parentPort?.postMessage({ type: 'dualReport:error', error: String(err) })
+  }
+}
+
+void run()
