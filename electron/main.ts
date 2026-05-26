@@ -4012,10 +4012,18 @@ function registerIpcHandlers() {
   })
 
   // 密钥获取
-  ipcMain.handle('key:autoGetDbKey', async (event) => {
-    return keyService.autoGetDbKey(180_000, (message: string, level: number) => {
+  ipcMain.handle('key:autoGetDbKey', async (event, options?: { dbPath?: string; wxid?: string }) => {
+    const statusCallback = (message: string, level: number) => {
       event.sender.send('key:dbKeyStatus', { message, level })
-    })
+    }
+    if (process.platform === 'linux') {
+      return keyService.autoGetDbKey({
+        dbPath: options?.dbPath,
+        wxid: options?.wxid,
+        timeoutMs: 180_000
+      }, statusCallback)
+    }
+    return keyService.autoGetDbKey(180_000, statusCallback)
   })
 
   ipcMain.handle('key:autoGetImageKey', async (event, manualDir?: string, wxid?: string) => {
@@ -4388,4 +4396,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-

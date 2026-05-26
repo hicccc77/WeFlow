@@ -110,6 +110,10 @@ export class DbPathService {
         }
         // macOS 旧路径兜底
         possiblePaths.push(join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Documents', 'xwechat_files'))
+      } else if (process.platform === 'linux') {
+        possiblePaths.push(join(home, 'xwechat_files'))
+        possiblePaths.push(join(home, '.local', 'share', 'WeChat', 'xwechat_files'))
+        possiblePaths.push(join(home, 'Documents', 'xwechat_files'))
       } else {
         // Windows 微信4.x 数据目录
         possiblePaths.push(join(home, 'Documents', 'xwechat_files'))
@@ -346,6 +350,17 @@ export class DbPathService {
       }
       // 旧版本路径兜底
       return join(home, 'Library', 'Containers', 'com.tencent.xinWeChat', 'Data', 'Documents', 'xwechat_files')
+    }
+    if (process.platform === 'linux') {
+      const linuxCandidates = [
+        join(home, 'xwechat_files'),
+        join(home, '.local', 'share', 'WeChat', 'xwechat_files'),
+        join(home, 'Documents', 'xwechat_files')
+      ]
+      for (const candidate of linuxCandidates) {
+        if (existsSync(candidate)) return candidate
+      }
+      return linuxCandidates[0]
     }
     return join(home, 'Documents', 'xwechat_files')
   }

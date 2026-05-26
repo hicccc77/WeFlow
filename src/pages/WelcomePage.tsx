@@ -491,7 +491,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
     setIsManualStartPrompt(false)
     setDbKeyStatus('正在连接微信进程...')
     try {
-      const result = await window.electronAPI.key.autoGetDbKey()
+      const result = await window.electronAPI.key.autoGetDbKey({ dbPath, wxid })
       if (result.success && result.key) {
         setDecryptKey(result.key)
         setHasReacquiredDbKey(true)

@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hicccc77/WeFlow"
+    "url": "https://github.com/boyuetongquan/WeFlow-Lanxus"
   },
   "//": "二改不应改变此处的作者与应用信息",
   "scripts": {
@@ -20,7 +20,8 @@
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "node scripts/prepare-electron-runtime.cjs && vite --mode electron",
-    "electron:build": "npm run build"
+    "electron:build": "npm run build",
+    "build:linux:arm64": "tsc && vite build && electron-builder --linux appimage tar.gz --arm64"
   },
   "dependencies": {
     "@vscode/sudo-prompt": "^9.3.2",
@@ -78,12 +79,12 @@
     "appId": "com.WeFlow.app",
     "publish": {
       "provider": "github",
-      "owner": "hicccc77",
-      "repo": "WeFlow",
+      "owner": "boyuetongquan",
+      "repo": "WeFlow-Lanxus",
       "releaseType": "release"
     },
     "productName": "WeFlow",
-    "artifactName": "${productName}-${version}-Setup.${ext}",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },

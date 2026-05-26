@@ -329,7 +329,7 @@ export interface ElectronAPI {
     onProgress: (callback: (progress: BackupProgress) => void) => () => void
   }
   key: {
-    autoGetDbKey: () => Promise<{ success: boolean; key?: string; error?: string; logs?: string[] }>
+    autoGetDbKey: (options?: { dbPath?: string; wxid?: string }) => Promise<{ success: boolean; key?: string; error?: string; logs?: string[] }>
     autoGetImageKey: (manualDir?: string, wxid?: string) => Promise<{ success: boolean; xorKey?: number; aesKey?: string; verified?: boolean; error?: string }>
     scanImageKeyFromMemory: (userDir: string) => Promise<{ success: boolean; xorKey?: number; aesKey?: string; error?: string }>
     onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => () => void

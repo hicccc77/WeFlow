@@ -78,3 +78,6 @@ weflow-web-offical
 /Wedecrypt
 /scripts/syncwcdb.py
 /scripts/syncWedecrypt.py
+resources/key/linux/arm64/config/secrets/
+resources/key/linux/arm64/secrets/
+resources/key/linux/arm64/*.jsonl

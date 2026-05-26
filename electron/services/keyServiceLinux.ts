@@ -1,6 +1,7 @@
 import { app } from 'electron'
-import { join } from 'path'
-import { existsSync, readdirSync, statSync, readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { homedir } from 'os'
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
 import { execFile, exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import crypto from 'crypto'
@@ -11,6 +12,7 @@ const execFileAsync = promisify(execFile)
 const execAsync = promisify(exec)
 
 type DbKeyResult = { success: boolean; key?: string; error?: string; logs?: string[] }
+type AutoDbKeyOptions = { dbPath?: string; wxid?: string; timeoutMs?: number }
 type ImageKeyResult = { success: boolean; xorKey?: number; aesKey?: string; verified?: boolean; error?: string }
 
 export class KeyServiceLinux {
@@ -51,10 +53,257 @@ export class KeyServiceLinux {
     throw new Error('找不到 xkey_helper_linux，请检查路径')
   }
 
+  private isLinuxArm64(): boolean {
+    return process.platform === 'linux' && process.arch === 'arm64'
+  }
+
+  private expandHome(value: string): string {
+    if (!value) return value
+    if (value === '~') return homedir()
+    if (value.startsWith('~/')) return join(homedir(), value.slice(2))
+    return value
+  }
+
+  private getArm64ResourceRoot(): string {
+    const candidates: string[] = []
+    if (process.env.WEFLOW_ARM64_RESOURCE_ROOT) candidates.push(process.env.WEFLOW_ARM64_RESOURCE_ROOT)
+
+    if (app.isPackaged) {
+      candidates.push(join(process.resourcesPath, 'resources', 'key', 'linux', 'arm64'))
+      candidates.push(join(process.resourcesPath, 'key', 'linux', 'arm64'))
+    } else {
+      candidates.push(join(app.getAppPath(), 'resources', 'key', 'linux', 'arm64'))
+      candidates.push(join(process.cwd(), 'resources', 'key', 'linux', 'arm64'))
+    }
+
+    for (const rawRoot of candidates) {
+      const root = this.expandHome(rawRoot)
+      if (existsSync(join(root, 'scripts', 'arm64_wechat_key_hook.py'))) return root
+      if (existsSync(join(root, 'arm64_wechat_key_hook.py'))) return dirname(root)
+    }
+
+    throw new Error('找不到 Linux ARM64 微信密钥捕获脚本，请检查安装是否完整')
+  }
+
+  private getArm64StatePaths(): { candidatesPath: string; secretsPath: string; logPath: string } {
+    const stateRoot = this.expandHome(
+      process.env.WEFLOW_ARM64_STATE_DIR || join(app.getPath('userData'), 'linux-arm64-wechat')
+    )
+    const secretsDir = join(stateRoot, 'secrets')
+    const logsDir = join(stateRoot, 'logs')
+    mkdirSync(secretsDir, { recursive: true })
+    mkdirSync(logsDir, { recursive: true })
+    try { chmodSync(secretsDir, 0o700) } catch {}
+    return {
+      candidatesPath: process.env.WEFLOW_ARM64_CANDIDATES_PATH || join(secretsDir, 'wechat_db_key_candidates.jsonl'),
+      secretsPath: process.env.WEFLOW_ARM64_SECRETS_PATH || join(secretsDir, 'wechat_db_key.json'),
+      logPath: process.env.WEFLOW_ARM64_LOG_PATH || join(logsDir, 'arm64_login_key_capture.log')
+    }
+  }
+
+  private resolveArm64DataRoot(options?: AutoDbKeyOptions): string {
+    const configured = String(options?.dbPath || '').trim()
+    if (configured) return this.expandHome(configured)
+    const envRoot = String(process.env.WEFLOW_ARM64_WECHAT_DATA_ROOT || '').trim()
+    if (envRoot) return this.expandHome(envRoot)
+    return join(homedir(), 'xwechat_files')
+  }
+
+  private shellQuote(value: string | number): string {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`
+  }
+
+  private cleanAccountName(value: string): string {
+    const trimmed = value.trim()
+    if (!trimmed) return trimmed
+    if (trimmed.toLowerCase().startsWith('wxid_')) {
+      const match = trimmed.match(/^(wxid_[^_]+)/i)
+      if (match) return match[1]
+      return trimmed
+    }
+    const suffixMatch = trimmed.match(/^(.+)_([a-zA-Z0-9]{4})$/)
+    return suffixMatch ? suffixMatch[1] : trimmed
+  }
+
+  private readArm64VerifiedKey(secretsPath: string, wxid?: string): { key: string; account: string; mode: string } | null {
+    if (!existsSync(secretsPath)) return null
+    let payload: any
+    try {
+      payload = JSON.parse(readFileSync(secretsPath, 'utf-8'))
+    } catch {
+      return null
+    }
+    if (!payload || typeof payload !== 'object') return null
+
+    const entries = Object.entries(payload)
+    const wanted = String(wxid || '').trim()
+    const cleanedWanted = wanted ? this.cleanAccountName(wanted).toLowerCase() : ''
+    const ordered = [...entries].sort(([left], [right]) => {
+      if (!wanted) return 0
+      const leftLower = left.toLowerCase()
+      const rightLower = right.toLowerCase()
+      const leftScore = left === wanted ? 0 : leftLower.startsWith(`${cleanedWanted}_`) ? 1 : leftLower === cleanedWanted ? 2 : 3
+      const rightScore = right === wanted ? 0 : rightLower.startsWith(`${cleanedWanted}_`) ? 1 : rightLower === cleanedWanted ? 2 : 3
+      return leftScore - rightScore
+    })
+
+    for (const [account, value] of ordered) {
+      let key = ''
+      let mode = 'key'
+      if (value && typeof value === 'object') {
+        key = String((value as any).key || '').trim().toLowerCase()
+        mode = String((value as any).mode || 'key')
+      } else {
+        key = String(value || '').trim().toLowerCase()
+      }
+      if (
+        key.length >= 64 &&
+        key.length <= 1024 &&
+        key.length % 2 === 0 &&
+        /^[0-9a-f]+$/.test(key)
+      ) {
+        return { key, account, mode }
+      }
+    }
+    return null
+  }
+
+  private parseArm64Events(stdout: string): any[] {
+    const events: any[] = []
+    for (const line of String(stdout || '').split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) continue
+      try {
+        events.push(JSON.parse(trimmed))
+      } catch {}
+    }
+    return events
+  }
+
+  private async getDbKeyArm64(
+      pid: number,
+      options: AutoDbKeyOptions = {},
+      onStatus?: (message: string, level: number) => void,
+      timeoutMs = 180_000
+  ): Promise<DbKeyResult> {
+    const root = this.getArm64ResourceRoot()
+    const scriptPath = join(root, 'scripts', 'arm64_wechat_key_hook.py')
+    const paths = this.getArm64StatePaths()
+    const dataRoot = this.resolveArm64DataRoot(options)
+    const timeoutSec = Math.ceil((timeoutMs + 15_000) / 1000)
+    const durationSec = Math.max(30, Math.ceil(timeoutMs / 1000))
+    const pythonBin = process.env.WEFLOW_PYTHON || 'python3'
+
+    const args = [
+      scriptPath,
+      '--pid', String(pid),
+      '--duration-sec', String(durationSec),
+      '--data-root', dataRoot,
+      '--struct-scan',
+      '--trace-hits', '12',
+      '--validate-on-hit',
+      '--db-label', 'message_0',
+      '--db-label', 'session',
+      '--db-label', 'contact',
+      '--db-label', 'general',
+      '--page-size', '1024',
+      '--page-size', '4096',
+      '--candidates', paths.candidatesPath,
+      '--secrets', paths.secretsPath,
+    ]
+    const account = String(options.wxid || '').trim()
+    if (account) args.push('--account', account)
+
+    onStatus?.('Linux ARM64：已安装数据库 key 捕获点，完成微信登录后会自动校验', 0)
+
+    const finishFromOutput = (stdout: string, stderr: string): DbKeyResult => {
+      const verifiedKey = this.readArm64VerifiedKey(paths.secretsPath, account)
+      if (verifiedKey) {
+        onStatus?.(`Linux ARM64：密钥已验证（${verifiedKey.mode}）`, 1)
+        return { success: true, key: verifiedKey.key }
+      }
+      const events = this.parseArm64Events(stdout)
+      const lastError = [...events].reverse().find(event => event?.event === 'error')
+      const hookDone = [...events].reverse().find(event => event?.event === 'hook_done')
+      const detail = lastError?.error || hookDone?.error || String(stderr || '').trim()
+      return {
+        success: false,
+        error: detail || 'Linux ARM64 捕获未得到可验证密钥，请确认已完成登录并选择正确的数据目录'
+      }
+    }
+
+    const envWithPath = {
+      ...process.env,
+      PATH: `${process.env.PATH || ''}:/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin`
+    }
+
+    if (!this.sudo || typeof this.sudo.exec !== 'function') {
+      try {
+        const { stdout, stderr } = await execFileAsync(pythonBin, args, {
+          env: envWithPath,
+          timeout: timeoutMs + 30_000,
+          maxBuffer: 1024 * 1024 * 2,
+        } as any)
+        await execAsync(`kill -CONT ${pid}`).catch(() => {})
+        return finishFromOutput(String(stdout || ''), String(stderr || ''))
+      } catch (err: any) {
+        await execAsync(`kill -CONT ${pid}`).catch(() => {})
+        return { success: false, error: `Linux ARM64 捕获执行失败: ${err.message}` }
+      }
+    }
+
+    return await new Promise((resolve) => {
+      const command = [
+        'timeout',
+        '-k',
+        '5s',
+        `${timeoutSec}s`,
+        pythonBin,
+        ...args,
+      ].map(part => this.shellQuote(part)).join(' ')
+
+      let settled = false
+      const finish = (result: DbKeyResult) => {
+        if (settled) return
+        settled = true
+        clearTimeout(watchdog)
+        resolve(result)
+      }
+      const watchdog = setTimeout(() => {
+        execAsync(`kill -CONT ${pid}`).catch(() => {})
+        finish({ success: false, error: `Linux ARM64 捕获超时（${Math.round(timeoutMs / 1000)} 秒）` })
+      }, timeoutMs + 30_000)
+
+      this.sudo.exec(command, { name: 'WeFlow', env: envWithPath }, async (error, stdout, stderr) => {
+        await execAsync(`kill -CONT ${pid}`).catch(() => {})
+        if (error) {
+          const fallbackKey = this.readArm64VerifiedKey(paths.secretsPath, account)
+          if (fallbackKey) {
+            finish({ success: true, key: fallbackKey.key })
+            return
+          }
+          const detail = String(stderr || '').trim()
+          finish({ success: false, error: detail ? `${error.message}: ${detail}` : error.message })
+          return
+        }
+        finish(finishFromOutput(String(stdout || ''), String(stderr || '')))
+      })
+    })
+  }
+
   public async autoGetDbKey(
-      timeoutMs = 60_000,
+      optionsOrTimeout: number | AutoDbKeyOptions = 60_000,
       onStatus?: (message: string, level: number) => void
   ): Promise<DbKeyResult> {
+    const options: AutoDbKeyOptions = typeof optionsOrTimeout === 'number'
+      ? { timeoutMs: optionsOrTimeout }
+      : (optionsOrTimeout || {})
+    const timeoutMs = options.timeoutMs ?? 60_000
+
+    if (this.isLinuxArm64()) {
+      return this.autoGetDbKeyArm64(options, onStatus, timeoutMs)
+    }
+
     try {
       // 1. 构造一个包含常用系统命令路径的环境变量，防止打包后找不到命令
       const envWithPath = {
@@ -176,7 +425,92 @@ export class KeyServiceLinux {
     }
   }
 
+  private async autoGetDbKeyArm64(
+      options: AutoDbKeyOptions,
+      onStatus?: (message: string, level: number) => void,
+      timeoutMs = 180_000
+  ): Promise<DbKeyResult> {
+    try {
+      const envWithPath = {
+        ...process.env,
+        PATH: `${process.env.PATH || ''}:/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin`
+      }
+
+      onStatus?.('Linux ARM64：正在重启微信以捕获登录期数据库 key...', 0)
+      await execAsync('killall -9 wechat wechat-bin xwechat', { env: envWithPath }).catch(async () => {
+        await execAsync('pkill -9 -x "wechat|wechat-bin|xwechat"', { env: envWithPath }).catch(() => {})
+      })
+      await new Promise(r => setTimeout(r, 1000))
+
+      const cleanEnv = { ...process.env }
+      delete cleanEnv.ELECTRON_RUN_AS_NODE
+      delete cleanEnv.ELECTRON_NO_ATTACH_CONSOLE
+      delete cleanEnv.APPDIR
+      delete cleanEnv.APPIMAGE
+      cleanEnv.PATH = `${cleanEnv.PATH || ''}:/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin`
+
+      const wechatBins = [
+        process.env.WEFLOW_WECHAT_BIN || '',
+        '/opt/wechat/wechat',
+        '/usr/bin/wechat',
+        '/usr/local/bin/wechat',
+        'wechat',
+        'wechat-bin',
+        'xwechat',
+      ].filter(Boolean)
+
+      for (const binName of wechatBins) {
+        if (binName.includes('/') && !existsSync(binName)) continue
+        try {
+          const child = spawn(binName, [], {
+            detached: true,
+            stdio: 'ignore',
+            env: cleanEnv
+          })
+          child.on('error', () => {})
+          child.unref()
+        } catch {}
+      }
+
+      onStatus?.('Linux ARM64：等待微信进程出现...', 0)
+      let pid = 0
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000))
+        const { stdout } = await execAsync('pidof wechat wechat-bin xwechat', { env: envWithPath }).catch(() => ({ stdout: '' }))
+        const pids = stdout.trim().split(/\s+/).filter(Boolean)
+        if (pids.length > 0) {
+          pid = parseInt(pids[0], 10)
+          break
+        }
+        const { stdout: pgrepOut } = await execAsync('pgrep -x "wechat|wechat-bin|xwechat"', { env: envWithPath }).catch(() => ({ stdout: '' }))
+        const pgrepPids = pgrepOut.trim().split(/\s+/).filter(Boolean)
+        if (pgrepPids.length > 0) {
+          pid = parseInt(pgrepPids[0], 10)
+          break
+        }
+      }
+
+      if (!pid) {
+        const err = '未能自动启动微信，或获取 PID 失败。请手动启动微信，看到登录窗口后重试。'
+        onStatus?.(err, 2)
+        return { success: false, error: err }
+      }
+
+      onStatus?.(`Linux ARM64：捕获到微信 PID ${pid}，等待登录确认...`, 0)
+      await new Promise(r => setTimeout(r, 1500))
+      return this.getDbKeyArm64(pid, options, onStatus, timeoutMs)
+    } catch (err: any) {
+      const errMsg = 'Linux ARM64 自动获取微信 key 失败: ' + err.message
+      onStatus?.(errMsg, 2)
+      return { success: false, error: errMsg }
+    }
+  }
+
   public async getDbKey(pid: number, onStatus?: (message: string, level: number) => void, timeoutMs = 180_000): Promise<DbKeyResult> {
+    if (this.isLinuxArm64()) {
+      return this.getDbKeyArm64(pid, {}, onStatus, timeoutMs)
+    }
+
     try {
       const helperPath = this.getHelperPath()
 
