@@ -44,6 +44,7 @@
     "remark-gfm": "^4.0.1",
     "sherpa-onnx-node": "^1.10.38",
     "silk-wasm": "^3.7.1",
+    "tar": "^7.5.13",
     "wechat-emojis": "^1.0.2",
     "zustand": "^5.0.2"
   },
