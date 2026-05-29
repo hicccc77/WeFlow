@@ -4914,7 +4914,7 @@ class ChatService {
   /**
    * HTTP API 复用消息解析逻辑，确保和应用内展示一致。
    */
-  mapRowsToMessagesForApi(rows: Record<string, any>[], sessionId: string): Message[] {
+  mapRowsToMessagesForApi(rows: Record<string, any>[], sessionId: string = ''): Message[] {
     return this.mapRowsToMessages(rows, sessionId)
   }
 

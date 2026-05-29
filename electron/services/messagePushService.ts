@@ -606,7 +606,7 @@ class MessagePushService {
       ].join(' ')
       const result = await wcdbService.execQuery('message', table.dbPath, sql)
       if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
-      messages.push(...chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[]))
+      messages.push(...chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[], sessionId))
     }
 
     return messages
@@ -630,7 +630,7 @@ class MessagePushService {
       ].join(' ')
       const result = await wcdbService.execQuery('message', table.dbPath, sql)
       if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
-      messages.push(...chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[]))
+      messages.push(...chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[], sessionId))
     }
 
     return messages.sort((left, right) => this.compareMessagePosition(left, right))
@@ -666,7 +666,7 @@ class MessagePushService {
       ].filter(Boolean).join(' ')
       const result = await wcdbService.execQuery('message', table.dbPath, sql)
       if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) continue
-      const [message] = chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[])
+      const [message] = chatService.mapRowsToMessagesForApi(result.rows as Record<string, any>[], sessionId)
       if (message && !this.isRevokeSystemMessage(message)) return message
     }
 
