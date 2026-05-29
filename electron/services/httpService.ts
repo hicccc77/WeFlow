@@ -785,9 +785,10 @@ class HttpService {
     offset: number,
     limit: number,
     startTime: number,
-    endTime: number
+    endTime: number,
+    ascending: boolean = false
   ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
-    const collected = await this.collectRawRows(talker, offset, limit, startTime, endTime, false)
+    const collected = await this.collectRawRows(talker, offset, limit, startTime, endTime, ascending)
     if (!collected.success || !collected.rows) {
       return { success: false, error: collected.error }
     }
@@ -1079,8 +1080,9 @@ class HttpService {
       }
       hasMore = searchResult.messages.length > limit
       messages = hasMore ? searchResult.messages.slice(0, limit) : searchResult.messages
-    } else if (format === 'json' && !mediaOptions.enabled) {
-      // 非媒体 JSON 路径：取原始行后线程池并行映射，不卡本体、按核数提速
+    } else if (!mediaOptions.enabled) {
+      // 非媒体路径（json 与 chatlab 共用）：取原始行后线程池并行映射，不卡本体、按核数提速。
+      // 两种格式底层都用 lite 映射，输出与改前一致；随后再各自走 toApiMessage / convertToChatLab。
       const result = await this.fetchApiMessagesParallel(talker, offset, limit, startTime, endTime)
       if (!result.success || !result.messages) {
         this.sendError(res, 500, result.error || 'Failed to get messages')
@@ -1214,7 +1216,8 @@ class HttpService {
     const endTime = endParam ? this.parseTimeParam(endParam, true) : 0
 
     try {
-      const result = await this.fetchMessagesBatch(sessionId, offset, limit, startTime, endTime, true, true)
+      // ChatLab Pull 始终非媒体、lite 映射：走线程池并行映射（limit 可达 5000，提速更明显）
+      const result = await this.fetchApiMessagesParallel(sessionId, offset, limit, startTime, endTime, true)
       if (!result.success || !result.messages) {
         this.sendError(res, 500, result.error || 'Failed to get messages')
         return
@@ -2130,16 +2133,24 @@ class HttpService {
       }
     }
 
-    // 构建成员列表
+    // 构建成员列表（分片让出，避免大批量时阻塞主进程/卡本体）
     const memberMap = new Map<string, ChatLabMember>()
-    for (const msg of messages) {
-      const senderInfo = this.resolveChatLabSenderInfo(msg, talkerId, talkerName, myWxid, isGroup, senderNames, groupNicknamesMap)
-      if (!memberMap.has(senderInfo.sender)) {
-        memberMap.set(senderInfo.sender, {
-          platformId: senderInfo.sender,
-          accountName: senderInfo.accountName,
-          groupNickname: senderInfo.groupNickname
-        })
+    {
+      let sliceStart = Date.now()
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i]
+        const senderInfo = this.resolveChatLabSenderInfo(msg, talkerId, talkerName, myWxid, isGroup, senderNames, groupNicknamesMap)
+        if (!memberMap.has(senderInfo.sender)) {
+          memberMap.set(senderInfo.sender, {
+            platformId: senderInfo.sender,
+            accountName: senderInfo.accountName,
+            groupNickname: senderInfo.groupNickname
+          })
+        }
+        if ((i & 15) === 15 && Date.now() - sliceStart >= 24) {
+          await this.yieldToEventLoop()
+          sliceStart = Date.now()
+        }
       }
     }
 
@@ -2164,26 +2175,36 @@ class HttpService {
       }
     }
 
-    // 转换消息
-    const chatLabMessages: ChatLabMessage[] = messages.map(msg => {
-      const senderInfo = this.resolveChatLabSenderInfo(msg, talkerId, talkerName, myWxid, isGroup, senderNames, groupNicknamesMap)
-      const quoteInfo = this.extractApiQuoteInfo(msg)
+    // 转换消息（分片让出，避免大批量时阻塞主进程/卡本体）
+    const chatLabMessages: ChatLabMessage[] = []
+    {
+      let sliceStart = Date.now()
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i]
+        const senderInfo = this.resolveChatLabSenderInfo(msg, talkerId, talkerName, myWxid, isGroup, senderNames, groupNicknamesMap)
+        const quoteInfo = this.extractApiQuoteInfo(msg)
 
-      const chatLabMessage: ChatLabMessage = {
-        sender: senderInfo.sender,
-        accountName: senderInfo.accountName,
-        groupNickname: senderInfo.groupNickname,
-        timestamp: msg.createTime,
-        type: this.mapMessageType(msg.localType, msg),
-        content: this.getMessageContent(msg, quoteInfo),
-        platformMessageId: this.getMessageServerId(msg) || undefined,
-        mediaPath: mediaMap.get(msg.localId) ? `http://${this.host}:${this.port}/api/v1/media/${mediaMap.get(msg.localId)!.relativePath}` : undefined
+        const chatLabMessage: ChatLabMessage = {
+          sender: senderInfo.sender,
+          accountName: senderInfo.accountName,
+          groupNickname: senderInfo.groupNickname,
+          timestamp: msg.createTime,
+          type: this.mapMessageType(msg.localType, msg),
+          content: this.getMessageContent(msg, quoteInfo),
+          platformMessageId: this.getMessageServerId(msg) || undefined,
+          mediaPath: mediaMap.get(msg.localId) ? `http://${this.host}:${this.port}/api/v1/media/${mediaMap.get(msg.localId)!.relativePath}` : undefined
+        }
+        if (quoteInfo?.replyToMessageId) {
+          chatLabMessage.replyToMessageId = quoteInfo.replyToMessageId
+        }
+        chatLabMessages.push(chatLabMessage)
+
+        if ((i & 15) === 15 && Date.now() - sliceStart >= 24) {
+          await this.yieldToEventLoop()
+          sliceStart = Date.now()
+        }
       }
-      if (quoteInfo?.replyToMessageId) {
-        chatLabMessage.replyToMessageId = quoteInfo.replyToMessageId
-      }
-      return chatLabMessage
-    })
+    }
 
     return {
       chatlab: {
