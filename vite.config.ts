@@ -233,6 +233,21 @@ export default defineConfig({
         }
       },
       {
+        entry: 'electron/apiMessageWorker.ts',
+        onstart: handleElectronOnStart,
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              output: {
+                entryFileNames: 'apiMessageWorker.js',
+                inlineDynamicImports: true
+              }
+            }
+          }
+        }
+      },
+      {
         entry: 'electron/preload.ts',
         onstart: handleElectronOnStart,
         vite: {

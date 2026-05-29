@@ -14,6 +14,9 @@ import { videoService } from './videoService'
 import { imageDecryptService } from './imageDecryptService'
 import { groupAnalyticsService } from './groupAnalyticsService'
 import { snsService } from './snsService'
+import * as os from 'os'
+import { ApiMessageMapperPool } from './apiMessageMapperPool'
+import { mapRowsToMessagesLite } from './apiMessageMapping'
 
 // ChatLab 格式定义
 interface ChatLabHeader {
@@ -127,6 +130,13 @@ class HttpService {
   private host: string = '127.0.0.1'
   private running: boolean = false
   private dbWarmed: boolean = false
+
+  /**
+   * API 消息映射线程池：把大批量「行 -> Message」的解码/映射放到 worker 并行执行，
+   * 既不阻塞本体（主进程）又能按核数提速。懒创建，stop() 时释放；映射失败回退主线程。
+   */
+  private apiMapperPool: ApiMessageMapperPool | null = null
+  private static readonly API_PARALLEL_MAP_THRESHOLD = 300
   private connections: Set<import('net').Socket> = new Set()
   private messagePushClients: Set<http.ServerResponse> = new Set()
   private messagePushReplayBuffer: MessagePushReplayEvent[] = []
@@ -188,6 +198,8 @@ class HttpService {
         // 主动预热数据库连接与消息库索引：HTTP 服务可能经 http:start 独立启动
         // （未走 GUI 的 connect/warmup），避免首批请求因原生消息库缓存为空而整页丢消息。
         void this.ensureDbReady().catch((e) => console.warn('[HttpService] warmup on start failed:', e))
+        // 预热映射线程池，使首个大请求无需等待 worker 启动
+        try { this.getApiMapperPool().warmup() } catch {}
         this.startMessagePushHeartbeat()
         console.log(`[HttpService] HTTP API server started on http://${this.host}:${this.port}`)
         resolve({ success: true, port: this.port })
@@ -199,6 +211,11 @@ class HttpService {
    * 停止 HTTP 服务
    */
   async stop(): Promise<void> {
+    if (this.apiMapperPool) {
+      const pool = this.apiMapperPool
+      this.apiMapperPool = null
+      void pool.dispose().catch(() => undefined)
+    }
     return new Promise((resolve) => {
       if (this.server) {
         for (const client of this.messagePushClients) {
@@ -632,15 +649,14 @@ class HttpService {
    * - lite 打开成功但 offset=0 首页为空且无更多时，疑似 lite 冷缓存误判（heapSize=0），
    *   再用 full 游标复核一次；full 也为空才认定确实没有数据。既保留 lite 性能又不丢数据。
    */
-  private async fetchMessagesBatch(
+  private async collectRawRows(
     talker: string,
     offset: number,
     limit: number,
     startTime: number,
     endTime: number,
-    ascending: boolean,
-    useLiteMapping: boolean = true
-  ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
+    ascending: boolean
+  ): Promise<{ success: boolean; rows?: Record<string, any>[]; hasMore?: boolean; error?: string }> {
     const ready = await this.ensureDbReady()
     if (!ready.success) {
       return { success: false, error: ready.error || '数据库未连接' }
@@ -731,13 +747,97 @@ class HttpService {
         }
       }
 
-      const messages = await this.mapRowsToMessagesYielding(collected.rows, useLiteMapping, talker)
-      await this.backfillMissingSenderUsernames(talker, messages)
-      return { success: true, messages, hasMore: collected.hasMore }
+      return { success: true, rows: collected.rows, hasMore: collected.hasMore }
     } catch (e) {
-      console.error('[HttpService] fetchMessagesBatch error:', e)
+      console.error('[HttpService] collectRawRows error:', e)
       return { success: false, error: String(e) }
     }
+  }
+
+  /**
+   * 批量获取并映射消息（主线程映射版）。供媒体导出路径与 ChatLab Pull 等沿用，行为不变。
+   * 非媒体 JSON 路径改用并行映射 fetchApiMessagesParallel（见下）。
+   */
+  private async fetchMessagesBatch(
+    talker: string,
+    offset: number,
+    limit: number,
+    startTime: number,
+    endTime: number,
+    ascending: boolean,
+    useLiteMapping: boolean = true
+  ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
+    const collected = await this.collectRawRows(talker, offset, limit, startTime, endTime, ascending)
+    if (!collected.success || !collected.rows) {
+      return { success: false, error: collected.error }
+    }
+    const messages = await this.mapRowsToMessagesYielding(collected.rows, useLiteMapping, talker)
+    await this.backfillMissingSenderUsernames(talker, messages)
+    return { success: true, messages, hasMore: collected.hasMore === true }
+  }
+
+  /**
+   * 非媒体 JSON 路径：取原始行后用线程池并行映射（不卡本体、按核数提速）。
+   * 大批量走线程池；小批量或线程池异常时回退主线程模块映射（分片让出，输出与并行路径一致）。
+   */
+  private async fetchApiMessagesParallel(
+    talker: string,
+    offset: number,
+    limit: number,
+    startTime: number,
+    endTime: number
+  ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
+    const collected = await this.collectRawRows(talker, offset, limit, startTime, endTime, false)
+    if (!collected.success || !collected.rows) {
+      return { success: false, error: collected.error }
+    }
+    const rows = collected.rows
+    const myWxid = String(this.configService.getMyWxidCleaned() || '')
+
+    let messages: Message[]
+    if (rows.length >= HttpService.API_PARALLEL_MAP_THRESHOLD) {
+      try {
+        messages = await this.getApiMapperPool().mapRows(rows, myWxid)
+      } catch (e) {
+        console.warn('[HttpService] 并行映射失败，回退主线程:', e)
+        messages = await this.mapRowsLiteOnMainYielding(rows, myWxid)
+      }
+    } else {
+      messages = await this.mapRowsLiteOnMainYielding(rows, myWxid)
+    }
+
+    await this.backfillMissingSenderUsernames(talker, messages)
+    return { success: true, messages, hasMore: collected.hasMore === true }
+  }
+
+  private getApiMapperPool(): ApiMessageMapperPool {
+    if (!this.apiMapperPool) {
+      let cores = 4
+      try { cores = os.cpus().length || 4 } catch {}
+      const size = Math.min(4, Math.max(2, cores - 2))
+      this.apiMapperPool = new ApiMessageMapperPool(size)
+    }
+    return this.apiMapperPool
+  }
+
+  /**
+   * 主线程分片映射（模块版，与 worker 同源）：按时间片让出事件循环，避免卡顿。
+   * 作为线程池的回退路径与小批量路径，输出与并行路径完全一致。
+   */
+  private async mapRowsLiteOnMainYielding(rows: Record<string, any>[], myWxid: string): Promise<Message[]> {
+    const out: Message[] = []
+    const STEP = 16
+    let sliceStart = Date.now()
+    for (let i = 0; i < rows.length; i += STEP) {
+      const slice = rows.slice(i, i + STEP)
+      const mapped = mapRowsToMessagesLite(slice, myWxid)
+      for (let k = 0; k < mapped.length; k++) out.push(mapped[k])
+      if (i + STEP < rows.length && Date.now() - sliceStart >= 24) {
+        await this.yieldToEventLoop()
+        sliceStart = Date.now()
+      }
+    }
+    return out
   }
 
   /**
@@ -979,6 +1079,15 @@ class HttpService {
       }
       hasMore = searchResult.messages.length > limit
       messages = hasMore ? searchResult.messages.slice(0, limit) : searchResult.messages
+    } else if (format === 'json' && !mediaOptions.enabled) {
+      // 非媒体 JSON 路径：取原始行后线程池并行映射，不卡本体、按核数提速
+      const result = await this.fetchApiMessagesParallel(talker, offset, limit, startTime, endTime)
+      if (!result.success || !result.messages) {
+        this.sendError(res, 500, result.error || 'Failed to get messages')
+        return
+      }
+      messages = result.messages
+      hasMore = result.hasMore === true
     } else {
       const result = await this.fetchMessagesBatch(
         talker,
