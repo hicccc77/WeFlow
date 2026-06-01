@@ -107,6 +107,17 @@ class AnalyticsService {
     return cleaned
   }
 
+  private buildIdentityKeys(raw: string): string[] {
+    const value = String(raw || '').trim()
+    if (!value) return []
+    const lowerRaw = value.toLowerCase()
+    const cleaned = this.cleanAccountDirName(value).toLowerCase()
+    if (cleaned && cleaned !== lowerRaw) {
+      return [cleaned, lowerRaw]
+    }
+    return [lowerRaw]
+  }
+
   private isPrivateSession(username: string, cleanedWxid: string): boolean {
     if (!username) return false
     if (username.toLowerCase() === cleanedWxid.toLowerCase()) return false
@@ -204,9 +215,12 @@ class AnalyticsService {
     endTimestamp = 0,
     lite = false
   ): Promise<void> {
-    const cursorResult = lite
+    let cursorResult = lite
       ? await wcdbService.openMessageCursorLite(sessionId, 500, true, beginTimestamp, endTimestamp)
       : await wcdbService.openMessageCursor(sessionId, 500, true, beginTimestamp, endTimestamp)
+    if (lite && (!cursorResult.success || !cursorResult.cursor)) {
+      cursorResult = await wcdbService.openMessageCursor(sessionId, 500, true, beginTimestamp, endTimestamp)
+    }
     if (!cursorResult.success || !cursorResult.cursor) return
 
     try {
@@ -239,17 +253,22 @@ class AnalyticsService {
   }
 
   private isRowSentByMe(row: Record<string, any>, cleanedWxid: string): boolean {
-    const isSendRaw = row.computed_is_send ?? row.is_send ?? row.isSend
+    const isSendRaw = row.computed_is_send ?? row.is_send ?? row.isSend ?? row.WCDB_CT_is_send
     const normalized = String(isSendRaw).trim().toLowerCase()
     let isSend = isSendRaw === 1 || isSendRaw === true || normalized === '1' || normalized === 'true'
 
-    if (isSendRaw === undefined || isSendRaw === null) {
-      const senderUsername = row.sender_username || row.senderUsername || row.sender
-      if (senderUsername && cleanedWxid) {
-        const senderLower = String(senderUsername).toLowerCase()
-        const myWxidLower = cleanedWxid.toLowerCase()
-        isSend = senderLower === myWxidLower || senderLower.startsWith(`${myWxidLower}_`)
-      }
+    const senderUsername = row.sender_username || row.senderUsername || row.sender || row.WCDB_CT_sender_username
+    if (senderUsername && cleanedWxid) {
+      const senderKeys = this.buildIdentityKeys(String(senderUsername))
+      const selfKeys = this.buildIdentityKeys(cleanedWxid)
+      const selfMatched = senderKeys.some(senderKey =>
+        selfKeys.some(selfKey =>
+          senderKey === selfKey ||
+          senderKey.startsWith(`${selfKey}_`) ||
+          selfKey.startsWith(`${senderKey}_`)
+        )
+      )
+      if (selfMatched) isSend = true
     }
 
     return isSend
@@ -396,7 +415,8 @@ class AnalyticsService {
     sessionIds: string[],
     cleanedWxid: string,
     beginTimestamp = 0,
-    endTimestamp = 0
+    endTimestamp = 0,
+    lite = true
   ): Promise<SelfSentDailyDistribution> {
     const dailyDistribution: Record<string, number> = {}
     let totalMessages = 0
@@ -421,7 +441,7 @@ class AnalyticsService {
         if (createTime > lastMessageTime) {
           lastMessageTime = createTime
         }
-      }, beginTimestamp, endTimestamp, true)
+      }, beginTimestamp, endTimestamp, lite)
     }
 
     return {
@@ -808,9 +828,23 @@ class AnalyticsService {
         beginTimestamp,
         endTimestamp
       )
-      this.selfSentDailyCache = { key: cacheKey, data, updatedAt: Date.now() }
+      const aggregateResult = await this.getAggregateWithFallback(sessionInfo.usernames, beginTimestamp, endTimestamp)
+      const aggregateSentCount = Number(aggregateResult.data?.sent)
+      const verifiedData = aggregateResult.success &&
+        Number.isFinite(aggregateSentCount) &&
+        aggregateSentCount > data.totalMessages
+        ? await this.computeSelfSentDailyDistribution(
+          sessionInfo.usernames,
+          conn.cleanedWxid,
+          beginTimestamp,
+          endTimestamp,
+          false
+        )
+        : data
 
-      return { success: true, data }
+      this.selfSentDailyCache = { key: cacheKey, data: verifiedData, updatedAt: Date.now() }
+
+      return { success: true, data: verifiedData }
     } catch (e) {
       return { success: false, error: String(e) }
     }
