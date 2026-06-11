@@ -4514,6 +4514,15 @@ const shutdownAppServices = async (): Promise<void> => {
     }, 5000)
     forceExitTimer.unref()
     try { await cloudControlService.stop() } catch {}
+    // 持久化缓存，防止异常退出时丢失数据
+    try {
+      await Promise.all([
+        chatService.getContactCacheService().flush(),
+        chatService.getMessageCacheService().flush()
+      ])
+    } catch (e) {
+      console.error('[App] 缓存持久化失败:', e)
+    }
     // 停止自动下载服务
     try { await imageDownloadService.stopAutoDownload() } catch {}
     // 停止 chatService（内部会关闭 cursor 与 DB），避免退出阶段仍触发监控回调

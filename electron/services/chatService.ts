@@ -727,6 +727,14 @@ class ChatService {
     this.monitorSetup = false
   }
 
+  getContactCacheService() {
+    return this.contactCacheService
+  }
+
+  getMessageCacheService() {
+    return this.messageCacheService
+  }
+
   /**
    * 修改消息内容
    */
