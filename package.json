@@ -95,7 +95,33 @@
       "gatekeeperAssess": false,
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.plist",
-      "icon": "resources/icons/macos/icon.icns"
+      "icon": "resources/icons/macos/icon.icns",
+      "extraResources": [
+        {
+          "from": "resources/wcdb/macos",
+          "to": "resources/wcdb/macos"
+        },
+        {
+          "from": "resources/key/macos",
+          "to": "resources/key/macos"
+        },
+        {
+          "from": "resources/fonts",
+          "to": "resources/fonts"
+        },
+        {
+          "from": "resources/icons",
+          "to": "resources/icons"
+        },
+        {
+          "from": "resources/image",
+          "to": "resources/image"
+        },
+        {
+          "from": "resources/wedecrypt",
+          "to": "resources/wedecrypt"
+        }
+      ]
     },
     "win": {
       "target": [
@@ -119,6 +145,32 @@
           "from": "resources/runtime/win32/vcruntime140_1.dll",
           "to": "."
         }
+      ],
+      "extraResources": [
+        {
+          "from": "resources/wcdb/win32",
+          "to": "resources/wcdb/win32"
+        },
+        {
+          "from": "resources/key/win32",
+          "to": "resources/key/win32"
+        },
+        {
+          "from": "resources/fonts",
+          "to": "resources/fonts"
+        },
+        {
+          "from": "resources/icons",
+          "to": "resources/icons"
+        },
+        {
+          "from": "resources/image",
+          "to": "resources/image"
+        },
+        {
+          "from": "resources/wedecrypt",
+          "to": "resources/wedecrypt"
+        }
       ]
     },
     "linux": {
@@ -134,6 +186,32 @@
         {
           "from": "resources/installer/linux/install.sh",
           "to": "install.sh"
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "resources/wcdb/linux",
+          "to": "resources/wcdb/linux"
+        },
+        {
+          "from": "resources/key/linux",
+          "to": "resources/key/linux"
+        },
+        {
+          "from": "resources/fonts",
+          "to": "resources/fonts"
+        },
+        {
+          "from": "resources/icons",
+          "to": "resources/icons"
+        },
+        {
+          "from": "resources/image",
+          "to": "resources/image"
+        },
+        {
+          "from": "resources/wedecrypt",
+          "to": "resources/wedecrypt"
         }
       ]
     },
@@ -159,10 +237,6 @@
       "uninstallerSidebar": null
     },
     "extraResources": [
-      {
-        "from": "resources/",
-        "to": "resources/"
-      },
       {
         "from": "public/icon.ico",
         "to": "icon.ico"
