@@ -4367,6 +4367,8 @@ class ExportService {
           relativePath: path.posix.join(mediaRelativePrefix, 'images', fileName),
           kind: 'image'
         }
+      } else if (sourcePath.startsWith('weflow://')) {
+        sourcePath = sourcePath.replace(/^weflow:\/\//, '')
       } else if (sourcePath.startsWith('file://')) {
         sourcePath = fileURLToPath(sourcePath)
       }
@@ -6150,6 +6152,16 @@ class ExportService {
           : mime.includes('webp') ? '.webp'
             : '.jpg'
       return { data, ext, mime }
+    }
+    if (avatarUrl.startsWith('weflow://')) {
+      try {
+        const sourcePath = avatarUrl.replace(/^weflow:\/\//, '')
+        const ext = path.extname(sourcePath) || '.jpg'
+        return { sourcePath, ext }
+      } catch (e) {
+        console.error('解析 weflow:// 路径失败:', e)
+        return null
+      }
     }
     if (avatarUrl.startsWith('file://')) {
       try {

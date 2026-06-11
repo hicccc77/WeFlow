@@ -8208,9 +8208,9 @@ class ChatService {
         return { success: true, data: base64Data }
       }
 
-      // localPath 是 file:// URL，需要转换成文件路径
-      const filePath = result.localPath.startsWith('file://')
-        ? result.localPath.replace(/^file:\/\//, '')
+      // localPath 是 weflow:// URL，需要转换成文件路径
+      const filePath = result.localPath.startsWith('weflow://')
+        ? result.localPath.replace(/^weflow:\/\//, '')
         : result.localPath
 
       const imageData = readFileSync(filePath)

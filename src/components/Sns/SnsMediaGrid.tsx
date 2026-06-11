@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react'
 import { Play, Lock, Download, ImageOff } from 'lucide-react'
 import { LivePhotoIcon } from '../../components/LivePhotoIcon'
 import { RefreshCw } from 'lucide-react'
+import { toWeflowUrl } from '../../utils/protocol'
 
 interface SnsMedia {
     url: string
@@ -128,7 +129,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
 
                     if (result.success) {
                         if (result.dataUrl) setThumbSrc(result.dataUrl)
-                        else if (result.videoPath) setThumbSrc(`file://${result.videoPath.replace(/\\/g, '/')}`)
+                        else if (result.videoPath) setThumbSrc(toWeflowUrl(result.videoPath))
                     } else {
                         markDeleted()
                     }
@@ -140,7 +141,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                             key: skipDecrypt ? undefined : (media.livePhoto.key || media.key)
                         }).then((res: any) => {
                             if (!cancelled && res.success && res.videoPath) {
-                                setLiveVideoPath(`file://${res.videoPath.replace(/\\/g, '/')}`)
+                                setLiveVideoPath(toWeflowUrl(res.videoPath))
                             }
                         }).catch(() => { })
                     }
@@ -159,7 +160,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     if (cancelled) return
 
                     if (result.success && result.videoPath) {
-                        const localPath = `file://${result.videoPath.replace(/\\/g, '/')}`
+                        const localPath = toWeflowUrl(result.videoPath)
                         setVideoPath(localPath)
 
                         try {
@@ -207,7 +208,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                         key: skipDecrypt ? undefined : media.key
                     })
                     if (res.success && res.videoPath) {
-                        const local = `file://${res.videoPath.replace(/\\/g, '/')}`
+                        const local = toWeflowUrl(res.videoPath)
                         setVideoPath(local)
                         onPreview(local, true, undefined)
                     } else {
@@ -245,14 +246,14 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     // For local video files, we need to fetch as blob to force download behavior
                     // or just use the file protocol url if the browser supports it
                     try {
-                        const response = await fetch(`file://${result.videoPath}`)
+                        const response = await fetch(toWeflowUrl(result.videoPath))
                         const blob = await response.blob()
                         const url = URL.createObjectURL(blob)
                         link.href = url
                         setTimeout(() => URL.revokeObjectURL(url), 60000)
                     } catch (err) {
                         console.error('Video fetch failed, falling back to direct link', err)
-                        link.href = `file://${result.videoPath}`
+                        link.href = toWeflowUrl(result.videoPath)
                     }
                 }
 

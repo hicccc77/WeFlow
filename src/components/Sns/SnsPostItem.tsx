@@ -5,6 +5,7 @@ import { SnsPost, SnsLinkCardData, SnsLocation } from '../../types/sns'
 import { Avatar } from '../Avatar'
 import { SnsMediaGrid } from './SnsMediaGrid'
 import { getEmojiPath } from 'wechat-emojis'
+import { toWeflowUrl } from '../../utils/protocol'
 
 // Helper functions (extracted from SnsPage.tsx but simplified/reused)
 const LINK_XML_URL_TAGS = ['url', 'shorturl', 'weburl', 'webpageurl', 'jumpurl']
@@ -277,7 +278,7 @@ const SnsLinkCard = ({ card, thumbKey }: { card: SnsLinkCardData; thumbKey?: str
                     return
                 }
                 if (result.videoPath) {
-                    setThumbSrc(`file://${result.videoPath.replace(/\\/g, '/')}`)
+                    setThumbSrc(toWeflowUrl(result.videoPath))
                 }
             } catch {
                 // noop: keep raw thumb fallback
@@ -369,9 +370,9 @@ const CommentEmoji: React.FC<{
                 })
                 if (cancelled) return
                 if (res.success && res.localPath) {
-                    const fileUrl = res.localPath.startsWith('file:')
+                    const fileUrl = res.localPath.startsWith('weflow:')
                         ? res.localPath
-                        : `file://${res.localPath.replace(/\\/g, '/')}`
+                        : toWeflowUrl(res.localPath)
                     emojiLocalCache.set(cacheKey, fileUrl)
                     setLocalSrc(fileUrl)
                 }

@@ -3724,7 +3724,7 @@ function registerIpcHandlers() {
       const ext = meta.split('/')[1]?.split(';')[0] || 'jpg'
       const tmpPath = join(app.getPath('temp'), `weflow_preview_${Date.now()}.${ext}`)
       await writeFile(tmpPath, Buffer.from(imagePath.slice(commaIdx + 1), 'base64'))
-      createImageViewerWindow(`file://${tmpPath.replace(/\\/g, '/')}`, liveVideoPath)
+      createImageViewerWindow(tmpPath, liveVideoPath)
     } else {
       createImageViewerWindow(imagePath, liveVideoPath)
     }

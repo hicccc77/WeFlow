@@ -2,6 +2,7 @@ import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, ty
 import { Calendar, Image as ImageIcon, Info, Loader2, PlayCircle, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { VirtuosoGrid } from 'react-virtuoso'
 import { finishBackgroundTask, registerBackgroundTask, updateBackgroundTask } from '../services/backgroundTaskMonitor'
+import { toWeflowUrl } from '../utils/protocol'
 import './ResourcesPage.scss'
 
 type MediaTab = 'image' | 'video'
@@ -133,19 +134,10 @@ function extractVideoTitle(content?: string): string {
 function toRenderableMediaSrc(rawPath?: string): string {
   const src = String(rawPath || '').trim()
   if (!src) return ''
-  if (/^(data:image\/|blob:|https?:\/\/)/i.test(src)) {
+  if (/^(data:image\/|blob:|https?:\/\/|weflow:\/\/)/i.test(src)) {
     return src
   }
-  if (/^file:\/\//i.test(src)) {
-    return src.replace(/#/g, '%23')
-  }
-  if (src.startsWith('/')) {
-    return encodeURI(`file://${src}`).replace(/#/g, '%23')
-  }
-  if (/^[a-zA-Z]:[\\/]/.test(src)) {
-    return encodeURI(`file:///${src.replace(/\\/g, '/')}`).replace(/#/g, '%23')
-  }
-  return encodeURI(`file://${src.startsWith('/') ? '' : '/'}${src.replace(/\\/g, '/')}`).replace(/#/g, '%23')
+  return toWeflowUrl(src)
 }
 
 const MediaCard = memo(function MediaCard({

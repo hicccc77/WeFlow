@@ -10,6 +10,7 @@ import { useBatchImageDecryptStore } from '../stores/batchImageDecryptStore'
 import type { ChatRecordItem, ChatSession, Message } from '../types/models'
 import type { GroupSummaryRecord, GroupSummaryRecordSummary } from '../types/electron'
 import { getEmojiPath } from 'wechat-emojis'
+import { toWeflowUrl } from '../utils/protocol'
 import { VoiceTranscribeDialog } from '../components/VoiceTranscribeDialog'
 import { LivePhotoIcon } from '../components/LivePhotoIcon'
 import { AnimatedStreamingText } from '../components/AnimatedStreamingText'
@@ -308,15 +309,9 @@ function hasRenderableChatRecordName(value?: string): boolean {
 function toRenderableImageSrc(path?: string): string | undefined {
   const raw = String(path || '').trim()
   if (!raw) return undefined
-  if (/^(data:|blob:|https?:|file:)/i.test(raw)) return raw
+  if (/^(data:|blob:|https?:|weflow:)/i.test(raw)) return raw
 
-  const normalized = raw.replace(/\\/g, '/')
-  if (/^[a-zA-Z]:\//.test(normalized)) {
-    return encodeURI(`file:///${normalized}`)
-  }
-  if (normalized.startsWith('/')) {
-    return encodeURI(`file://${normalized}`)
-  }
+  return toWeflowUrl(raw)
   return raw
 }
 

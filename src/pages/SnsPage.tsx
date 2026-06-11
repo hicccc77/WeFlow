@@ -2518,7 +2518,7 @@ export default function SnsPage() {
                                                     className="export-open-btn"
                                                     onClick={() => {
                                                         if (exportFolder) {
-                                                            window.electronAPI.shell.openExternal(`file://${exportFolder}`)
+                                                            window.electronAPI.shell.openPath(exportFolder)
                                                         }
                                                     }}
                                                 >
