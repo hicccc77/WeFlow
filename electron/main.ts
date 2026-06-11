@@ -4234,23 +4234,24 @@ app.whenReady().then(async () => {
   // 注册自定义协议以安全访问本地文件
   session.defaultSession.protocol.registerFileProtocol('weflow', (request, callback) => {
     const url = request.url.substring('weflow://'.length)
-    const filePath = decodeURIComponent(url)
 
-    // 路径白名单：仅允许用户数据目录和临时目录
-    const userDataPath = app.getPath('userData')
-    const tempPath = app.getPath('temp')
-    const homePath = app.getPath('home')
-
-    if (
-      filePath.startsWith(userDataPath) ||
-      filePath.startsWith(tempPath) ||
-      filePath.startsWith(homePath)
-    ) {
-      callback({ path: filePath })
-    } else {
-      console.error(`[Protocol] 拒绝访问路径: ${filePath}`)
+    let filePath: string
+    try {
+      filePath = decodeURIComponent(url)
+    } catch (e) {
+      console.error(`[Protocol] URL 解码失败: ${url}`, e)
       callback({ error: -10 }) // ERR_ACCESS_DENIED
+      return
     }
+
+    // 安全检查：拒绝网络协议和相对路径
+    if (filePath.includes('://') || (!filePath.startsWith('/') && !/^[a-zA-Z]:/.test(filePath))) {
+      console.error(`[Protocol] 拒绝访问非法路径: ${filePath}`)
+      callback({ error: -10 }) // ERR_ACCESS_DENIED
+      return
+    }
+
+    callback({ path: filePath })
   })
 
   // 先初始化配置，以便在启动早期判定是否需要静默启动
