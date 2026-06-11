@@ -1984,12 +1984,40 @@ function registerIpcHandlers() {
 
   ipcMain.handle('shell:openPath', async (_, path: string) => {
     const { shell } = await import('electron')
-    return shell.openPath(path)
+    // 安全验证：仅允许打开用户目录下的文件
+    const { homedir } = await import('os')
+    const allowedPrefixes = [
+      app.getPath('downloads'),
+      app.getPath('documents'),
+      app.getPath('desktop'),
+      app.getPath('temp'),
+      homedir()
+    ]
+    const normalizedPath = require('path').resolve(path)
+    const isAllowed = allowedPrefixes.some(prefix => normalizedPath.startsWith(prefix))
+    if (!isAllowed) {
+      console.warn(`[Security] Blocked openPath: ${path}`)
+      return `拒绝打开路径：仅允许打开用户目录下的文件`
+    }
+    return shell.openPath(normalizedPath)
   })
 
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     const { shell } = await import('electron')
-    return shell.openExternal(url)
+    // 安全验证：仅允许 https/http/mailto 协议
+    const allowedProtocols = ['https:', 'http:', 'mailto:']
+    try {
+      const parsed = new URL(url)
+      if (!allowedProtocols.includes(parsed.protocol)) {
+        console.warn(`[Security] Blocked openExternal: ${url} (protocol: ${parsed.protocol})`)
+        return `拒绝打开链接：仅支持 https/http/mailto 协议`
+      }
+      console.log(`[Security] Opening external URL: ${parsed.protocol}//${parsed.host}${parsed.pathname}`)
+      return shell.openExternal(url)
+    } catch (err) {
+      console.error(`[Security] Invalid URL: ${url}`, err)
+      return `无效的 URL 格式`
+    }
   })
 
   ipcMain.handle('app:getDownloadsPath', async () => {
