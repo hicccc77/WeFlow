@@ -24,16 +24,28 @@
   },
   "dependencies": {
     "@vscode/sudo-prompt": "^9.3.2",
-    "echarts": "^6.0.0",
-    "echarts-for-react": "^3.0.2",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.3.9",
     "exceljs": "^4.4.0",
     "ffmpeg-static": "^5.3.0",
     "fzstd": "^0.1.1",
-    "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "koffi": "^2.9.0",
+    "sherpa-onnx-node": "^1.10.38",
+    "silk-wasm": "^3.7.1",
+    "wechat-emojis": "^1.0.2"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.2",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^1.8.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -41,24 +53,12 @@
     "react-router-dom": "^7.14.0",
     "react-virtuoso": "^4.18.5",
     "remark-gfm": "^4.0.1",
-    "sherpa-onnx-node": "^1.10.38",
-    "silk-wasm": "^3.7.1",
-    "wechat-emojis": "^1.0.2",
-    "zustand": "^5.0.2"
-  },
-  "devDependencies": {
-    "@electron/rebuild": "^4.0.2",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^6.0.1",
-    "electron": "^41.1.1",
-    "electron-builder": "^26.8.1",
-    "esbuild": "^0.28.0",
     "sass": "^1.98.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
     "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "zustand": "^5.0.2"
   },
   "pnpm": {
     "overrides": {
