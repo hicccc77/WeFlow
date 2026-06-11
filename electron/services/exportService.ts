@@ -9649,6 +9649,7 @@ class ExportService {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';" />
     <title>${this.escapeHtml(sessionInfo.displayName)} - 聊天记录</title>
     <style>${htmlStyles}</style>
   </head>
