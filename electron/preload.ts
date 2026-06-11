@@ -22,8 +22,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ready: () => ipcRenderer.send('notification:ready'),
     resize: (width: number, height: number) => ipcRenderer.send('notification:resize', { width, height }),
     onShow: (callback: (event: any, data: any) => void) => {
-      ipcRenderer.on('notification:show', callback)
-      return () => ipcRenderer.removeAllListeners('notification:show')
+      const listener = (event: any, data: any) => callback(event, data)
+      ipcRenderer.on('notification:show', listener)
+      return () => ipcRenderer.removeListener('notification:show', listener)
     }, // 监听原本发送出来的navigate-to-session事件，跳转到具体的会话
     onNavigateToSession: (callback: (sessionId: string) => void) => {
       const listener = (_: any, sessionId: string) => callback(sessionId)
@@ -74,12 +75,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     downloadAndInstall: () => ipcRenderer.invoke('app:downloadAndInstall'),
     ignoreUpdate: (version: string) => ipcRenderer.invoke('app:ignoreUpdate', version),
     onDownloadProgress: (callback: (progress: any) => void) => {
-      ipcRenderer.on('app:downloadProgress', (_, progress) => callback(progress))
-      return () => ipcRenderer.removeAllListeners('app:downloadProgress')
+      const listener = (_: unknown, progress: any) => callback(progress)
+      ipcRenderer.on('app:downloadProgress', listener)
+      return () => ipcRenderer.removeListener('app:downloadProgress', listener)
     },
     onUpdateAvailable: (callback: (info: { version: string; releaseNotes: string }) => void) => {
-      ipcRenderer.on('app:updateAvailable', (_, info) => callback(info))
-      return () => ipcRenderer.removeAllListeners('app:updateAvailable')
+      const listener = (_: unknown, info: { version: string; releaseNotes: string }) => callback(info)
+      ipcRenderer.on('app:updateAvailable', listener)
+      return () => ipcRenderer.removeListener('app:updateAvailable', listener)
     },
   },
 
@@ -181,12 +184,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     autoGetImageKey: (manualDir?: string, wxid?: string) => ipcRenderer.invoke('key:autoGetImageKey', manualDir, wxid),
     scanImageKeyFromMemory: (userDir: string) => ipcRenderer.invoke('key:scanImageKeyFromMemory', userDir),
     onDbKeyStatus: (callback: (payload: { message: string; level: number }) => void) => {
-      ipcRenderer.on('key:dbKeyStatus', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('key:dbKeyStatus')
+      const listener = (_: unknown, payload: { message: string; level: number }) => callback(payload)
+      ipcRenderer.on('key:dbKeyStatus', listener)
+      return () => ipcRenderer.removeListener('key:dbKeyStatus', listener)
     },
     onImageKeyStatus: (callback: (payload: { message: string }) => void) => {
-      ipcRenderer.on('key:imageKeyStatus', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('key:imageKeyStatus')
+      const listener = (_: unknown, payload: { message: string }) => callback(payload)
+      ipcRenderer.on('key:imageKeyStatus', listener)
+      return () => ipcRenderer.removeListener('key:imageKeyStatus', listener)
     }
   },
 
@@ -405,8 +410,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setExcludedUsernames: (usernames: string[]) => ipcRenderer.invoke('analytics:setExcludedUsernames', usernames),
     getExcludeCandidates: () => ipcRenderer.invoke('analytics:getExcludeCandidates'),
     onProgress: (callback: (payload: { status: string; progress: number }) => void) => {
-      ipcRenderer.on('analytics:progress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('analytics:progress')
+      const listener = (_: unknown, payload: { status: string; progress: number }) => callback(payload)
+      ipcRenderer.on('analytics:progress', listener)
+      return () => ipcRenderer.removeListener('analytics:progress', listener)
     }
   },
 
@@ -463,20 +469,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       switched?: boolean
       nativeTimedOut?: boolean
     }) => void) => {
-      ipcRenderer.on('annualReport:availableYearsProgress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('annualReport:availableYearsProgress')
+      const listener = (_: unknown, payload: any) => callback(payload)
+      ipcRenderer.on('annualReport:availableYearsProgress', listener)
+      return () => ipcRenderer.removeListener('annualReport:availableYearsProgress', listener)
     },
     onProgress: (callback: (payload: { status: string; progress: number }) => void) => {
-      ipcRenderer.on('annualReport:progress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('annualReport:progress')
+      const listener = (_: unknown, payload: { status: string; progress: number }) => callback(payload)
+      ipcRenderer.on('annualReport:progress', listener)
+      return () => ipcRenderer.removeListener('annualReport:progress', listener)
     }
   },
   dualReport: {
     generateReport: (payload: { friendUsername: string; year: number }) =>
       ipcRenderer.invoke('dualReport:generateReport', payload),
     onProgress: (callback: (payload: { status: string; progress: number }) => void) => {
-      ipcRenderer.on('dualReport:progress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('dualReport:progress')
+      const listener = (_: unknown, payload: { status: string; progress: number }) => callback(payload)
+      ipcRenderer.on('dualReport:progress', listener)
+      return () => ipcRenderer.removeListener('dualReport:progress', listener)
     }
   },
 
@@ -510,8 +519,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       estimatedTotalMessages?: number
       writtenFiles?: number
     }) => void) => {
-      ipcRenderer.on('export:progress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('export:progress')
+      const listener = (_: unknown, payload: any) => callback(payload)
+      ipcRenderer.on('export:progress', listener)
+      return () => ipcRenderer.removeListener('export:progress', listener)
     }
   },
 
@@ -521,8 +531,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getModelStatus: () =>
       ipcRenderer.invoke('whisper:getModelStatus'),
     onDownloadProgress: (callback: (payload: { modelName: string; downloadedBytes: number; totalBytes?: number; percent?: number }) => void) => {
-      ipcRenderer.on('whisper:downloadProgress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('whisper:downloadProgress')
+      const listener = (_: unknown, payload: { modelName: string; downloadedBytes: number; totalBytes?: number; percent?: number }) => callback(payload)
+      ipcRenderer.on('whisper:downloadProgress', listener)
+      return () => ipcRenderer.removeListener('whisper:downloadProgress', listener)
     }
   },
 
@@ -540,8 +551,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     downloadImage: (payload: { url: string; key?: string | number }) => ipcRenderer.invoke('sns:downloadImage', payload),
     exportTimeline: (options: any) => ipcRenderer.invoke('sns:exportTimeline', options),
     onExportProgress: (callback: (payload: any) => void) => {
-      ipcRenderer.on('sns:exportProgress', (_, payload) => callback(payload))
-      return () => ipcRenderer.removeAllListeners('sns:exportProgress')
+      const listener = (_: unknown, payload: any) => callback(payload)
+      ipcRenderer.on('sns:exportProgress', listener)
+      return () => ipcRenderer.removeListener('sns:exportProgress', listener)
     },
     selectExportDir: () => ipcRenderer.invoke('sns:selectExportDir'),
     installBlockDeleteTrigger: () => ipcRenderer.invoke('sns:installBlockDeleteTrigger'),
@@ -578,6 +590,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   http: {
     start: (port?: number, host?: string) => ipcRenderer.invoke('http:start', port, host),
     stop: () => ipcRenderer.invoke('http:stop'),
+    getToken: () => ipcRenderer.invoke('http:getToken'),
     status: () => ipcRenderer.invoke('http:status')
   },
 

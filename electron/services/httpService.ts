@@ -126,6 +126,7 @@ class HttpService {
   private port: number = 5031
   private host: string = '127.0.0.1'
   private running: boolean = false
+  private authToken: string = ''
   private connections: Set<import('net').Socket> = new Set()
   private messagePushClients: Set<http.ServerResponse> = new Set()
   private messagePushReplayBuffer: MessagePushReplayEvent[] = []
@@ -140,15 +141,31 @@ class HttpService {
   }
 
   /**
+   * 生成随机认证 token
+   */
+  private generateAuthToken(): string {
+    const crypto = require('crypto')
+    return crypto.randomBytes(32).toString('hex')
+  }
+
+  /**
+   * 获取当前认证 token（供 IPC 调用）
+   */
+  getAuthToken(): string {
+    return this.authToken
+  }
+
+  /**
    * 启动 HTTP 服务
    */
-  async start(port: number = 5031, host: string = '127.0.0.1'): Promise<{ success: boolean; port?: number; error?: string }> {
+  async start(port: number = 5031, host: string = '127.0.0.1'): Promise<{ success: boolean; port?: number; token?: string; error?: string }> {
     if (this.running && this.server) {
-      return { success: true, port: this.port }
+      return { success: true, port: this.port, token: this.authToken }
     }
 
     this.port = port
     this.host = host
+    this.authToken = this.generateAuthToken()
 
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => this.handleRequest(req, res))
@@ -186,7 +203,8 @@ class HttpService {
         this.running = true
         this.startMessagePushHeartbeat()
         console.log(`[HttpService] HTTP API server started on http://${this.host}:${this.port}`)
-        resolve({ success: true, port: this.port })
+        console.log(`[HttpService] Auth token: ${this.authToken.substring(0, 8)}...`)
+        resolve({ success: true, port: this.port, token: this.authToken })
       })
     })
   }
@@ -383,10 +401,11 @@ class HttpService {
     }
 
     private verifyToken(req: http.IncomingMessage, url: URL, body: Record<string, any>): boolean {
-        const expectedToken = String(this.configService.get('httpApiToken') || '').trim()
+        // 优先使用自动生成的 token（启动时生成）
+        const expectedToken = this.authToken || String(this.configService.get('httpApiToken') || '').trim()
         if (!expectedToken) {
-            // token 未配置时拒绝所有请求，防止未授权访问
-            console.warn('[HttpService] Access denied: httpApiToken not configured')
+            // token 未配置且未自动生成时拒绝所有请求
+            console.warn('[HttpService] Access denied: No auth token available')
             return false
         }
 
