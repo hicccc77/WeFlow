@@ -1,5 +1,6 @@
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { app } from 'electron'
 import { ConfigService } from './config'
 
@@ -7,11 +8,15 @@ export interface ContactCacheEntry {
   displayName?: string
   avatarUrl?: string
   updatedAt: number
+  lastAccessedAt?: number
 }
 
 export class ContactCacheService {
   private readonly cacheFilePath: string
   private cache: Record<string, ContactCacheEntry> = {}
+  private readonly maxEntries = 1000
+  private persistTimer: NodeJS.Timeout | null = null
+  private isDirty = false
 
   constructor(cacheBasePath?: string) {
     const basePath = cacheBasePath && cacheBasePath.trim().length > 0
@@ -52,7 +57,11 @@ export class ContactCacheService {
   }
 
   get(username: string): ContactCacheEntry | undefined {
-    return this.cache[username]
+    const entry = this.cache[username]
+    if (entry) {
+      entry.lastAccessedAt = Date.now()
+    }
+    return entry
   }
 
   getAllEntries(): Record<string, ContactCacheEntry> {
@@ -65,29 +74,74 @@ export class ContactCacheService {
     for (const [username, entry] of Object.entries(entries)) {
       const existing = this.cache[username]
       if (!existing || entry.updatedAt >= existing.updatedAt) {
-        this.cache[username] = entry
+        this.cache[username] = { ...entry, lastAccessedAt: Date.now() }
         changed = true
       }
     }
     if (changed) {
-      this.persist()
+      this.enforceSizeLimit()
+      this.schedulePersist()
     }
   }
 
+  private enforceSizeLimit() {
+    const entries = Object.entries(this.cache)
+    if (entries.length <= this.maxEntries) return
+
+    // LRU：按 lastAccessedAt 排序，删除最旧的
+    const sorted = entries.sort((a, b) => {
+      const aTime = a[1].lastAccessedAt || a[1].updatedAt
+      const bTime = b[1].lastAccessedAt || b[1].updatedAt
+      return bTime - aTime
+    })
+
+    const toKeep = sorted.slice(0, this.maxEntries)
+    this.cache = Object.fromEntries(toKeep)
+    console.log(`[ContactCache] LRU 淘汰 ${entries.length - this.maxEntries} 个联系人`)
+  }
+
+  private schedulePersist() {
+    this.isDirty = true
+    if (this.persistTimer) return
+
+    // 防抖 3 秒：3 秒内无新写入则持久化
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      if (this.isDirty) {
+        this.persist()
+        this.isDirty = false
+      }
+    }, 3000)
+  }
+
   private persist() {
-    try {
-      writeFileSync(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
-    } catch (error) {
+    writeFile(this.cacheFilePath, JSON.stringify(this.cache), 'utf8').catch(error => {
       console.error('ContactCacheService: 保存缓存失败', error)
-    }
+    })
   }
 
   clear(): void {
     this.cache = {}
+    this.isDirty = false
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
     try {
       rmSync(this.cacheFilePath, { force: true })
     } catch (error) {
       console.error('ContactCacheService: 清理缓存失败', error)
+    }
+  }
+
+  async flush(): Promise<void> {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+    if (this.isDirty) {
+      await writeFile(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
+      this.isDirty = false
     }
   }
 }

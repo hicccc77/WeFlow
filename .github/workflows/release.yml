@@ -28,7 +28,7 @@ jobs:
           node-version: 24
           cache: "npm"
       - name: Install Dependencies
-        run: npm install --ignore-scripts
+        run: npm install
 
       - name: Ensure mac key helpers are executable
         shell: bash

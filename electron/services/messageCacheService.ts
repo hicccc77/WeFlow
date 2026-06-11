@@ -1,5 +1,6 @@
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { app } from 'electron'
 import { ConfigService } from './config'
 
@@ -13,6 +14,8 @@ export class MessageCacheService {
   private cache: Record<string, SessionMessageCacheEntry> = {}
   private readonly sessionLimit = 150
   private readonly maxSessionEntries = 48
+  private persistTimer: NodeJS.Timeout | null = null
+  private isDirty = false
 
   constructor(cacheBasePath?: string) {
     const basePath = cacheBasePath && cacheBasePath.trim().length > 0
@@ -72,23 +75,51 @@ export class MessageCacheService {
       messages: trimmed
     }
     this.pruneSessionEntries()
-    this.persist()
+    this.schedulePersist()
+  }
+
+  private schedulePersist() {
+    this.isDirty = true
+    if (this.persistTimer) return
+
+    // 防抖 3 秒：3 秒内无新写入则持久化
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      if (this.isDirty) {
+        this.persist()
+        this.isDirty = false
+      }
+    }, 3000)
   }
 
   private persist() {
-    try {
-      writeFileSync(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
-    } catch (error) {
+    writeFile(this.cacheFilePath, JSON.stringify(this.cache), 'utf8').catch(error => {
       console.error('MessageCacheService: 保存缓存失败', error)
-    }
+    })
   }
 
   clear(): void {
     this.cache = {}
+    this.isDirty = false
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
     try {
       rmSync(this.cacheFilePath, { force: true })
     } catch (error) {
       console.error('MessageCacheService: 清理缓存失败', error)
+    }
+  }
+
+  async flush(): Promise<void> {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+    if (this.isDirty) {
+      await writeFile(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
+      this.isDirty = false
     }
   }
 }

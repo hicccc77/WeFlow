@@ -865,8 +865,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false // Allow loading local files (video playback)
+      nodeIntegration: false
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: false,
@@ -1212,8 +1211,7 @@ function createVideoPlayerWindow(videoPath: string, videoWidth?: number, videoHe
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false
+      nodeIntegration: false
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -1271,8 +1269,7 @@ function createImageViewerWindow(imagePath: string, liveVideoPath?: string) {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false // 允许加载本地文件
+      nodeIntegration: false
     },
     frame: false,
     show: false,
@@ -4234,6 +4231,28 @@ function checkForUpdatesOnStartup() {
 }
 
 app.whenReady().then(async () => {
+  // 注册自定义协议以安全访问本地文件
+  session.defaultSession.protocol.registerFileProtocol('weflow', (request, callback) => {
+    const url = request.url.substring('weflow://'.length)
+    const filePath = decodeURIComponent(url)
+
+    // 路径白名单：仅允许用户数据目录和临时目录
+    const userDataPath = app.getPath('userData')
+    const tempPath = app.getPath('temp')
+    const homePath = app.getPath('home')
+
+    if (
+      filePath.startsWith(userDataPath) ||
+      filePath.startsWith(tempPath) ||
+      filePath.startsWith(homePath)
+    ) {
+      callback({ path: filePath })
+    } else {
+      console.error(`[Protocol] 拒绝访问路径: ${filePath}`)
+      callback({ error: -10 }) // ERR_ACCESS_DENIED
+    }
+  })
+
   // 先初始化配置，以便在启动早期判定是否需要静默启动
   configService = new ConfigService()
   applyAutoUpdateChannel('startup')
