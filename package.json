@@ -106,10 +106,6 @@
           "to": "resources/key/macos"
         },
         {
-          "from": "resources/fonts",
-          "to": "resources/fonts"
-        },
-        {
           "from": "resources/icons",
           "to": "resources/icons"
         },
