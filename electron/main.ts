@@ -4166,6 +4166,10 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
+  ipcMain.handle('http:getToken', async () => {
+    return { token: httpService.getAuthToken() }
+  })
+
   ipcMain.handle('http:status', async () => {
     return {
       running: httpService.isRunning(),

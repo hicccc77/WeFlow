@@ -590,6 +590,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   http: {
     start: (port?: number, host?: string) => ipcRenderer.invoke('http:start', port, host),
     stop: () => ipcRenderer.invoke('http:stop'),
+    getToken: () => ipcRenderer.invoke('http:getToken'),
     status: () => ipcRenderer.invoke('http:status')
   },
 
