@@ -1,0 +1,80 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+dist
+dist-electron
+dist-ssr
+*.local
+test/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build output
+out
+release
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+Thumbs.db
+
+# Electron dev cache
+.electron/
+.cache/
+
+
+
+# 忽略 Visual Studio 临时文件夹
+.vs/
+# 忽略 IntelliSense 缓存文件
+*.ipch
+*.aps
+
+wcdb/
+!resources/wcdb/
+!resources/wcdb/**
+xkey/
+server/
+*info
+chatlab-format.md
+*.bak
+AGENTS.md
+AGENT.md
+.claude/
+CLAUDE.md
+.agents/
+resources/wx_send
+概述.md
+pnpm-lock.yaml
+/pnpm-workspace.yaml
+wechat-research-site
+.codex
+weflow-web-offical
+/Wedecrypt
+/scripts/syncwcdb.py
+/scripts/syncWedecrypt.py

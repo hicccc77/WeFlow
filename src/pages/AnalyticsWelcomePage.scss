@@ -1,0 +1,118 @@
+.analytics-welcome-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 100%;
+}
+
+.analytics-welcome-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 40px 24px;
+    animation: welcomeFadeIn 0.4s ease-out;
+}
+
+.analytics-welcome-content {
+    text-align: center;
+    max-width: 480px;
+    width: 100%;
+}
+
+.analytics-welcome-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 20px;
+    background: var(--primary-light);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+}
+
+.analytics-welcome-content h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 10px;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+.analytics-welcome-content p {
+    color: var(--text-secondary);
+    margin: 0 0 32px;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.analytics-welcome-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.analytics-welcome-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-secondary);
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+        background: var(--bg-hover);
+        border-color: var(--text-tertiary);
+        color: var(--primary);
+    }
+
+    svg {
+        flex-shrink: 0;
+    }
+}
+
+.analytics-welcome-card-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.analytics-welcome-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.analytics-welcome-card-meta {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 540px) {
+    .analytics-welcome-actions {
+        grid-template-columns: 1fr;
+    }
+}
+
+@keyframes welcomeFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

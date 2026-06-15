@@ -1,0 +1,185 @@
+.lock-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--bg-primary);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-app-region: drag;
+    transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    backdrop-filter: blur(25px) saturate(180%);
+    background-color: var(--bg-primary);
+    // 让背景带一点透明度以增强毛玻璃效果
+    opacity: 1;
+
+    &.unlocked {
+        opacity: 0;
+        pointer-events: none;
+        backdrop-filter: blur(0) saturate(100%);
+        transform: scale(1.02);
+
+        .lock-content {
+            transform: translateY(-20px) scale(0.95);
+            filter: blur(10px);
+            opacity: 0;
+        }
+    }
+
+    .lock-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 320px;
+        -webkit-app-region: no-drag;
+        animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+        .lock-avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 4px solid var(--bg-total);
+            background-color: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+
+        .lock-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 32px;
+        }
+
+        .lock-form {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+
+            .input-group {
+                position: relative;
+                width: 100%;
+
+                input {
+                    width: 100%;
+                    height: 48px;
+                    padding: 0 16px;
+                    padding-right: 48px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border-color);
+                    background-color: var(--bg-input);
+                    color: var(--text-primary);
+                    font-size: 16px;
+                    outline: none;
+                    transition: all 0.2s;
+
+                    &:focus {
+                        border-color: var(--primary-color);
+                        box-shadow: 0 0 0 2px var(--primary-color-alpha);
+                    }
+                }
+
+                .submit-btn {
+                    position: absolute;
+                    right: 8px;
+                    top: 8px;
+                    width: 32px;
+                    height: 32px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 8px;
+                    border: none;
+                    background: var(--primary-color);
+                    color: white;
+                    cursor: pointer;
+                    transition: opacity 0.2s;
+
+                    &:hover {
+                        opacity: 0.9;
+                    }
+                }
+            }
+
+            .hello-btn {
+                width: 100%;
+                height: 48px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                background-color: var(--bg-secondary);
+                color: var(--text-primary);
+                font-size: 15px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s;
+
+                &:hover {
+                    background-color: var(--bg-hover);
+                    transform: translateY(-1px);
+                }
+
+                &.loading {
+                    opacity: 0.7;
+                    pointer-events: none;
+                }
+            }
+        }
+
+        .lock-error {
+            margin-top: 16px;
+            color: #ff4d4f;
+            font-size: 14px;
+            animation: shake 0.5s ease-in-out;
+        }
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    10%,
+    30%,
+    50%,
+    70%,
+    90% {
+        transform: translateX(-4px);
+    }
+
+    20%,
+    40%,
+    60%,
+    80% {
+        transform: translateX(4px);
+    }
+}

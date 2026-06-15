@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeFlow</title>
+  <script>
+    (function initSplashMode() {
+      var params = new URLSearchParams(window.location.search || "");
+      var mode = params.get("themeMode") || params.get("mode") || "system";
+      var themeId = params.get("themeId") || "cloud-dancer";
+      var mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+      var resolved = mode === "dark" || (mode === "system" && mq && mq.matches) ? "dark" : "light";
+
+      document.documentElement.setAttribute("data-theme", themeId);
+      document.documentElement.setAttribute("data-theme-mode", mode);
+      document.documentElement.setAttribute("data-mode", resolved);
+    })();
+  </script>
+  <style>
+    :root {
+      --surface-start: #ffffff;
+      --surface-end: #f8f9fc;
+      --accent: #5b6abf;
+      --accent-rgb: 91, 106, 191;
+      --ambient-glow: rgba(91, 106, 191, 0.08);
+      --text: #1a1b1e;
+      --text-muted: #5f6368;
+      --text-faint: #9aa0a6;
+      --border-subtle: rgba(0, 0, 0, 0.05);
+      --loader-track: rgba(0, 0, 0, 0.06);
+      --shadow-window:
+        0 24px 60px rgba(23, 27, 38, 0.10),
+        0 4px 12px rgba(23, 27, 38, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 1);
+      --radius-window: 24px;
+      --ease-ambient: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    [data-mode="dark"] {
+      --surface-start: #14171d;
+      --surface-end: #0b0d10;
+      --accent: #7c8deb;
+      --accent-rgb: 124, 141, 235;
+      --ambient-glow: rgba(124, 141, 235, 0.08);
+      --text: #f0f0f0;
+      --text-muted: #8b92a5;
+      --text-faint: #4e5569;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --loader-track: rgba(255, 255, 255, 0.09);
+      --shadow-window:
+        0 24px 80px rgba(0, 0, 0, 0.60),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      --radius-window: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      -webkit-app-region: drag;
+    }
+
+    .splash-shell {
+      width: 600px;
+      height: 380px;
+      max-width: calc(100vw - 64px);
+      max-height: calc(100vh - 64px);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: var(--radius-window);
+      border: 1px solid var(--border-subtle);
+      background: linear-gradient(145deg, var(--surface-start), var(--surface-end));
+      box-shadow: var(--shadow-window);
+      isolation: isolate;
+      animation: windowAppear 800ms var(--ease-ambient) both;
+    }
+
+    .splash-shell::before {
+      content: "";
+      position: absolute;
+      width: 200%;
+      height: 200%;
+      left: -50%;
+      top: -50%;
+      background: radial-gradient(circle at 50% 40%, var(--ambient-glow) 0%, transparent 44%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .brand-stage {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: -20px;
+      text-align: center;
+      animation: contentIn 560ms var(--ease-ambient) 90ms both;
+    }
+
+    .logo-core {
+      width: 64px;
+      height: 64px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 24px;
+      background: transparent;
+      border: 0;
+    }
+
+    .logo-image {
+      width: 64px;
+      height: 64px;
+      display: block;
+      object-fit: contain;
+      border-radius: 20px;
+      animation: logoBreathe 3200ms ease-in-out infinite alternate;
+    }
+
+    .app-name {
+      font-size: 24px;
+      line-height: 1.18;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    [data-mode="dark"] .app-name {
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.50);
+    }
+
+    .app-desc {
+      font-size: 13px;
+      line-height: 1.5;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    [data-mode="dark"] .app-desc {
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    .status-row {
+      position: absolute;
+      left: 32px;
+      right: 32px;
+      bottom: 24px;
+      z-index: 2;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      color: var(--text-faint);
+      font-size: 11px;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+      animation: contentIn 560ms var(--ease-ambient) 170ms both;
+    }
+
+    .progress-text-wrap {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    [data-mode="dark"] .progress-text-wrap {
+      color: var(--text-faint);
+      font-weight: 400;
+    }
+
+    .status-dot {
+      width: 4px;
+      height: 4px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.42);
+      animation: dotPulse 1700ms ease-in-out infinite;
+    }
+
+    .progress-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+
+    .version {
+      flex-shrink: 0;
+      color: var(--text-faint);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 10px;
+      letter-spacing: 0;
+      opacity: 0.62;
+    }
+
+    [data-mode="dark"] .version {
+      opacity: 0.50;
+    }
+
+    .progress-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 3;
+      height: 3px;
+      background: var(--loader-track);
+      overflow: hidden;
+    }
+
+    [data-mode="dark"] .progress-track {
+      height: 3px;
+    }
+
+    .progress-fill {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 0%;
+      height: 100%;
+      min-width: 0;
+      border-radius: 0 999px 999px 0;
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.34);
+      overflow: hidden;
+      transition: width 440ms var(--ease-ambient);
+    }
+
+    .progress-fill::before {
+      content: "";
+      position: absolute;
+      top: -7px;
+      right: -18px;
+      width: 44px;
+      height: 15px;
+      border-radius: 999px;
+      background: rgba(var(--accent-rgb), 0.34);
+      filter: blur(8px);
+      opacity: 0;
+    }
+
+    .progress-fill::after {
+      content: "";
+      position: absolute;
+      inset: -1px 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.54), transparent);
+      opacity: 0;
+      transform: translateX(-100%);
+      animation: spectralGlide 1200ms ease-out;
+    }
+
+    .progress-fill.waiting::before {
+      opacity: 0.65;
+      animation: leadingGlow 1300ms ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .splash-shell,
+      .brand-stage,
+      .status-row,
+      .logo-image,
+      .status-dot,
+      .progress-fill,
+      .progress-fill::before,
+      .progress-fill::after {
+        animation: none !important;
+        transition: none !important;
+      }
+
+      .progress-fill {
+        left: 0 !important;
+        opacity: 1 !important;
+      }
+    }
+
+    @keyframes windowAppear {
+      0% {
+        opacity: 0;
+        transform: scale(0.97) translateY(12px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes contentIn {
+      0% {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes logoBreathe {
+      0% {
+        opacity: 0.94;
+        transform: translateY(0);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(-3px);
+      }
+    }
+
+    @keyframes dotPulse {
+      0%,
+      100% {
+        opacity: 0.38;
+        transform: scale(0.84);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1.18);
+      }
+    }
+
+    @keyframes leadingGlow {
+      0%,
+      100% {
+        opacity: 0.38;
+        transform: scaleX(0.78);
+      }
+      50% {
+        opacity: 0.86;
+        transform: scaleX(1.28);
+      }
+    }
+
+    @keyframes spectralGlide {
+      0% {
+        opacity: 0;
+        transform: translateX(-100%);
+      }
+      22%,
+      66% {
+        opacity: 0.58;
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <main class="splash-shell" id="splash" role="status" aria-live="polite">
+    <section class="brand-stage" aria-label="WeFlow">
+      <div class="logo-core" aria-hidden="true">
+        <img class="logo-image" src="./logo.png" alt="">
+      </div>
+
+      <h1 class="app-name">WeFlow</h1>
+      <p class="app-desc">&#24494;&#20449;&#32842;&#22825;&#35760;&#24405;&#31649;&#29702;&#24037;&#20855;</p>
+    </section>
+
+    <div class="status-row">
+      <div class="progress-text-wrap">
+        <div class="status-dot" aria-hidden="true"></div>
+        <div class="progress-text" id="progressText">&#27491;&#22312;&#39044;&#21152;&#36733;&#20250;&#35805;&#36923;&#36753;...</div>
+      </div>
+      <div class="version" id="versionText"></div>
+    </div>
+
+    <div class="progress-track" aria-hidden="true">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </main>
+
+  <script>
+    var themeModeQuery = null;
+    var systemModeQuery = null;
+
+    function resolveMode(mode) {
+      if (mode === "dark" || mode === "light") return mode;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function syncSystemModeListener(mode) {
+      if (!window.matchMedia) return;
+      var nextQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      if (systemModeQuery && systemModeQuery !== nextQuery && systemModeQuery.removeEventListener) {
+        systemModeQuery.removeEventListener("change", handleSystemModeChange);
+      }
+
+      systemModeQuery = nextQuery;
+      themeModeQuery = mode;
+
+      if (mode === "system" && nextQuery.addEventListener) {
+        nextQuery.addEventListener("change", handleSystemModeChange);
+      }
+    }
+
+    function handleSystemModeChange() {
+      if (themeModeQuery === "system") {
+        document.documentElement.setAttribute("data-mode", resolveMode("system"));
+      }
+    }
+
+    function applyTheme(themeId, mode) {
+      var safeThemeId = String(themeId || "cloud-dancer");
+      var safeMode = mode === "light" || mode === "dark" || mode === "system" ? mode : "system";
+      var resolvedMode = resolveMode(safeMode);
+
+      document.documentElement.setAttribute("data-theme", safeThemeId);
+      document.documentElement.setAttribute("data-theme-mode", safeMode);
+      document.documentElement.setAttribute("data-mode", resolvedMode);
+      syncSystemModeListener(safeMode);
+    }
+
+    function updateProgress(percent, text, waiting) {
+      var fill = document.getElementById("progressFill");
+      var label = document.getElementById("progressText");
+      var safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+
+      if (fill) {
+        fill.style.width = safePercent + "%";
+        if (waiting) {
+          fill.classList.add("waiting");
+        } else {
+          fill.classList.remove("waiting");
+          fill.style.animation = "none";
+          fill.offsetHeight;
+          fill.style.animation = "";
+        }
+      }
+
+      if (label && text) label.textContent = text;
+    }
+
+    function setVersion(version) {
+      var el = document.getElementById("versionText");
+      if (!el) return;
+      var text = String(version || "").trim();
+      el.textContent = text ? "v" + text.replace(/^v/i, "") : "";
+    }
+
+    (function bootstrapSplash() {
+      var params = new URLSearchParams(window.location.search || "");
+      applyTheme(params.get("themeId") || "cloud-dancer", params.get("themeMode") || "system");
+      updateProgress(0, "", false);
+    })();
+  </script>
+</body>
+</html>

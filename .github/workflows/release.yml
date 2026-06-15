@@ -1,0 +1,391 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+
+jobs:
+  release-mac-arm64:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install --ignore-scripts
+
+      - name: Ensure mac key helpers are executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            resources/key/macos/universal/xkey_helper \
+            resources/key/macos/universal/image_scan_helper \
+            resources/key/macos/universal/xkey_helper_macos \
+            resources/key/macos/universal/libwx_key.dylib
+          do
+            if [ -f "$file" ]; then
+              chmod +x "$file"
+              ls -l "$file"
+            fi
+          done
+
+      - name: Sync version with tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing package.json version to $VERSION"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package and Publish macOS arm64 (unsigned DMG + ZIP)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ELECTRON_BUILDER_BINARIES_MIRROR="https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+          echo "Using ELECTRON_BUILDER_BINARIES_MIRROR=$ELECTRON_BUILDER_BINARIES_MIRROR"
+          if ! npx electron-builder --mac dmg zip --arm64 --publish always '--config.npmRebuild=false' '--config.publish.owner=${{ github.repository_owner }}' '--config.publish.repo=${{ github.event.repository.name }}'; then
+            echo "::warning::DMG packaging failed (hdiutil instability on runner). Retrying with ZIP only."
+            npx electron-builder --mac zip --arm64 --publish always '--config.npmRebuild=false' '--config.publish.owner=${{ github.repository_owner }}' '--config.publish.repo=${{ github.event.repository.name }}'
+          fi
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          wait_for_release_id "$REPO" "$TAG" 12 2 >/dev/null
+          for YML_FILE in latest-mac.yml latest-arm64-mac.yml; do
+            if ! retry_cmd 5 3 gh release download "$TAG" --repo "$REPO" --pattern "$YML_FILE" --output "/tmp/$YML_FILE"; then
+              echo "Skip $YML_FILE because download failed after retries."
+              continue
+            fi
+            if ! grep -q 'minimumVersion' "/tmp/$YML_FILE"; then
+              echo "minimumVersion: $MINIMUM_VERSION" >> "/tmp/$YML_FILE"
+            fi
+            retry_cmd 5 3 gh release upload "$TAG" --repo "$REPO" "/tmp/$YML_FILE" --clobber
+          done
+
+  release-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Ensure linux key helper is executable
+        shell: bash
+        run: |
+          [ -f "resources/key/linux/x64/xkey_helper" ] && chmod +x "resources/key/linux/x64/xkey_helper" || echo "File not found"
+
+      - name: Sync version with tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing package.json version to $VERSION"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package and Publish Linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx electron-builder --linux --publish always '--config.publish.owner=${{ github.repository_owner }}' '--config.publish.repo=${{ github.event.repository.name }}'
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          wait_for_release_id "$REPO" "$TAG" 12 2 >/dev/null
+          retry_cmd 5 3 gh release download "$TAG" --repo "$REPO" --pattern "latest-linux.yml" --output "/tmp/latest-linux.yml" || true
+          if [ -f /tmp/latest-linux.yml ] && ! grep -q 'minimumVersion' /tmp/latest-linux.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest-linux.yml
+            retry_cmd 5 3 gh release upload "$TAG" --repo "$REPO" /tmp/latest-linux.yml --clobber
+          fi
+
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Sync version with tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing package.json version to $VERSION"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package and Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx electron-builder --win nsis --x64 --publish always '--config.publish.owner=${{ github.repository_owner }}' '--config.publish.repo=${{ github.event.repository.name }}' '--config.artifactName=${productName}-${version}-x64-Setup.${ext}'
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          wait_for_release_id "$REPO" "$TAG" 12 2 >/dev/null
+          retry_cmd 5 3 gh release download "$TAG" --repo "$REPO" --pattern "latest.yml" --output "/tmp/latest.yml" || true
+          if [ -f /tmp/latest.yml ] && ! grep -q 'minimumVersion' /tmp/latest.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest.yml
+            retry_cmd 5 3 gh release upload "$TAG" --repo "$REPO" /tmp/latest.yml --clobber
+          fi
+
+  release-windows-arm64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Sync version with tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing package.json version to $VERSION"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package and Publish Windows arm64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx electron-builder --win nsis --arm64 --publish always '--config.publish.owner=${{ github.repository_owner }}' '--config.publish.repo=${{ github.event.repository.name }}' '--config.publish.channel=latest-arm64' '--config.artifactName=${productName}-${version}-arm64-Setup.${ext}'
+
+      - name: Inject minimumVersion into latest yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          TAG=${GITHUB_REF_NAME}
+          REPO=${{ github.repository }}
+          MINIMUM_VERSION="4.1.7"
+          wait_for_release_id "$REPO" "$TAG" 12 2 >/dev/null
+          retry_cmd 5 3 gh release download "$TAG" --repo "$REPO" --pattern "latest-arm64.yml" --output "/tmp/latest-arm64.yml" || true
+          if [ -f /tmp/latest-arm64.yml ] && ! grep -q 'minimumVersion' /tmp/latest-arm64.yml; then
+            echo "minimumVersion: $MINIMUM_VERSION" >> /tmp/latest-arm64.yml
+            retry_cmd 5 3 gh release upload "$TAG" --repo "$REPO" /tmp/latest-arm64.yml --clobber
+          fi
+
+  update-release-notes:
+    runs-on: ubuntu-latest
+    needs:
+      - release-mac-arm64
+      - release-linux
+      - release
+      - release-windows-arm64
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Generate release notes with platform download links
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+
+          TAG="$GITHUB_REF_NAME"
+          REPO="$GITHUB_REPOSITORY"
+          RELEASE_PAGE="https://github.com/$REPO/releases/tag/$TAG"
+          wait_for_release_id "$REPO" "$TAG" 12 2 >/dev/null
+
+          capture_cmd_with_retry ASSETS_JSON 8 3 gh release view "$TAG" --repo "$REPO" --json assets
+
+          pick_asset() {
+            local pattern="$1"
+            echo "$ASSETS_JSON" | jq -r --arg p "$pattern" '[.assets[].name | select(test($p))][0] // ""'
+          }
+
+          WINDOWS_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("x64.*\\.exe$"))][0] // ""')"
+          if [ -z "$WINDOWS_ASSET" ]; then
+            WINDOWS_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("\\.exe$")) | select(test("arm64") | not)][0] // ""')"
+          fi
+          WINDOWS_ARM64_ASSET="$(echo "$ASSETS_JSON" | jq -r '[.assets[].name | select(test("arm64.*\\.exe$"))][0] // ""')"
+          MAC_ASSET="$(pick_asset "\\.dmg$")"
+          if [ -z "$MAC_ASSET" ]; then
+            MAC_ASSET="$(pick_asset "arm64\\.zip$")"
+          fi
+          LINUX_TAR_ASSET="$(pick_asset "\\.tar\\.gz$")"
+          LINUX_APPIMAGE_ASSET="$(pick_asset "\\.AppImage$")"
+
+          build_link() {
+            local name="$1"
+            if [ -n "$name" ]; then
+              echo "https://github.com/$REPO/releases/download/$TAG/$name"
+            fi
+          }
+
+          WINDOWS_URL="$(build_link "$WINDOWS_ASSET")"
+          WINDOWS_ARM64_URL="$(build_link "$WINDOWS_ARM64_ASSET")"
+          MAC_URL="$(build_link "$MAC_ASSET")"
+          LINUX_TAR_URL="$(build_link "$LINUX_TAR_ASSET")"
+          LINUX_APPIMAGE_URL="$(build_link "$LINUX_APPIMAGE_ASSET")"
+
+          cat > release_notes.md <<EOF
+          ## 更新日志
+          修复了一些已知问题
+
+          ## 查看更多日志/获取最新动态
+          [点击加入 Telegram 频道](https://t.me/weflow_cc)
+
+          ## 下载
+          - Windows x64（Win10+）: [点击下载](${WINDOWS_URL:-$RELEASE_PAGE})
+          - Windows arm64: [点击下载](${WINDOWS_ARM64_URL:-$RELEASE_PAGE})
+          - macOS（M系列芯片）: [点击下载](${MAC_URL:-$RELEASE_PAGE})
+          - Linux (.tar.gz): [点击下载](${LINUX_TAR_URL:-$RELEASE_PAGE})
+          - Linux (.AppImage): [点击下载](${LINUX_APPIMAGE_URL:-$RELEASE_PAGE})
+
+          ## macOS 安装提示
+          - 如果被系统提示已损坏，你需要在终端执行以下命令去除隔离标记：
+          - \`xattr -dr com.apple.quarantine "/Applications/WeFlow.app"\`
+          - 执行后重新打开 WeFlow。
+
+          > 如果某个平台链接暂时未生成，可进入[完整发布页]($RELEASE_PAGE)查看全部资源
+          EOF
+
+          retry_cmd 5 3 gh release edit "$TAG" --repo "$REPO" --notes-file release_notes.md
+
+  deploy-aur:
+    runs-on: ubuntu-latest
+    needs: [release-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Check AUR credentials
+        id: aur-credentials
+        shell: bash
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY is not configured; skipping AUR publish."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout code
+        if: steps.aur-credentials.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Update PKGBUILD version
+        if: steps.aur-credentials.outputs.enabled == 'true'
+        run: |
+          NEW_VER=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          sed -i "s/^pkgver=.*/pkgver=${NEW_VER}/" resources/installer/linux/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" resources/installer/linux/PKGBUILD
+
+      - name: Publish AUR package
+        if: steps.aur-credentials.outputs.enabled == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@master
+        with:
+          pkgname: weflow
+          pkgbuild: resources/installer/linux/PKGBUILD
+          updpkgsums: true
+          assets: |
+            resources/installer/linux/weflow.desktop
+            resources/installer/linux/icon.png
+            resources/installer/linux/.gitignore
+
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_username: H3CoF6
+          commit_email: h3cof6@gmail.com
+          ssh_keyscan_types: ed25519

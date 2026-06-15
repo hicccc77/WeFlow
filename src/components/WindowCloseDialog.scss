@@ -1,0 +1,306 @@
+.window-close-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at top, rgba(36, 42, 54, 0.18), transparent 48%),
+    rgba(7, 10, 18, 0.56);
+  backdrop-filter: blur(10px);
+  z-index: 3000;
+  animation: windowCloseDialogFadeIn 0.2s ease-out;
+}
+
+.window-close-dialog {
+  width: min(560px, 100%);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 94%, white 6%) 0%, var(--bg-primary) 100%);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  position: relative;
+  animation: windowCloseDialogSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.window-close-dialog-header {
+  padding: 28px 30px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+
+  .window-close-dialog-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  h2 {
+    margin: 14px 0 8px;
+    font-size: 26px;
+    line-height: 1.1;
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+}
+
+.window-close-dialog-body {
+  padding: 20px 24px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.window-close-dialog-option {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 18px 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 86%, white 14%) 0%, var(--bg-secondary) 100%);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 34%, var(--border-color));
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &.is-danger:hover {
+    border-color: rgba(205, 73, 73, 0.42);
+  }
+}
+
+.window-close-dialog-option-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+
+.window-close-dialog-option.is-danger .window-close-dialog-option-icon {
+  background: rgba(205, 73, 73, 0.12);
+  color: #cd4949;
+}
+
+.window-close-dialog-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  strong {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  span {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+}
+
+.window-close-dialog-actions {
+  padding: 8px 24px 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.window-close-dialog-remember {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-secondary) 76%, transparent);
+  cursor: pointer;
+  user-select: none;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.window-close-dialog-checkbox {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1.5px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  position: relative;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0.7);
+    opacity: 0;
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s ease;
+  }
+}
+
+.window-close-dialog-remember input:checked + .window-close-dialog-checkbox {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.window-close-dialog-remember input:checked + .window-close-dialog-checkbox::after {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+}
+
+.window-close-dialog-remember-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.window-close-dialog-cancel {
+  min-width: 112px;
+  padding: 12px 18px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--primary) 24%, var(--border-color));
+  }
+}
+
+.window-close-dialog-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-secondary) 84%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    transform: rotate(90deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .window-close-dialog-overlay {
+    padding: 16px;
+    align-items: flex-end;
+  }
+
+  .window-close-dialog {
+    border-radius: 24px 24px 18px 18px;
+  }
+
+  .window-close-dialog-header {
+    padding: 24px 22px 16px;
+
+    h2 {
+      font-size: 22px;
+    }
+  }
+
+  .window-close-dialog-body {
+    padding: 18px 18px 10px;
+  }
+
+  .window-close-dialog-actions {
+    padding: 8px 18px 18px;
+  }
+
+  .window-close-dialog-cancel {
+    width: 100%;
+  }
+}
+
+@keyframes windowCloseDialogFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes windowCloseDialogSlideUp {
+  from {
+    transform: translateY(24px) scale(0.98);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}

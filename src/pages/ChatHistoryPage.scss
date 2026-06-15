@@ -1,0 +1,210 @@
+.chat-history-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+
+  .history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 18px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+
+    .status-msg {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-tertiary);
+      font-size: 14px;
+
+      &.error {
+        color: var(--danger);
+      }
+
+      &.empty {
+        color: var(--text-tertiary);
+      }
+    }
+  }
+
+  .history-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 14px 0 0;
+
+    &.error-item {
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      color: var(--text-tertiary);
+      font-size: 13px;
+      text-align: center;
+      justify-content: center;
+    }
+
+    .history-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: none;
+      box-shadow: none;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      .avatar-component.avatar-inner {
+        width: 100%;
+        height: 100%;
+        border-radius: inherit;
+        background: transparent;
+
+        img.avatar-image {
+          // Forwarded record head images may include a light matte edge.
+          // Slightly zoom in to crop that edge and align with normal chat avatars.
+          transform: scale(1.12);
+          transform-origin: center;
+        }
+      }
+    }
+
+    .content-wrapper {
+      flex: 1;
+      min-width: 0;
+      padding-bottom: 18px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 4px;
+
+        .sender {
+          font-size: 13px;
+          font-weight: 400;
+          color: color-mix(in srgb, var(--text-secondary) 82%, transparent);
+          line-height: 1.3;
+        }
+
+        .time {
+          font-size: 12px;
+          color: color-mix(in srgb, var(--text-tertiary) 92%, transparent);
+          flex-shrink: 0;
+          margin-left: 8px;
+          line-height: 1.3;
+        }
+      }
+
+      .bubble {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+        word-wrap: break-word;
+        max-width: 100%;
+        display: block;
+
+        &.image-bubble {
+          padding: 0;
+          background: transparent;
+        }
+
+        .text-content {
+          font-size: 15px;
+          line-height: 1.7;
+          color: var(--text-primary);
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .media-content {
+          img {
+            max-width: min(100%, 420px);
+            max-height: 320px;
+            border-radius: 12px;
+            display: block;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+            background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+          }
+
+          .media-tip {
+            padding: 6px 0;
+            color: var(--text-tertiary);
+            font-size: 13px;
+          }
+        }
+
+        .media-placeholder {
+          font-size: 13px;
+          color: var(--text-secondary);
+          padding: 4px 0 0;
+        }
+
+        .nested-chat-record-card {
+          min-width: 220px;
+          max-width: 320px;
+          background: var(--card-bg);
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          overflow: hidden;
+          padding: 0;
+          text-align: left;
+          cursor: default;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+
+          &.clickable {
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+
+            &:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+              border-color: color-mix(in srgb, var(--primary) 28%, var(--border-color));
+            }
+          }
+
+          &:disabled {
+            border: 1px solid var(--border-color);
+            opacity: 1;
+          }
+        }
+
+        .nested-chat-record-title {
+          padding: 13px 15px 9px;
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .nested-chat-record-list {
+          padding: 0 15px 11px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .nested-chat-record-line {
+          font-size: 13px;
+          line-height: 1.45;
+          color: var(--text-secondary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .nested-chat-record-footer {
+          padding: 8px 15px 11px;
+          font-size: 12px;
+          color: var(--text-tertiary);
+        }
+      }
+    }
+  }
+}

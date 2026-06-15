@@ -1,0 +1,23 @@
+title = "Gitleaks Config"
+
+[extend]
+# 继承默认规则
+useDefault = true
+
+# 排除误报路径
+[[rules]]
+id = "curl-auth-header"
+[rules.allowlist]
+paths = [
+  '''docs/HTTP-API\.md'''
+]
+regexes = [
+  '''YOUR_TOKEN'''
+]
+
+[[rules]]
+id = "generic-api-key"
+[rules.allowlist]
+paths = [
+  '''src/pages/ChatPage\.tsx'''
+]

@@ -1,0 +1,379 @@
+.biz-account-list {
+  flex: 1;
+  overflow-y: auto;
+  background-color: var(--bg-secondary); // 对齐会话列表背景
+
+  .biz-loading {
+    padding: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+
+  .biz-account-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 1px solid var(--border-color);
+
+    &:hover {
+      background-color: var(--bg-hover);
+    }
+
+    &.active {
+      background-color: var(--primary-light) !important;
+      border-left: 3px solid var(--primary);
+      padding-left: 13px; // 补偿 border-left
+    }
+
+    &.pay-account {
+      background-color: var(--bg-primary);
+      &.active { 
+        background-color: var(--primary-light) !important;
+        border-left: 3px solid var(--primary);
+      }
+    }
+
+    .biz-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px; // 对齐会话列表头像圆角
+      object-fit: cover;
+      flex-shrink: 0;
+      background-color: var(--bg-tertiary);
+    }
+
+    .biz-unread-badge {
+      position: absolute;
+      top: 8px;
+      left: 52px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: #ff4d4f;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 18px;
+      text-align: center;
+      border: 2px solid var(--bg-secondary);
+      box-sizing: border-box;
+    }
+
+    .biz-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      .biz-info-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        .biz-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .biz-time {
+          font-size: 11px;
+          color: var(--text-tertiary);
+          flex-shrink: 0;
+        }
+      }
+
+      .biz-badge {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        width: fit-content;
+        margin-top: 2px;
+
+        &.type-service { color: #07c160; background: rgba(7, 193, 96, 0.1); }
+        &.type-sub { color: var(--primary); background: var(--primary-light); }
+        &.type-enterprise { color: #f5222d; background: rgba(245, 34, 45, 0.1); }
+        &.type-unknown { color: var(--text-tertiary); background: var(--bg-tertiary); }
+      }
+    }
+  }
+}
+
+.biz-main {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-secondary); // 对齐聊天页背景
+
+  .main-header {
+    height: 56px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--card-bg);
+    flex-shrink: 0;
+
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  }
+
+  .message-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 16px;
+    background: var(--chat-pattern);
+    background-color: var(--bg-tertiary); // 对齐聊天背景色
+
+    .messages-wrapper {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px; // 减小间距，因为有了 time-divider
+    }
+  }
+
+  .time-divider {
+    text-align: center;
+    margin: 16px 0 8px;
+    
+    span {
+      display: inline-block;
+      padding: 2px 8px;
+      background-color: var(--bg-primary);
+      color: var(--text-tertiary);
+      font-size: 11px;
+      border-radius: 4px;
+      opacity: 0.8;
+    }
+  }
+
+  // 占位状态：对齐 Chat 页面风格
+  .biz-no-record-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    background: var(--bg-tertiary);
+
+    .no-record-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background-color: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      color: var(--text-tertiary);
+      opacity: 0.5;
+
+      svg { width: 32px; height: 32px; }
+    }
+
+    h3 {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      max-width: 280px;
+      line-height: 1.5;
+    }
+  }
+
+  .biz-loading-more {
+    text-align: center;
+    padding: 20px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+
+  .pay-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+
+    .pay-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-tertiary);
+      margin-bottom: 20px;
+
+      .pay-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      .pay-icon-placeholder {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background-color: #07c160;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+      }
+    }
+
+    .pay-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 24px;
+    }
+
+    .pay-desc {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+    }
+
+    .pay-footer {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+      font-size: 12px;
+      color: var(--text-tertiary);
+      text-align: right;
+    }
+  }
+
+  .article-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+
+    .main-article {
+      position: relative;
+      cursor: pointer;
+
+      .article-cover {
+        width: 100%;
+        height: 220px;
+        object-fit: cover;
+        background-color: var(--bg-tertiary);
+      }
+
+      .article-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 16px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.8));
+
+        .article-title {
+          color: white;
+          font-size: 17px;
+          font-weight: 500;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+      }
+    }
+
+    .article-digest {
+      padding: 12px 16px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .sub-articles {
+      .sub-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-top: 1px solid var(--border-color);
+        cursor: pointer;
+        
+        &:hover { background-color: var(--bg-hover); }
+
+        .sub-title {
+          flex: 1;
+          font-size: 15px;
+          color: var(--text-primary);
+          padding-right: 12px;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        .sub-cover {
+          width: 48px;
+          height: 48px;
+          border-radius: 4px;
+          object-fit: cover;
+          flex-shrink: 0;
+          border: 1px solid var(--border-color);
+        }
+      }
+    }
+  }
+}
+
+.biz-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  background: var(--bg-tertiary); // 对齐 Chat 页面空白背景
+
+  .empty-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 20px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-secondary);
+    color: var(--text-tertiary);
+
+    svg { width: 40px; height: 40px; }
+  }
+
+  p { color: var(--text-tertiary); font-size: 14px; }
+}

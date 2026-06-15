@@ -1,0 +1,84 @@
+name: Issue Auto Assign
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+
+jobs:
+  assign-by-platform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign issue by selected platform
+        uses: actions/github-script@v7
+        env:
+          ASSIGNEE_WINDOWS: ${{ vars.ISSUE_ASSIGNEE_WINDOWS }}
+          ASSIGNEE_MACOS: ${{ vars.ISSUE_ASSIGNEE_MACOS }}
+          ASSIGNEE_LINUX: ${{ vars.ISSUE_ASSIGNEE_LINUX || 'H3CoF6' }}
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue) {
+              core.info("No issue payload.");
+              return;
+            }
+
+            const labels = (issue.labels || []).map((l) => l.name);
+            if (!labels.includes("type: bug")) {
+              core.info("Skip non-bug issue.");
+              return;
+            }
+
+            const body = issue.body || "";
+            const match = body.match(/###\s*(?:使用平台|平台|Platform)\s*\r?\n+([^\r\n]+)/i);
+            if (!match) {
+              core.info("No platform field found in issue body.");
+              return;
+            }
+
+            const rawPlatform = match[1].trim().toLowerCase();
+            let platformKey = null;
+            if (rawPlatform.includes("windows")) platformKey = "windows";
+            if (rawPlatform.includes("macos")) platformKey = "macos";
+            if (rawPlatform.includes("linux")) platformKey = "linux";
+
+            if (!platformKey) {
+              core.info(`Unrecognized platform value: ${rawPlatform}`);
+              return;
+            }
+
+            const parseAssignees = (value) =>
+              (value || "")
+                .split(",")
+                .map((v) => v.trim())
+                .filter(Boolean);
+
+            const assigneeMap = {
+              windows: parseAssignees(process.env.ASSIGNEE_WINDOWS),
+              macos: parseAssignees(process.env.ASSIGNEE_MACOS),
+              linux: parseAssignees(process.env.ASSIGNEE_LINUX),
+            };
+
+            const candidates = assigneeMap[platformKey] || [];
+            if (candidates.length === 0) {
+              core.info(`No assignee configured for platform: ${platformKey}`);
+              return;
+            }
+
+            const existing = new Set((issue.assignees || []).map((a) => a.login));
+            const toAdd = candidates.filter((u) => !existing.has(u));
+            if (toAdd.length === 0) {
+              core.info("All configured assignees already assigned.");
+              return;
+            }
+
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              assignees: toAdd,
+            });
+
+            core.info(`Assigned issue #${issue.number} to: ${toAdd.join(", ")}`);

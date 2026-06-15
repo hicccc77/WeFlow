@@ -1,0 +1,389 @@
+name: Dev Daily
+
+on:
+  schedule:
+    # GitHub Actions schedule uses UTC. 16:00 UTC = 北京时间次日 00:00
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dev-nightly-fixed-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FIXED_DEV_TAG: nightly-dev
+  TARGET_BRANCH: dev
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      dev_version: ${{ steps.meta.outputs.dev_version }}
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Generate daily dev version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          YEAR_2="$(TZ=Asia/Shanghai date +%y)"
+          MONTH="$(TZ=Asia/Shanghai date +%-m)"
+          DAY="$(TZ=Asia/Shanghai date +%-d)"
+          DEV_VERSION="${YEAR_2}.${MONTH}.${DAY}"
+          echo "dev_version=$DEV_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Dev version: $DEV_VERSION"
+
+      - name: Recreate fixed prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          recreate_fixed_prerelease "$GITHUB_REPOSITORY" "$FIXED_DEV_TAG" "$TARGET_BRANCH" "Daily Dev Build" "开发版发布页"
+
+  dev-mac-arm64:
+    needs: prepare
+    runs-on: macos-14
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Ensure mac key helpers are executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            resources/key/macos/universal/xkey_helper \
+            resources/key/macos/universal/image_scan_helper \
+            resources/key/macos/universal/xkey_helper_macos \
+            resources/key/macos/universal/libwx_key.dylib
+          do
+            if [ -f "$file" ]; then
+              chmod +x "$file"
+              ls -l "$file"
+            fi
+          done
+
+      - name: Set dev version
+        shell: bash
+        run: npm version "${{ needs.prepare.outputs.dev_version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package macOS arm64 dev artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ELECTRON_BUILDER_BINARIES_MIRROR="https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+          echo "Using ELECTRON_BUILDER_BINARIES_MIRROR=$ELECTRON_BUILDER_BINARIES_MIRROR"
+          if ! npx electron-builder --mac dmg zip --arm64 --publish never '--config.publish.channel=dev' '--config.artifactName=${productName}-dev-arm64.${ext}'; then
+            echo "::warning::DMG packaging failed (hdiutil instability on runner). Retrying with ZIP only."
+            npx electron-builder --mac zip --arm64 --publish never '--config.publish.channel=dev' '--config.artifactName=${productName}-dev-arm64.${ext}'
+          fi
+
+      - name: Upload macOS arm64 assets to fixed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          assets=()
+          while IFS= read -r file; do
+            assets+=("$file")
+          done < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          upload_release_assets_with_retry "$GITHUB_REPOSITORY" "$FIXED_DEV_TAG" "${assets[@]}"
+
+  dev-linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Set dev version
+        shell: bash
+        run: npm version "${{ needs.prepare.outputs.dev_version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package Linux dev artifacts
+        run: |
+          npx electron-builder --linux --publish never '--config.publish.channel=dev' '--config.artifactName=${productName}-dev-linux.${ext}'
+
+      - name: Upload Linux assets to fixed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          assets=()
+          while IFS= read -r file; do
+            assets+=("$file")
+          done < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          upload_release_assets_with_retry "$GITHUB_REPOSITORY" "$FIXED_DEV_TAG" "${assets[@]}"
+
+  dev-win-x64:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Set dev version
+        shell: bash
+        run: npm version "${{ needs.prepare.outputs.dev_version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package Windows x64 dev artifacts
+        run: |
+          npx electron-builder --win nsis --x64 --publish never '--config.publish.channel=dev' '--config.artifactName=${productName}-dev-x64-Setup.${ext}'
+
+      - name: Upload Windows x64 assets to fixed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          assets=()
+          while IFS= read -r file; do
+            assets+=("$file")
+          done < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          upload_release_assets_with_retry "$GITHUB_REPOSITORY" "$FIXED_DEV_TAG" "${assets[@]}"
+
+  dev-win-arm64:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Set dev version
+        shell: bash
+        run: npm version "${{ needs.prepare.outputs.dev_version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build Frontend & Type Check
+        shell: bash
+        run: |
+          npx tsc
+          npx vite build
+
+      - name: Package Windows arm64 dev artifacts
+        run: |
+          npx electron-builder --win nsis --arm64 --publish never '--config.publish.channel=dev-arm64' '--config.artifactName=${productName}-dev-arm64-Setup.${ext}'
+
+      - name: Upload Windows arm64 assets to fixed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/release-utils.sh
+          assets=()
+          while IFS= read -r file; do
+            assets+=("$file")
+          done < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          upload_release_assets_with_retry "$GITHUB_REPOSITORY" "$FIXED_DEV_TAG" "${assets[@]}"
+
+  update-dev-release-notes:
+    needs:
+      - prepare
+      - dev-mac-arm64
+      - dev-linux
+      - dev-win-x64
+      - dev-win-arm64
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 1
+
+      - name: Update fixed dev release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${FIXED_DEV_TAG:-}"
+          if [ -z "$TAG" ]; then
+            echo "FIXED_DEV_TAG is empty, abort."
+            exit 1
+          fi
+          REPO="$GITHUB_REPOSITORY"
+          RELEASE_PAGE="https://github.com/$REPO/releases/tag/$TAG"
+          echo "Using release tag: $TAG"
+
+          if ! gh api "repos/$REPO/releases/tags/$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found, skip notes update."
+            exit 0
+          fi
+
+          ASSETS_JSON="$(gh api "repos/$REPO/releases/tags/$TAG")"
+
+          pick_asset() {
+            local pattern="$1"
+            echo "$ASSETS_JSON" | jq -r --arg p "$pattern" '[.assets[].name | select(test($p))][0] // ""'
+          }
+
+          WINDOWS_ASSET="$(pick_asset "dev-x64-Setup[.]exe$")"
+          WINDOWS_ARM64_ASSET="$(pick_asset "dev-arm64-Setup[.]exe$")"
+          MAC_ASSET="$(pick_asset "dev-arm64[.]dmg$")"
+          if [ -z "$MAC_ASSET" ]; then
+            MAC_ASSET="$(pick_asset "dev-arm64[.]zip$")"
+          fi
+          LINUX_TAR_ASSET="$(pick_asset "dev-linux[.]tar[.]gz$")"
+          LINUX_APPIMAGE_ASSET="$(pick_asset "dev-linux[.]AppImage$")"
+
+          build_link() {
+            local name="$1"
+            if [ -n "$name" ]; then
+              echo "https://github.com/$REPO/releases/download/$TAG/$name"
+            fi
+          }
+
+          WINDOWS_URL="$(build_link "$WINDOWS_ASSET")"
+          WINDOWS_ARM64_URL="$(build_link "$WINDOWS_ARM64_ASSET")"
+          MAC_URL="$(build_link "$MAC_ASSET")"
+          LINUX_TAR_URL="$(build_link "$LINUX_TAR_ASSET")"
+          LINUX_APPIMAGE_URL="$(build_link "$LINUX_APPIMAGE_ASSET")"
+
+          cat > dev_release_notes.md <<EOF
+          ## Daily Dev Build
+          - 该发布页为 **开发版**。
+          - 当前构建版本：\`${{ needs.prepare.outputs.dev_version }}\`
+          - 此版本为每日构建的开发版，包含最新的功能和修复，但可能不够稳定，仅推荐用于测试和验证。
+
+          ## 下载
+          - Windows x64: [点击下载](${WINDOWS_URL:-$RELEASE_PAGE})
+          - Windows arm64: [点击下载](${WINDOWS_ARM64_URL:-$RELEASE_PAGE})
+          - macOS（Apple Silicon）: [点击下载](${MAC_URL:-$RELEASE_PAGE})
+          - Linux (.tar.gz): [点击下载](${LINUX_TAR_URL:-$RELEASE_PAGE})
+          - Linux (.AppImage): [点击下载](${LINUX_APPIMAGE_URL:-$RELEASE_PAGE})
+
+          ## macOS 安装提示
+          - 如果被系统提示已损坏，你需要在终端执行以下命令去除隔离标记：
+          - \`xattr -dr com.apple.quarantine "/Applications/WeFlow.app"\`
+          - 执行后重新打开 WeFlow。
+
+          ## 说明
+          - 该发布页的同名资源会被后续构建覆盖，请勿将其视作长期归档版本。
+          - 如某个平台资源暂未生成，请进入[发布页]($RELEASE_PAGE)查看最新状态
+          EOF
+
+          update_release_notes() {
+            local attempts=5
+            local delay_seconds=2
+            local i
+            for ((i=1; i<=attempts; i++)); do
+              if gh release edit "$TAG" --repo "$REPO" --title "Daily Dev Build" --notes-file dev_release_notes.md --prerelease >/dev/null 2>&1; then
+                return 0
+              fi
+              if [ "$i" -lt "$attempts" ]; then
+                echo "Release update failed (attempt $i/$attempts), retry in ${delay_seconds}s..."
+                sleep "$delay_seconds"
+              fi
+            done
+            return 1
+          }
+
+          update_release_notes
+          source .github/scripts/release-utils.sh
+          RELEASE_REST_ID="$(wait_for_release_id "$REPO" "$TAG" 12 2)"
+          settle_release_state "$REPO" "$RELEASE_REST_ID" "$TAG" 12 2
+          print_release_state "$REPO" "$TAG"

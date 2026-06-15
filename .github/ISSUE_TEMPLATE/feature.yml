@@ -1,0 +1,85 @@
+name: "全新功能请求"
+description: "提议一个目前项目中完全没有的新特性"
+title: "[Feature]: "
+labels: ["type: feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你为项目提供新想法！详细的需求描述能极大提高该功能被采纳的几率。
+  - type: input
+    id: confirm-unique
+    attributes:
+      label: 确认唯一性
+      description: 请输入：我已确认没有相同问题出现
+      placeholder: 我已确认没有相同问题出现
+    validations:
+      required: true
+  - type: input
+    id: confirm-useful
+    attributes:
+      label: 确认实用性
+      description: 请输入：我认为这会对大部分人都有用
+      placeholder: 我认为这会对大部分人都有用
+    validations:
+      required: true
+  - type: checkboxes
+    id: pre-check
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 这是一个全新的功能，而不是对现有功能的改进
+          required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 功能优先级
+      description: 你认为这个功能有多重要？
+      options:
+        - 高优先级（核心功能缺失，严重影响使用体验）
+        - 中优先级（有助于提升使用体验）
+        - 低优先级（锦上添花的功能）
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题或痛点
+      description: 【为什么需要】你现在做某件事遇到了什么困难？缺少什么能力？
+      placeholder: 例如：目前无法批量导出聊天记录，每次只能手动复制单条消息，处理 100 条消息需要半小时
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方案
+      description: 【怎么实现】详细描述功能的操作流程、界面位置、可选参数等
+      placeholder: 例如：在聊天窗口右键菜单添加"导出记录"，点击后弹窗可选时间范围、导出格式（TXT/JSON）、筛选用户，最后保存到本地
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景
+      description: 【什么时候用】你会在哪些具体情况下使用这个功能？
+      placeholder: 例如：每周五整理工作讨论记录；保存客户沟通记录作为合同依据；备份重要群聊内容
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 你目前使用什么临时方案？或者有没有考虑过其他实现方式？
+      placeholder: 例如：目前只能手动截图或逐条复制粘贴
+  - type: textarea
+    id: reference
+    attributes:
+      label: 参考示例
+      description: 其他应用中是否有类似功能可以参考？
+      placeholder: 例如：微信的聊天记录导出功能、Telegram 的导出数据功能
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 参与贡献
+      options:
+        - label: 我愿意提交 Pull Request 来实现这个功能

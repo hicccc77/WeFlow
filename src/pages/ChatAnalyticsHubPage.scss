@@ -1,0 +1,130 @@
+.analytics-hub {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.analytics-hub-inner {
+  width: min(560px, 100%);
+  animation: analyticsHubFadeIn 0.35s ease-out;
+}
+
+// ---- Hero ----
+.analytics-hub-hero {
+  margin-bottom: 40px;
+}
+
+.analytics-hub-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+  letter-spacing: -0.5px;
+}
+
+.analytics-hub-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+// ---- Perspectives list ----
+.analytics-hub-perspectives {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analytics-hub-perspectives-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.analytics-hub-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+  width: 100%;
+
+  &:hover {
+    background: var(--bg-hover);
+
+    .analytics-hub-row-arrow {
+      transform: translateX(3px);
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.analytics-hub-row-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--primary-light);
+  color: var(--primary);
+
+  &--group {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+  }
+}
+
+[data-mode="dark"] .analytics-hub-row-icon--group {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+}
+
+.analytics-hub-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.analytics-hub-row-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.analytics-hub-row-desc {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.analytics-hub-row-arrow {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+@keyframes analyticsHubFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

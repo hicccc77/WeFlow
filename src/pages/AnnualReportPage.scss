@@ -1,0 +1,370 @@
+.annual-report-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  text-align: center;
+  padding: 40px 24px;
+  animation: reportFadeIn 0.35s ease-out;
+}
+
+.annual-report-page.report-route-transitioning > :not(.report-launch-overlay) {
+  animation: report-page-exit 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
+
+.header-icon {
+  color: var(--primary);
+  margin-bottom: 16px;
+}
+
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+  letter-spacing: -0.5px;
+}
+
+.page-desc {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 0 0 40px;
+  line-height: 1.7;
+}
+
+.page-desc.load-summary {
+  margin: 0 0 24px;
+}
+
+.page-desc.load-summary.complete {
+  color: var(--text-secondary);
+}
+
+// ---- Load telemetry ----
+.load-telemetry {
+  width: min(620px, 100%);
+  padding: 12px 16px;
+  margin: 0 0 24px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+
+  p {
+    margin: 3px 0;
+  }
+
+  .label {
+    color: var(--text-tertiary);
+  }
+}
+
+.load-telemetry.loading {
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border-color));
+}
+
+.load-telemetry.complete {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border-color));
+}
+
+.load-telemetry.compact {
+  margin: 12px 0 0;
+  width: min(500px, 100%);
+}
+
+// ---- Report sections ----
+.report-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(620px, 100%);
+}
+
+.report-section {
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  text-align: left;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.section-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.section-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+// ---- Year cards ----
+.year-grid-with-status {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.year-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  max-width: 600px;
+  margin-bottom: 40px;
+}
+
+.report-section .year-grid {
+  justify-content: flex-start;
+  max-width: none;
+  margin-bottom: 0;
+}
+
+.year-grid-with-status .year-grid {
+  flex: 1;
+}
+
+.year-load-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.year-load-status.complete {
+  color: var(--primary);
+}
+
+.dot-ellipsis {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: dot-ellipsis 1.2s steps(4, end) infinite;
+}
+
+.year-load-status.complete .dot-ellipsis,
+.page-desc.load-summary.complete .dot-ellipsis {
+  animation: none;
+  width: 0;
+}
+
+.year-card {
+  width: 88px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  gap: 2px;
+
+  &:hover {
+    border-color: var(--text-tertiary);
+    background: var(--bg-hover);
+  }
+
+  &.disabled {
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  &.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 1px var(--primary);
+
+    .year-number {
+      color: var(--primary);
+    }
+  }
+
+  .year-number {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+
+  .year-label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+}
+
+// ---- Generate button ----
+.generate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 24px;
+  background: var(--primary);
+  border: none;
+  border-radius: 10px;
+  color: var(--on-primary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+
+  &:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &.is-pending {
+    pointer-events: none;
+  }
+
+  &.secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+
+    &:hover:not(:disabled) {
+      background: var(--bg-hover);
+      opacity: 1;
+    }
+  }
+}
+
+// ---- Launch overlay ----
+.report-launch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+  backdrop-filter: blur(8px);
+  animation: report-launch-overlay-in 350ms ease-out both;
+}
+
+.launch-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--text-primary);
+  animation: report-launch-core-in 350ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.launch-title {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.launch-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+// ---- Animations ----
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dot-ellipsis {
+  to { width: 1.4em; }
+}
+
+@keyframes report-page-exit {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.985);
+  }
+}
+
+@keyframes report-launch-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes report-launch-core-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes reportFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

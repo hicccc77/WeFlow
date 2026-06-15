@@ -1,0 +1,318 @@
+.contact-sns-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.contact-sns-dialog {
+  width: min(720px, 100%);
+  max-height: min(84vh, 820px);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary-solid, #ffffff);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .spin {
+    animation: contactSnsDialogSpin 1s linear infinite;
+  }
+
+  .contact-sns-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .contact-sns-dialog-header-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .contact-sns-dialog-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    span {
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  .contact-sns-dialog-meta {
+    min-width: 0;
+
+    h4 {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .contact-sns-dialog-username {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contact-sns-dialog-stats {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .contact-sns-dialog-header-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .contact-sns-dialog-rank-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .contact-sns-dialog-rank-btn {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    height: 30px;
+    padding: 0 9px;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+      color: var(--text-primary);
+      border-color: color-mix(in srgb, var(--primary) 42%, var(--border-color));
+    }
+
+    &.active {
+      color: var(--primary);
+      border-color: color-mix(in srgb, var(--primary) 52%, var(--border-color));
+      background: color-mix(in srgb, var(--primary) 10%, var(--bg-primary));
+    }
+  }
+
+  .contact-sns-dialog-rank-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 228px;
+    max-height: calc((26px * 15) + 16px);
+    overflow-y: auto;
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border-color));
+    border-radius: 10px;
+    background: var(--bg-primary);
+    box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
+    padding: 8px;
+    z-index: 12;
+  }
+
+  .contact-sns-dialog-rank-empty {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.5;
+    text-align: center;
+    padding: 6px 0;
+  }
+
+  .contact-sns-dialog-rank-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 0 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .contact-sns-dialog-rank-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: 7px;
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+  }
+
+  .contact-sns-dialog-rank-index {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .contact-sns-dialog-rank-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contact-sns-dialog-rank-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .contact-sns-dialog-close-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+  }
+
+  .contact-sns-dialog-tip {
+    display: none;
+  }
+
+  .contact-sns-dialog-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 12px 12px;
+  }
+
+  .contact-sns-dialog-posts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .contact-sns-dialog-posts-list .post-header-actions {
+    display: none;
+  }
+
+  .contact-sns-dialog-status {
+    padding: 16px 10px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+
+    &.empty {
+      color: var(--text-tertiary);
+    }
+  }
+
+  .contact-sns-dialog-load-more {
+    display: block;
+    margin: 12px auto 0;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--primary) 42%, var(--border-color));
+      color: var(--primary);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.72;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .contact-sns-dialog-overlay {
+    padding: 10px 8px;
+  }
+
+  .contact-sns-dialog {
+    width: min(100vw - 16px, 720px);
+    max-height: calc(100vh - 24px);
+
+    .contact-sns-dialog-header {
+      padding: 10px 12px;
+    }
+
+    .contact-sns-dialog-header-actions {
+      gap: 6px;
+    }
+
+    .contact-sns-dialog-rank-btn {
+      height: 26px;
+      padding: 0 8px;
+      font-size: 10px;
+    }
+
+    .contact-sns-dialog-rank-panel {
+      width: min(78vw, 232px);
+    }
+
+    .contact-sns-dialog-body {
+      padding: 10px 10px 12px;
+    }
+  }
+}
+
+@keyframes contactSnsDialogSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

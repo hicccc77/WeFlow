@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=WeFlow
+Comment=一个本地的微信聊天记录导出和年度报告应用
+Exec=/usr/bin/weflow %U
+Terminal=false
+Type=Application
+Icon=weflow
+StartupWMClass=WeFlow
+Categories=Utility;

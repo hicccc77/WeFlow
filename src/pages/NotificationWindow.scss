@@ -1,0 +1,86 @@
+@keyframes noti-enter {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.96);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes noti-enter-center {
+    0% {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.7);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes noti-exit {
+    0% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+        filter: blur(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0.92) translateY(4px);
+        filter: blur(2px);
+    }
+}
+
+@keyframes noti-exit-center {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.7);
+    }
+}
+
+body {
+    // Ensure the body background is transparent to let the rounded corners show
+    background: transparent;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+#notification-root {
+    // Ensure the container allows 3D transforms
+    perspective: 1000px;
+}
+
+#notification-current {
+    // New notification slides in
+    animation: noti-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform, opacity;
+
+    &.anim-center {
+        animation: noti-enter-center 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+}
+
+#notification-prev {
+    // Old notification scales out
+    animation: noti-exit 0.35s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+    transform-origin: center top;
+    will-change: transform, opacity, filter;
+
+    // Ensure it stays behind
+    z-index: 0 !important;
+
+    &.anim-center {
+        animation: noti-exit-center 0.5s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+    }
+}

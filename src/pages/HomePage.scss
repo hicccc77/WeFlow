@@ -1,0 +1,35 @@
+.home-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.home-content {
+  text-align: center;
+  max-width: 640px;
+  width: 100%;
+  padding: 0 24px;
+}
+
+.home-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--text-primary);
+}
+
+.home-subtitle {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+  .home-title {
+    font-size: 36px;
+  }
+}

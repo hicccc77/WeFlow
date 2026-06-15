@@ -1,0 +1,92 @@
+name: "功能与体验优化"
+description: "对现有的功能逻辑进行优化，或改进用户体验"
+title: "[Enhancement]: "
+labels: ["type: enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        持续优化是项目进步的动力！请告诉我们哪个现有功能可以做得更好。
+  - type: input
+    id: confirm-unique
+    attributes:
+      label: 确认唯一性
+      description: 请输入：我已确认没有相同问题出现
+      placeholder: 我已确认没有相同问题出现
+    validations:
+      required: true
+  - type: input
+    id: confirm-beneficial
+    attributes:
+      label: 确认有益性
+      description: 请输入：我确认这真的对应用有益
+      placeholder: 我确认这真的对应用有益
+    validations:
+      required: true
+  - type: checkboxes
+    id: pre-check
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 这是对现有功能的改进，而不是全新功能
+          required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: 优化类别
+      description: 这个优化主要属于哪个方面？
+      options:
+        - 性能优化（速度、内存、资源占用）
+        - 交互体验（操作流程、界面布局）
+        - 视觉设计（样式、动画、美观度）
+        - 易用性（降低使用门槛、减少操作步骤）
+        - 稳定性（减少崩溃、提高可靠性）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: target
+    attributes:
+      label: 目标功能或模块
+      description: 你希望优化的具体功能或页面是哪个？
+      placeholder: 例如：聊天页面的消息加载、设置页面的布局、文件上传功能
+    validations:
+      required: true
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: 当前表现
+      description: 描述当前功能的不足之处或存在的问题
+      placeholder: 例如：消息列表滚动时会出现明显卡顿，加载 100 条消息需要 3 秒
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: 优化建议
+      description: 详细说明你的优化方案和预期效果
+      placeholder: 例如：建议使用虚拟滚动技术，只渲染可见区域的消息，预计可将加载时间缩短到 0.5 秒以内
+    validations:
+      required: true
+  - type: textarea
+    id: benefits
+    attributes:
+      label: 优化收益
+      description: 这个优化会带来什么具体好处？
+      placeholder: 例如：提升 80% 的加载速度、减少 50% 的内存占用、降低用户操作步骤从 5 步到 2 步
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响范围
+      description: 这个优化会影响哪些用户或场景？
+      placeholder: 例如：所有用户在查看历史消息时都会受益，尤其是群聊消息较多的场景
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 参与贡献
+      options:
+        - label: 我愿意提交 Pull Request 来实现这个优化
+    validations:
+      required: true

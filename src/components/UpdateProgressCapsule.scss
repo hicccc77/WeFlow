@@ -1,0 +1,192 @@
+.update-progress-capsule {
+    position: fixed;
+    top: 38px; // Just below title bar
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9998;
+    cursor: pointer;
+    animation: capsuleSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+
+    &:hover {
+        .capsule-content {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+            transform: scale(1.02);
+        }
+    }
+
+    .capsule-content {
+        background: var(--bg-primary);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: 8px 18px;
+        border-radius: 24px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 40px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+        .icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+
+            .download-icon {
+                animation: capsulePulse 2s infinite ease-in-out;
+            }
+        }
+
+        .info-wrapper {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            z-index: 1;
+
+            .percent-text {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--text-primary);
+                font-variant-numeric: tabular-nums;
+            }
+
+            .speed-text {
+                font-size: 13px;
+                color: var(--text-tertiary);
+                font-weight: 500;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .error-text {
+                font-size: 15px;
+                color: #ff4d4f;
+                font-weight: 600;
+            }
+
+            .available-text {
+                font-size: 15px;
+                color: var(--text-primary);
+                font-weight: 600;
+            }
+        }
+
+        .progress-bg {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: rgba(0, 0, 0, 0.05);
+
+            .progress-fill {
+                height: 100%;
+                background: var(--primary);
+                transition: width 0.3s ease;
+            }
+        }
+
+        .capsule-close {
+            background: none;
+            border: none;
+            padding: 4px;
+            margin-left: -4px;
+            margin-right: -8px;
+            cursor: pointer;
+            opacity: 0.5;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            color: var(--text-secondary);
+
+            &:hover {
+                opacity: 1;
+                background: var(--bg-tertiary);
+                border-radius: 50%;
+            }
+        }
+    }
+
+    // State Modifiers
+    &.state-available {
+        .capsule-content {
+            background: var(--primary);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: white;
+
+            .icon-wrapper {
+                color: white;
+            }
+
+            .info-wrapper {
+                .available-text {
+                    color: white;
+                }
+            }
+
+            .capsule-close {
+                color: rgba(255, 255, 255, 0.8);
+
+                &:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                }
+            }
+        }
+    }
+
+    &.state-downloading {
+        .capsule-content {
+            background: var(--bg-primary);
+        }
+    }
+
+    &.state-error {
+        .capsule-content {
+            background: #fff1f0;
+            border-color: #ffa39e;
+
+            .icon-wrapper {
+                color: #ff4d4f;
+            }
+
+            .info-wrapper .error-text {
+                color: #cf1322;
+            }
+
+            .capsule-close {
+                color: #cf1322;
+            }
+        }
+    }
+}
+
+@keyframes capsuleSlideDown {
+    from {
+        transform: translate(-50%, -40px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+@keyframes capsulePulse {
+
+    0%,
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    50% {
+        transform: translateY(2px);
+        opacity: 0.6;
+    }
+}

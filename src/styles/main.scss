@@ -1,0 +1,363 @@
+// WeFlow — ChatGPT-inspired design token system
+// Accent colors per theme, backgrounds unified across themes.
+@use './chat-patterns.scss';
+
+// =============================================
+// Light mode (default)
+// =============================================
+:root,
+[data-mode="light"] {
+  // ---- Accent / Brand (default = ChatGPT green) ----
+  --primary: #10a37f;
+  --primary-rgb: 16, 163, 127;
+  --primary-hover: #0d8a6c;
+  --primary-light: rgba(16, 163, 127, 0.1);
+  --primary-gradient: linear-gradient(135deg, #10a37f 0%, #1ab893 100%);
+
+  --danger: #ef4444;
+  --warning: #f59e0b;
+
+  // ---- Backgrounds (same for all themes) ----
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9f9f9;
+  --bg-secondary-solid: #f9f9f9;
+  --bg-tertiary: #f0f0f0;
+  --bg-hover: #ececec;
+  --bg-sidebar: #f9f9f9;
+  --bg-gradient: linear-gradient(180deg, #ffffff 0%, #f7f7f8 100%);
+
+  // ---- Text ----
+  --text-primary: #0d0d0d;
+  --text-secondary: #6e6e80;
+  --text-tertiary: #8e8ea0;
+
+  // ---- Borders ----
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-radius: 12px;
+
+  // ---- Shadows ----
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  // ---- Cards ----
+  --card-bg: #f7f7f8;
+  --card-inner-bg: #ffffff;
+  --sent-card-bg: var(--primary);
+
+  // ---- On-primary foreground ----
+  --on-primary: #ffffff;
+
+  // ---- Layout ----
+  --sidebar-width: 200px;
+}
+
+// =============================================
+// Dark mode
+// =============================================
+[data-mode="dark"] {
+  --primary: #10a37f;
+  --primary-rgb: 16, 163, 127;
+  --primary-hover: #1ab893;
+  --primary-light: rgba(16, 163, 127, 0.15);
+  --primary-gradient: linear-gradient(135deg, #10a37f 0%, #1ab893 100%);
+
+  --danger: #f87171;
+  --warning: #fbbf24;
+
+  --bg-primary: #212121;
+  --bg-secondary: #2f2f2f;
+  --bg-secondary-solid: #2f2f2f;
+  --bg-tertiary: #383838;
+  --bg-hover: #383838;
+  --bg-sidebar: #171717;
+  --bg-gradient: linear-gradient(180deg, #212121 0%, #1a1a1a 100%);
+
+  --text-primary: #ececec;
+  --text-secondary: #b4b4b4;
+  --text-tertiary: #676767;
+
+  --border-color: rgba(255, 255, 255, 0.08);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  --card-bg: #2f2f2f;
+  --card-inner-bg: #353535;
+  --sent-card-bg: var(--primary);
+  --on-primary: #ffffff;
+}
+
+// =============================================
+// Accent color themes (override --primary only)
+// Backgrounds/text stay the same — like ChatGPT's accent system.
+// =============================================
+
+// 云上舞白 — warm brown
+[data-theme="cloud-dancer"] {
+  --primary: #8B7355;
+  --primary-rgb: 139, 115, 85;
+  --primary-hover: #7A6548;
+  --primary-light: rgba(139, 115, 85, 0.1);
+  --primary-gradient: linear-gradient(135deg, #8B7355 0%, #A68B5B 100%);
+}
+[data-theme="cloud-dancer"][data-mode="dark"] {
+  --primary: #C9A86C;
+  --primary-rgb: 201, 168, 108;
+  --primary-hover: #D9B87C;
+  --primary-light: rgba(201, 168, 108, 0.15);
+  --primary-gradient: linear-gradient(135deg, #8B7355 0%, #C9A86C 100%);
+}
+
+// 繁花如梦 — rose pink
+[data-theme="blossom-dream"] {
+  --primary: #D4849A;
+  --primary-rgb: 212, 132, 154;
+  --primary-hover: #C4748A;
+  --primary-light: rgba(212, 132, 154, 0.12);
+  --primary-gradient: linear-gradient(135deg, #D4849A 0%, #E8A8B8 100%);
+}
+[data-theme="blossom-dream"][data-mode="dark"] {
+  --primary: #D19EBB;
+  --primary-rgb: 209, 158, 187;
+  --primary-hover: #DDB0C8;
+  --primary-light: rgba(209, 158, 187, 0.15);
+  --primary-gradient: linear-gradient(135deg, #D19EBB 0%, #A878A8 100%);
+}
+
+// 刚玉蓝 — steel blue
+[data-theme="corundum-blue"] {
+  --primary: #4A6670;
+  --primary-rgb: 74, 102, 112;
+  --primary-hover: #3D565E;
+  --primary-light: rgba(74, 102, 112, 0.1);
+  --primary-gradient: linear-gradient(135deg, #4A6670 0%, #5A7A86 100%);
+}
+[data-theme="corundum-blue"][data-mode="dark"] {
+  --primary: #6A9AAA;
+  --primary-rgb: 106, 154, 170;
+  --primary-hover: #7AAABA;
+  --primary-light: rgba(106, 154, 170, 0.15);
+  --primary-gradient: linear-gradient(135deg, #4A6670 0%, #6A9AAA 100%);
+}
+
+// 冰猕猴桃汁绿 — kiwi green
+[data-theme="kiwi-green"] {
+  --primary: #7A9A5C;
+  --primary-rgb: 122, 154, 92;
+  --primary-hover: #6A8A4C;
+  --primary-light: rgba(122, 154, 92, 0.1);
+  --primary-gradient: linear-gradient(135deg, #7A9A5C 0%, #8AAA6C 100%);
+}
+[data-theme="kiwi-green"][data-mode="dark"] {
+  --primary: #9ABA7C;
+  --primary-rgb: 154, 186, 124;
+  --primary-hover: #AACA8C;
+  --primary-light: rgba(154, 186, 124, 0.15);
+  --primary-gradient: linear-gradient(135deg, #7A9A5C 0%, #9ABA7C 100%);
+}
+
+// 辛辣红 — spicy red
+[data-theme="spicy-red"] {
+  --primary: #8B4049;
+  --primary-rgb: 139, 64, 73;
+  --primary-hover: #7A3540;
+  --primary-light: rgba(139, 64, 73, 0.1);
+  --primary-gradient: linear-gradient(135deg, #8B4049 0%, #A05058 100%);
+}
+[data-theme="spicy-red"][data-mode="dark"] {
+  --primary: #C06068;
+  --primary-rgb: 192, 96, 104;
+  --primary-hover: #D07078;
+  --primary-light: rgba(192, 96, 104, 0.15);
+  --primary-gradient: linear-gradient(135deg, #8B4049 0%, #C06068 100%);
+}
+
+// 明水鸭色 — teal
+[data-theme="teal-water"] {
+  --primary: #5A8A8A;
+  --primary-rgb: 90, 138, 138;
+  --primary-hover: #4A7A7A;
+  --primary-light: rgba(90, 138, 138, 0.1);
+  --primary-gradient: linear-gradient(135deg, #5A8A8A 0%, #6A9A9A 100%);
+}
+[data-theme="teal-water"][data-mode="dark"] {
+  --primary: #7ABAAA;
+  --primary-rgb: 122, 186, 170;
+  --primary-hover: #8ACABA;
+  --primary-light: rgba(122, 186, 170, 0.15);
+  --primary-gradient: linear-gradient(135deg, #5A8A8A 0%, #7ABAAA 100%);
+}
+
+// Geist — monochrome
+[data-theme="geist"] {
+  --primary: #444444;
+  --primary-rgb: 68, 68, 68;
+  --primary-hover: #333333;
+  --primary-light: rgba(68, 68, 68, 0.08);
+  --primary-gradient: linear-gradient(135deg, #444444 0%, #666666 100%);
+}
+[data-theme="geist"][data-mode="dark"] {
+  --primary: #ededed;
+  --primary-rgb: 237, 237, 237;
+  --primary-hover: #d5d5d5;
+  --primary-light: rgba(237, 237, 237, 0.1);
+  --primary-gradient: linear-gradient(135deg, #ededed 0%, #cccccc 100%);
+  --on-primary: #111111;
+}
+
+// =============================================
+// Global reset
+// =============================================
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+// =============================================
+// Scrollbar
+// =============================================
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 3px;
+
+  &:hover {
+    background: var(--text-secondary);
+  }
+}
+
+// =============================================
+// Button base
+// =============================================
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+
+  &-primary {
+    background: var(--primary);
+    color: var(--on-primary);
+
+    &:hover {
+      background: var(--primary-hover);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// =============================================
+// Card base
+// =============================================
+.card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+// =============================================
+// Switch toggle
+// =============================================
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--bg-tertiary);
+    transition: 0.3s;
+    border-radius: 24px;
+    border: 1px solid var(--border-color);
+
+    &::before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--text-tertiary);
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  input:checked+.switch-slider {
+    background-color: var(--primary);
+    border-color: var(--primary);
+
+    &::before {
+      transform: translateX(20px);
+      background-color: #ffffff;
+    }
+  }
+
+  input:disabled+.switch-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

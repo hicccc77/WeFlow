@@ -1,0 +1,215 @@
+.jump-date-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 312px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: none;
+  background-color: var(--bg-secondary-solid, #ffffff) !important;
+  opacity: 1;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  mix-blend-mode: normal;
+  isolation: isolate;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  z-index: 1600;
+}
+
+.jump-date-popover .calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.jump-date-popover .current-month {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.jump-date-popover .current-month.clickable {
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .current-month.clickable:hover {
+  color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.jump-date-popover .nav-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: none;
+  background-color: var(--bg-secondary-solid, #ffffff) !important;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .nav-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.jump-date-popover .status-line {
+  min-height: 16px;
+  margin-bottom: 6px;
+}
+
+.jump-date-popover .status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.jump-date-popover .calendar-grid .weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 6px;
+}
+
+.jump-date-popover .calendar-grid .weekday {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.jump-date-popover .calendar-grid .days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 36px);
+  gap: 4px;
+}
+
+.jump-date-popover .month-grid,
+.jump-date-popover .year-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  min-height: 256px;
+}
+
+.jump-date-popover .month-cell,
+.jump-date-popover .year-cell {
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .month-cell:hover,
+.jump-date-popover .year-cell:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.jump-date-popover .month-cell.active,
+.jump-date-popover .year-cell.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.jump-date-popover .day-cell {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  font-size: 13px;
+  transition: all 0.18s ease;
+}
+
+.jump-date-popover .day-cell .day-number {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.jump-date-popover .day-cell.empty {
+  cursor: default;
+  background: transparent;
+}
+
+.jump-date-popover .day-cell:not(.empty):not(.no-message):hover {
+  background: var(--bg-hover);
+}
+
+.jump-date-popover .day-cell.today {
+  border-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.jump-date-popover .day-cell.selected {
+  background: var(--primary);
+  color: #fff;
+}
+
+.jump-date-popover .day-cell.no-message {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jump-date-popover .day-count {
+  position: static;
+  margin-top: 1px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--primary, #07c160);
+  font-weight: 700;
+}
+
+.jump-date-popover .day-cell.selected .day-count {
+  color: color-mix(in srgb, #ffffff 78%, var(--primary, #07c160) 22%);
+}
+
+.jump-date-popover .day-count-loading {
+  position: static;
+  margin-top: 1px;
+  color: var(--primary, #07c160);
+}
+
+.jump-date-popover .day-cell.selected .day-count-loading {
+  color: color-mix(in srgb, #ffffff 78%, var(--primary, #07c160) 22%);
+}
+
+.jump-date-popover .spin {
+  animation: jump-date-spin 1s linear infinite;
+}
+
+@keyframes jump-date-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
