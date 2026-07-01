@@ -56,7 +56,7 @@ export const useSessionMetrics = create<SessionMetricsState>((set, get) => ({
             imageMessages: sessionStat.imageMessages, 
             videoMessages: sessionStat.videoMessages,
             emojiMessages: sessionStat.emojiMessages,
-            fileMessages: 0 // Will need specific metric if available
+            fileMessages: sessionStat.fileMessages ?? 0  // 文件消息数量，由后端 ExportSessionStats 返回
           }
         }
       }

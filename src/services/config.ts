@@ -931,6 +931,8 @@ export interface ExportSessionContentMetricCacheEntry {
   imageMessages?: number
   videoMessages?: number
   emojiMessages?: number
+  /** 文件类消息数量，与后端 ExportSessionStats.fileMessages 对齐 */
+  fileMessages?: number
   firstTimestamp?: number
   lastTimestamp?: number
 }
@@ -1099,6 +1101,9 @@ export async function getExportSessionContentMetricCache(scopeKey: string): Prom
     if (typeof source.emojiMessages === 'number' && Number.isFinite(source.emojiMessages) && source.emojiMessages >= 0) {
       metric.emojiMessages = Math.floor(source.emojiMessages)
     }
+    if (typeof source.fileMessages === 'number' && Number.isFinite(source.fileMessages) && source.fileMessages >= 0) {
+      metric.fileMessages = Math.floor(source.fileMessages)
+    }
     if (typeof source.firstTimestamp === 'number' && Number.isFinite(source.firstTimestamp) && source.firstTimestamp > 0) {
       metric.firstTimestamp = Math.floor(source.firstTimestamp)
     }
@@ -1143,6 +1148,9 @@ export async function setExportSessionContentMetricCache(
     }
     if (typeof rawMetric.emojiMessages === 'number' && Number.isFinite(rawMetric.emojiMessages) && rawMetric.emojiMessages >= 0) {
       metric.emojiMessages = Math.floor(rawMetric.emojiMessages)
+    }
+    if (typeof rawMetric.fileMessages === 'number' && Number.isFinite(rawMetric.fileMessages) && rawMetric.fileMessages >= 0) {
+      metric.fileMessages = Math.floor(rawMetric.fileMessages)
     }
     if (typeof rawMetric.firstTimestamp === 'number' && Number.isFinite(rawMetric.firstTimestamp) && rawMetric.firstTimestamp > 0) {
       metric.firstTimestamp = Math.floor(rawMetric.firstTimestamp)

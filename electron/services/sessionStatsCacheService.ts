@@ -2,7 +2,8 @@ import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { ConfigService } from './config'
 
-const CACHE_VERSION = 2
+/** 缓存版本号。增加/修改 SessionStatsCacheStats 字段后必须提升，避免旧缓存被误用。 */
+const CACHE_VERSION = 4
 const MAX_SESSION_ENTRIES_PER_SCOPE = 2000
 const MAX_SCOPE_ENTRIES = 12
 
@@ -12,6 +13,8 @@ export interface SessionStatsCacheStats {
   imageMessages: number
   videoMessages: number
   emojiMessages: number
+  /** 文件类消息数量（对应 ExportSessionStats.fileMessages） */
+  fileMessages: number
   transferMessages: number
   redPacketMessages: number
   callMessages: number
@@ -53,6 +56,7 @@ function normalizeStats(raw: unknown): SessionStatsCacheStats | null {
   const imageMessages = toNonNegativeInt(source.imageMessages)
   const videoMessages = toNonNegativeInt(source.videoMessages)
   const emojiMessages = toNonNegativeInt(source.emojiMessages)
+  const fileMessages = toNonNegativeInt(source.fileMessages)
   const transferMessages = toNonNegativeInt(source.transferMessages)
   const redPacketMessages = toNonNegativeInt(source.redPacketMessages)
   const callMessages = toNonNegativeInt(source.callMessages)
@@ -63,6 +67,7 @@ function normalizeStats(raw: unknown): SessionStatsCacheStats | null {
     imageMessages === undefined ||
     videoMessages === undefined ||
     emojiMessages === undefined ||
+    fileMessages === undefined ||
     transferMessages === undefined ||
     redPacketMessages === undefined ||
     callMessages === undefined
@@ -76,6 +81,7 @@ function normalizeStats(raw: unknown): SessionStatsCacheStats | null {
     imageMessages,
     videoMessages,
     emojiMessages,
+    fileMessages,
     transferMessages,
     redPacketMessages,
     callMessages
