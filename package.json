@@ -16,6 +16,7 @@
     "postinstall": "electron-builder install-app-deps && node scripts/prepare-electron-runtime.cjs",
     "rebuild": "electron-rebuild",
     "dev": "node scripts/prepare-electron-runtime.cjs && vite",
+    "test:startup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-startup-behavior.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",

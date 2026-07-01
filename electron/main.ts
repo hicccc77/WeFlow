@@ -38,6 +38,15 @@ import { normalizeWeiboCookieInput, weiboService } from './services/social/weibo
 import { bizService } from './services/bizService'
 import { backupService } from './services/backupService'
 import { imageDownloadService } from './services/imageDownloadService'
+import {
+  buildLaunchAtStartupQueryOptions as buildPlatformLaunchAtStartupQueryOptions,
+  buildLaunchAtStartupSettings as buildPlatformLaunchAtStartupSettings,
+  getHiddenMacActivationPolicy,
+  shouldShowWindowOnActivate,
+  shouldSkipTaskbarEntry,
+  shouldStartInBackground,
+  shouldUseMenuBarOnlyMode as shouldUsePlatformMenuBarOnlyMode
+} from './startupBehavior'
 
 // 配置自动更新
 autoUpdater.autoDownload = false
@@ -267,7 +276,8 @@ const getStoredLaunchAtStartupPreference = (): boolean | undefined => {
 const getSystemLaunchAtStartup = (): boolean => {
   if (!isLaunchAtStartupSupported()) return false
   try {
-    return app.getLoginItemSettings().openAtLogin === true
+    const queryOptions = buildPlatformLaunchAtStartupQueryOptions(process.platform, process.execPath)
+    return app.getLoginItemSettings(queryOptions).openAtLogin === true
   } catch (error) {
     console.error('[WeFlow] 读取开机自启动状态失败:', error)
     return false
@@ -275,14 +285,17 @@ const getSystemLaunchAtStartup = (): boolean => {
 }
 
 const buildLaunchAtStartupSettings = (enabled: boolean): Parameters<typeof app.setLoginItemSettings>[0] =>
-  process.platform === 'win32'
-    ? { openAtLogin: enabled, path: process.execPath }
-    : { openAtLogin: enabled }
+  buildPlatformLaunchAtStartupSettings(
+    enabled,
+    process.platform,
+    process.execPath
+  ) as Parameters<typeof app.setLoginItemSettings>[0]
 
 const setSystemLaunchAtStartup = (enabled: boolean): { success: boolean; enabled: boolean; error?: string } => {
   try {
     app.setLoginItemSettings(buildLaunchAtStartupSettings(enabled))
-    const effectiveEnabled = app.getLoginItemSettings().openAtLogin === true
+    const queryOptions = buildPlatformLaunchAtStartupQueryOptions(process.platform, process.execPath)
+    const effectiveEnabled = app.getLoginItemSettings(queryOptions).openAtLogin === true
     if (effectiveEnabled !== enabled) {
       return {
         success: false,
@@ -741,18 +754,14 @@ let notificationNavigateHandlerRegistered = false
 const focusMainWindowAndNavigate = (sessionId: string): void => {
   const targetWindow = mainWindow
   if (!targetWindow || targetWindow.isDestroyed()) return
-  if (targetWindow.isMinimized()) targetWindow.restore()
-  targetWindow.show()
-  targetWindow.focus()
+  showWindowFromUserAction(targetWindow)
   targetWindow.webContents.send('navigate-to-session', sessionId)
 }
 
 const focusMainWindowAndNavigateRoute = (route: string): void => {
   const targetWindow = mainWindow
   if (!targetWindow || targetWindow.isDestroyed()) return
-  if (targetWindow.isMinimized()) targetWindow.restore()
-  targetWindow.show()
-  targetWindow.focus()
+  showWindowFromUserAction(targetWindow)
   targetWindow.webContents.send('navigate-to-route', route)
 }
 
@@ -829,6 +838,49 @@ const isSilentStartupEnabled = (): boolean => {
   return configService?.get('silentStartup') === true
 }
 
+const shouldUseMenuBarOnlyMode = (): boolean => {
+  return shouldUsePlatformMenuBarOnlyMode({
+    onboardingDone: configService?.get('onboardingDone') === true,
+    silentStartup: isSilentStartupEnabled(),
+    hasTray: Boolean(tray),
+    mainWindowCreated: Boolean(mainWindow && !mainWindow.isDestroyed())
+  })
+}
+
+const applyMacMenuBarOnlyMode = (): void => {
+  if (process.platform !== 'darwin') return
+  try {
+    const menuBarOnlyMode = shouldUseMenuBarOnlyMode()
+    app.setActivationPolicy(getHiddenMacActivationPolicy(menuBarOnlyMode))
+    if (menuBarOnlyMode) {
+      app.dock?.hide()
+    } else {
+      void app.dock?.show()
+    }
+  } catch (error) {
+    console.warn('[WeFlow] 更新 macOS 启动显示策略失败:', error)
+  }
+}
+
+const applyWindowsTaskbarVisibility = (
+  win: BrowserWindow,
+  windowVisible = win.isVisible() || win.isMinimized()
+): void => {
+  if (process.platform !== 'win32') return
+  win.setSkipTaskbar(shouldSkipTaskbarEntry({
+    platform: process.platform,
+    menuBarOnlyMode: shouldUseMenuBarOnlyMode(),
+    windowVisible
+  }))
+}
+
+const applyPlatformVisibilityMode = (win?: BrowserWindow | null): void => {
+  applyMacMenuBarOnlyMode()
+  if (win && !win.isDestroyed()) {
+    applyWindowsTaskbarVisibility(win)
+  }
+}
+
 const getCloseRestoreMethod = (): CloseRestoreMethod | null => {
   if (tray) return 'tray'
   if (process.platform === 'darwin') return 'dock'
@@ -845,6 +897,11 @@ const getPlatformIconName = (): string => {
   return 'icon.ico'
 }
 
+const getPlatformTrayIconName = (): string => {
+  if (process.platform === 'darwin') return 'icon.png'
+  return getPlatformIconName()
+}
+
 const resolveAppIconPath = (): string => {
   const iconName = getPlatformIconName()
   if (!process.env.VITE_DEV_SERVER_URL) {
@@ -854,6 +911,19 @@ const resolveAppIconPath = (): string => {
     return join(__dirname, '../resources/icons/macos/icon.icns')
   }
   return join(__dirname, `../public/${iconName}`)
+}
+
+const resolveTrayIcon = () => {
+  const iconName = getPlatformTrayIconName()
+  const iconPath = !process.env.VITE_DEV_SERVER_URL
+    ? join(process.resourcesPath, iconName)
+    : join(__dirname, `../public/${iconName}`)
+
+  if (process.platform !== 'darwin') return iconPath
+
+  const image = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 })
+  image.setTemplateImage(false)
+  return image
 }
 
 const requestMainWindowCloseConfirmation = (win: BrowserWindow): void => {
@@ -866,9 +936,33 @@ const requestMainWindowCloseConfirmation = (win: BrowserWindow): void => {
   })
 }
 
-function createWindow(options: { autoShow?: boolean } = {}) {
+const showWindowFromUserAction = (win: BrowserWindow | null | undefined): void => {
+  if (!win || win.isDestroyed()) return
+  applyMacMenuBarOnlyMode()
+  applyWindowsTaskbarVisibility(win, true)
+  if (win.isMinimized()) {
+    win.restore()
+  }
+  win.show()
+  win.focus()
+}
+
+const hideMainWindowInBackground = (): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.hide()
+  applyPlatformVisibilityMode(mainWindow)
+}
+
+function createWindow(options: { autoShow?: boolean; skipTaskbar?: boolean } = {}) {
   // 获取图标路径 - 打包后在 resources 目录
-  const { autoShow = true } = options
+  const {
+    autoShow = true,
+    skipTaskbar = shouldSkipTaskbarEntry({
+      platform: process.platform,
+      menuBarOnlyMode: shouldUseMenuBarOnlyMode(),
+      windowVisible: false
+    })
+  } = options
   const iconPath = resolveAppIconPath()
 
   const win = new BrowserWindow({
@@ -885,6 +979,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: false,
+    skipTaskbar,
     show: false
   })
   setupCustomTitleBarWindow(win)
@@ -894,7 +989,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
   win.once('ready-to-show', () => {
     mainWindowReady = true
     if (autoShow && !splashWindow) {
-      win.show()
+      showWindowFromUserAction(win)
     }
   })
 
@@ -943,7 +1038,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
     }
 
     if (closeBehavior === 'tray' && canKeepMainWindowInBackground()) {
-      win.hide()
+      hideMainWindowInBackground()
       return
     }
 
@@ -1501,7 +1596,7 @@ function createSessionChatWindow(sessionId: string, options?: OpenSessionChatWin
 function showMainWindow() {
   shouldShowMain = true
   if (mainWindowReady) {
-    mainWindow?.show()
+    showWindowFromUserAction(mainWindow)
   }
 }
 
@@ -1802,6 +1897,9 @@ function registerIpcHandlers() {
     }
     if (key === 'updateChannel') {
       applyAutoUpdateChannel('settings')
+    }
+    if (key === 'silentStartup' || key === 'onboardingDone') {
+      applyPlatformVisibilityMode(mainWindow)
     }
     void messagePushService.handleConfigChanged(key)
     void insightService.handleConfigChanged(key)
@@ -2224,7 +2322,7 @@ function registerIpcHandlers() {
     try {
       if (action === 'tray') {
         if (canKeepMainWindowInBackground()) {
-          mainWindow.hide()
+          hideMainWindowInBackground()
           return true
         }
         return false
@@ -3764,7 +3862,7 @@ function registerIpcHandlers() {
   ipcMain.handle('window:openOnboardingWindow', async (_, options?: { mode?: 'add-account' }) => {
     shouldShowMain = false
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide()
+      hideMainWindowInBackground()
     }
     const mode = options?.mode === 'add-account' ? 'add-account' : 'default'
     createOnboardingWindow(mode)
@@ -4247,8 +4345,9 @@ app.whenReady().then(async () => {
   applyAutoUpdateChannel('startup')
   syncLaunchAtStartupPreference()
   const onboardingDone = configService.get('onboardingDone') === true
-  const startInBackground = onboardingDone && isSilentStartupEnabled()
+  const startInBackground = shouldStartInBackground(onboardingDone, isSilentStartupEnabled())
   shouldShowMain = onboardingDone
+  applyPlatformVisibilityMode()
 
   if (!startInBackground) {
     // 非静默模式下显示 Splash，提供启动反馈
@@ -4396,9 +4495,16 @@ app.whenReady().then(async () => {
   // 创建主窗口（不显示，由启动流程统一控制）
   updateSplashProgress(70, '正在准备主窗口...')
   ensureWeChatRequestHeaderInterceptor()
-  mainWindow = createWindow({ autoShow: false })
+  mainWindow = createWindow({
+    autoShow: false,
+    skipTaskbar: shouldSkipTaskbarEntry({
+      platform: process.platform,
+      menuBarOnlyMode: startInBackground,
+      windowVisible: false
+    })
+  })
 
-  const resolvedTrayIcon = resolveAppIconPath()
+  const resolvedTrayIcon = resolveTrayIcon()
 
 
   try {
@@ -4408,10 +4514,7 @@ app.whenReady().then(async () => {
       {
         label: '显示主窗口',
         click: () => {
-          if (mainWindow) {
-            mainWindow.show()
-            mainWindow.focus()
-          }
+          showWindowFromUserAction(mainWindow)
         }
       },
       { type: 'separator' },
@@ -4426,19 +4529,11 @@ app.whenReady().then(async () => {
     tray.setContextMenu(contextMenu)
     tray.on('click', () => {
       if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.focus()
-        } else {
-          mainWindow.show()
-          mainWindow.focus()
-        }
+        showWindowFromUserAction(mainWindow)
       }
     })
     tray.on('double-click', () => {
-      if (mainWindow) {
-        mainWindow.show()
-        mainWindow.focus()
-      }
+      showWindowFromUserAction(mainWindow)
     })
   } catch (e) {
     console.warn('[Tray] Failed to create tray icon:', e)
@@ -4465,9 +4560,9 @@ app.whenReady().then(async () => {
   if (!onboardingDone) {
     createOnboardingWindow()
   } else if (startInBackground && tray) {
-    mainWindow?.hide()
+    hideMainWindowInBackground()
   } else {
-    mainWindow?.show()
+    showWindowFromUserAction(mainWindow)
   }
 
   // 启动时检测更新（不阻塞启动）
@@ -4477,8 +4572,14 @@ app.whenReady().then(async () => {
 
   app.on('activate', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      if (!shouldShowWindowOnActivate({ menuBarOnlyMode: shouldUseMenuBarOnlyMode(), hasMainWindow: true })) {
+        applyPlatformVisibilityMode(mainWindow)
+        return
+      }
       if (!mainWindow.isVisible()) {
-        mainWindow.show()
+        showWindowFromUserAction(mainWindow)
+      } else {
+        applyPlatformVisibilityMode(mainWindow)
       }
       mainWindow.focus()
       return
