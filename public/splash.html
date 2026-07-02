@@ -297,6 +297,13 @@
       border-radius: 3px;
     }
 
+    /* 进度条卡顿脉冲状态：在当前进度范围内流动 */
+    .progress-fill.pulse-active {
+      background: linear-gradient(90deg, var(--active-track-bg) 0%, #ffffff 50%, var(--active-track-bg) 100%);
+      background-size: 200% 100%;
+      animation: gold-flow 2s infinite linear;
+    }
+
     .progress-dot {
       position: absolute;
       top: 50%;
@@ -473,6 +480,7 @@
       });
 
       if (fill) {
+        fill.classList.remove("pulse-active");
         if (waiting) {
           fill.classList.add("indeterminate");
           fill.style.width = "100%";
@@ -544,9 +552,8 @@
       if (!waiting && safePercent < 100) {
         loadingTimeout = setTimeout(function() {
           if (fill) {
-            fill.classList.add("indeterminate");
-            fill.style.width = "100%";
-            if (dot) dot.style.display = "none";
+            fill.classList.add("pulse-active");
+            // 保持原来的 fill.style.width，即 safePercent% 宽度，不设为 100%
           }
           
           if (letters.length > 0) {
@@ -554,10 +561,7 @@
             var activeIndex = Math.min(letters.length - 1, Math.floor(charProgress));
             if (activeIndex >= 0 && activeIndex < letters.length) {
               letters[activeIndex].classList.add("pulse-active");
-              var wrapper = letters[activeIndex].querySelector(".letter-fill-wrapper");
-              if (wrapper) {
-                wrapper.style.width = "100%";
-              }
+              // 保持原来的 wrapper.style.width (即当前的 fillRatio * 100%)，不设为 100%
             }
           }
         }, 500);
