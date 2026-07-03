@@ -399,6 +399,7 @@ function ContactsPage() {
                         nickname: contact.nickname,
                         alias: contact.alias,
                         labels: contact.labels,
+                        description: contact.description,
                         detailDescription: contact.detailDescription,
                         region: contact.region,
                         type: contact.type
@@ -659,6 +660,9 @@ function ContactsPage() {
             selectedContact.alias ? { key: 'alias', label: '微信号', value: selectedContact.alias } : null,
             selectedContact.labels && selectedContact.labels.length > 0
                 ? { key: 'labels', label: '标签', value: selectedContact.labels.join('、') }
+                : null,
+            selectedContact.description
+                ? { key: 'description', label: '描述', value: selectedContact.description }
                 : null,
             selectedContact.detailDescription
                 ? { key: 'signature', label: '个性签名', value: selectedContact.detailDescription }

@@ -919,13 +919,17 @@ class HttpService {
             const detail = await wcdbService.getMessageById(talker, localId)
             if (detail.success && detail.message) {
               const hydrated = chatService.mapRowsToMessagesForApi([detail.message], talker)[0]
-              if (hydrated?.senderUsername) {
+              if (!hydrated || !this.isSameMessageIdentity(msg, hydrated)) {
+                state.consecutiveMiss += 1
+                continue
+              }
+              if (hydrated.senderUsername) {
                 msg.senderUsername = hydrated.senderUsername
               }
-              if ((msg.isSend === null || msg.isSend === undefined) && hydrated?.isSend !== undefined) {
+              if ((msg.isSend === null || msg.isSend === undefined) && hydrated.isSend !== undefined) {
                 msg.isSend = hydrated.isSend
               }
-              if (!msg.rawContent && hydrated?.rawContent) {
+              if (!msg.rawContent && hydrated.rawContent) {
                 msg.rawContent = hydrated.rawContent
               }
               if (msg.senderUsername) {
@@ -950,6 +954,38 @@ class HttpService {
     }
 
     await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+  }
+
+  private normalizeTimestampSeconds(value: unknown): number {
+    let normalized = Number(value || 0)
+    if (!Number.isFinite(normalized) || normalized <= 0) return 0
+    normalized = Math.floor(normalized)
+    while (normalized > 10000000000) {
+      normalized = Math.floor(normalized / 1000)
+    }
+    return normalized
+  }
+
+  private isSameMessageIdentity(expected: Message, candidate: Message): boolean {
+    const expectedLocalId = Number(expected.localId || 0)
+    const candidateLocalId = Number(candidate.localId || 0)
+    if (expectedLocalId > 0 && candidateLocalId > 0 && expectedLocalId !== candidateLocalId) {
+      return false
+    }
+
+    const expectedCreateTime = this.normalizeTimestampSeconds(expected.createTime)
+    const candidateCreateTime = this.normalizeTimestampSeconds(candidate.createTime)
+    if (expectedCreateTime > 0 && candidateCreateTime > 0 && expectedCreateTime !== candidateCreateTime) {
+      return false
+    }
+
+    const expectedDbPath = String(expected._db_path || '').trim()
+    const candidateDbPath = String(candidate._db_path || '').trim()
+    if (expectedDbPath && candidateDbPath && expectedDbPath !== candidateDbPath) {
+      return false
+    }
+
+    return true
   }
 
   private parseBooleanParam(url: URL, keys: string[], defaultValue: boolean = false): boolean {

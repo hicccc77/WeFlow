@@ -166,6 +166,7 @@ export interface ContactInfo {
   nickname?: string
   alias?: string
   labels?: string[]
+  description?: string
   detailDescription?: string
   region?: string
   avatarUrl?: string
@@ -2180,6 +2181,7 @@ class ChatService {
 
         const displayName = row.remark || row.nick_name || row.alias || username
         const labels = isLiteMode ? [] : this.parseContactLabels(row, contactLabelNameMap)
+        const description = isLiteMode ? '' : this.getContactDescription(row)
         const detailDescription = isLiteMode ? '' : this.getContactSignature(row)
         const region = isLiteMode ? '' : this.getContactRegion(row)
 
@@ -2190,6 +2192,7 @@ class ChatService {
           nickname: row.nick_name || undefined,
           alias: row.alias || undefined,
           labels: labels.length > 0 ? labels : undefined,
+          description: description || undefined,
           detailDescription: detailDescription || undefined,
           region: region || undefined,
           avatarUrl: undefined,
@@ -3568,6 +3571,22 @@ class ChatService {
     return []
   }
 
+  private getContactDescription(row: Record<string, any>): string {
+    const normalize = (raw: unknown): string => {
+      const text = String(raw || '').replace(/\u0000/g, '').trim()
+      if (!text) return ''
+      const lower = text.toLowerCase()
+      if (lower === '-' || lower === '--' || lower === '—' || lower === 'null' || lower === 'undefined' || lower === 'none') {
+        return ''
+      }
+      return text
+    }
+
+    return normalize(this.getRowField(row, [
+      'description', 'desc', 'contact_description', 'contactDescription', 'detail_description', 'detailDescription'
+    ]))
+  }
+
   private getContactSignature(row: Record<string, any>): string {
     const normalize = (raw: unknown): string => {
       const text = String(raw || '').replace(/\u0000/g, '').trim()
@@ -3579,23 +3598,26 @@ class ChatService {
       return text
     }
 
+    // contact.description/detail_description 是微信联系人“描述/备忘”类字段，不是个性签名。
+    // 真正的个性签名优先来自 native 解析出的 signature，或 extra_buffer field 4。
     const value = this.getRowField(row, [
-      'signature', 'sign', 'personal_signature', 'personalSignature', 'profile', 'introduction',
-      'detail_description', 'detailDescription', 'description', 'desc', 'contact_description', 'contactDescription'
+      'signature', 'sign', 'personal_signature', 'personalSignature'
     ])
     const direct = normalize(value)
     if (direct) return direct
+
+    const signatures = this.extractExtraBufferTopLevelFieldStrings(row, 4)
+    for (const signature of signatures) {
+      const text = normalize(signature)
+      if (!text) continue
+      return text
+    }
 
     for (const [key, rawValue] of Object.entries(row)) {
       const normalizedKey = key.toLowerCase()
       const isCandidate =
         normalizedKey.includes('sign') ||
-        normalizedKey.includes('signature') ||
-        normalizedKey.includes('profile') ||
-        normalizedKey.includes('intro') ||
-        normalizedKey.includes('description') ||
-        normalizedKey.includes('detail') ||
-        normalizedKey.includes('desc')
+        normalizedKey.includes('signature')
       if (!isCandidate) continue
       if (
         normalizedKey.includes('avatar') ||
@@ -3606,14 +3628,6 @@ class ChatService {
       ) continue
       const text = normalize(rawValue)
       if (text) return text
-    }
-
-    // contact.extra_buffer field 4: 个性签名兜底
-    const signatures = this.extractExtraBufferTopLevelFieldStrings(row, 4)
-    for (const signature of signatures) {
-      const text = normalize(signature)
-      if (!text) continue
-      return text
     }
 
     return ''
@@ -10246,14 +10260,14 @@ class ChatService {
             (!message.senderUsername || message.isSend === null)
 
           if (needsDetailHydration && sessionId) {
-            const detail = await this.getMessageById(sessionId, message.localId)
-            if (detail.success && detail.message) {
+            const detail = await this.getSearchDetailHydration(sessionId, message)
+            if (detail) {
               message = {
                 ...message,
-                ...detail.message,
-                parsedContent: message.parsedContent || detail.message.parsedContent,
-                rawContent: message.rawContent || detail.message.rawContent,
-                content: message.content || detail.message.content
+                ...detail,
+                parsedContent: message.parsedContent || detail.parsedContent,
+                rawContent: message.rawContent || detail.rawContent,
+                content: message.content || detail.content
               }
             }
           }
@@ -10271,6 +10285,50 @@ class ChatService {
       console.error('ChatService: searchMessages 失败:', e)
       return { success: false, error: String(e) }
     }
+  }
+
+  private async getSearchDetailHydration(sessionId: string, searchHit: Message): Promise<Message | null> {
+    const localId = Number(searchHit.localId || 0)
+    if (!Number.isFinite(localId) || localId <= 0) return null
+
+    const detail = await this.getMessageById(sessionId, localId)
+    if (detail.success && detail.message && this.isSameMessageIdentity(searchHit, detail.message)) {
+      return detail.message
+    }
+
+    const createTime = this.normalizeTimestampSeconds(Number(searchHit.createTime || 0))
+    if (createTime <= 0) return null
+
+    try {
+      const nearby = await this.getMessages(sessionId, 0, 80, createTime - 1, createTime + 1, false)
+      if (!nearby.success || !Array.isArray(nearby.messages)) return null
+      return nearby.messages.find((message) => this.isSameMessageIdentity(searchHit, message)) || null
+    } catch (error) {
+      console.warn('[ChatService] search detail hydration fallback failed:', error)
+      return null
+    }
+  }
+
+  private isSameMessageIdentity(expected: Message, candidate: Message): boolean {
+    const expectedLocalId = Number(expected.localId || 0)
+    const candidateLocalId = Number(candidate.localId || 0)
+    if (expectedLocalId > 0 && candidateLocalId > 0 && expectedLocalId !== candidateLocalId) {
+      return false
+    }
+
+    const expectedCreateTime = this.normalizeTimestampSeconds(Number(expected.createTime || 0))
+    const candidateCreateTime = this.normalizeTimestampSeconds(Number(candidate.createTime || 0))
+    if (expectedCreateTime > 0 && candidateCreateTime > 0 && expectedCreateTime !== candidateCreateTime) {
+      return false
+    }
+
+    const expectedDbPath = String(expected._db_path || '').trim()
+    const candidateDbPath = String(candidate._db_path || '').trim()
+    if (expectedDbPath && candidateDbPath && expectedDbPath !== candidateDbPath) {
+      return false
+    }
+
+    return true
   }
 
   private normalizeTimestampSeconds(value: number): number {
@@ -11909,10 +11967,13 @@ class ChatService {
 
   private async parseMessage(row: any, options?: { source?: 'search' | 'detail'; sessionId?: string }): Promise<Message> {
     const sourceInfo = this.getMessageSourceInfo(row)
-    const rawContent = this.decodeMessageContent(
+    let rawContent = this.decodeMessageContent(
       row.message_content,
       row.compress_content
     )
+    if (!rawContent && row.content !== undefined && row.content !== null) {
+      rawContent = String(row.content)
+    }
     // 这里复用 parseMessagesBatch 里面的解析逻辑，为了简单我这里先写个基础的
     // 实际项目中建议抽取 parseRawMessage(row) 供多处使用
     const localId = this.getRowInt(row, ['local_id'], 0)

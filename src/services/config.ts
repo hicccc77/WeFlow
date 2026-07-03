@@ -1002,6 +1002,7 @@ export interface ContactsListCacheContact {
   nickname?: string
   alias?: string
   labels?: string[]
+  description?: string
   detailDescription?: string
   region?: string
   type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
@@ -1528,6 +1529,7 @@ export async function getContactsListCache(scopeKey: string): Promise<ContactsLi
       labels: Array.isArray(item.labels)
         ? Array.from(new Set(item.labels.map((label) => String(label || '').trim()).filter(Boolean)))
         : undefined,
+      description: typeof item.description === 'string' ? (item.description.trim() || undefined) : undefined,
       detailDescription: typeof item.detailDescription === 'string' ? (item.detailDescription.trim() || undefined) : undefined,
       region: typeof item.region === 'string' ? (item.region.trim() || undefined) : undefined,
       type: (type === 'friend' || type === 'group' || type === 'official' || type === 'former_friend' || type === 'other')
@@ -1567,6 +1569,7 @@ export async function setContactsListCache(scopeKey: string, contacts: ContactsL
       labels: Array.isArray(contact?.labels)
         ? Array.from(new Set(contact.labels.map((label) => String(label || '').trim()).filter(Boolean)))
         : undefined,
+      description: contact?.description ? (String(contact.description).trim() || undefined) : undefined,
       detailDescription: contact?.detailDescription ? (String(contact.detailDescription).trim() || undefined) : undefined,
       region: contact?.region ? (String(contact.region).trim() || undefined) : undefined,
       type

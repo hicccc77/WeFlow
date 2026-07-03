@@ -38,6 +38,7 @@ export interface ContactInfo {
   nickname?: string
   alias?: string
   labels?: string[]
+  description?: string
   detailDescription?: string
   region?: string
   avatarUrl?: string

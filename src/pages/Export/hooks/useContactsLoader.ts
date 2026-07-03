@@ -128,6 +128,7 @@ export function useContactsLoader(): ContactsLoaderResult {
             nickname: c.nickname,
             alias: c.alias,
             labels: c.labels,
+            description: c.description,
             detailDescription: c.detailDescription,
             region: c.region
           })))
@@ -222,6 +223,7 @@ export function useContactsLoader(): ContactsLoaderResult {
               nickname: c.nickname,
               alias: c.alias,
               labels: c.labels,
+              description: c.description,
               detailDescription: c.detailDescription,
               region: c.region
             })))

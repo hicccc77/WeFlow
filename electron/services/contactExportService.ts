@@ -95,7 +95,10 @@ class ContactExportService {
                 nickname: c.nickname,
                 alias: c.alias,
                 labels: Array.isArray(c.labels) ? c.labels : [],
+                description: c.description,
+                signature: c.detailDescription,
                 detailDescription: c.detailDescription,
+                region: c.region,
                 type: c.type
             }))
         }
@@ -106,7 +109,7 @@ class ContactExportService {
      * 导出为CSV格式
      */
     private async exportToCSV(contacts: any[], outputPath: string): Promise<void> {
-        const headers = ['用户名', '显示名称', '备注', '昵称', '微信号', '标签', '详细描述', '类型']
+        const headers = ['用户名', '显示名称', '备注', '昵称', '微信号', '标签', '描述', '个性签名', '地区', '类型']
         const rows = contacts.map(c => [
             c.username || '',
             c.displayName || '',
@@ -114,13 +117,16 @@ class ContactExportService {
             c.nickname || '',
             c.alias || '',
             Array.isArray(c.labels) ? c.labels.join(' | ') : '',
+            c.description || '',
             c.detailDescription || '',
+            c.region || '',
             this.getTypeLabel(c.type)
         ])
+        const escapeCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
 
         const csvContent = [
             headers.join(','),
-            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+            ...rows.map(row => row.map(escapeCell).join(','))
         ].join('\n')
 
         fs.writeFileSync(outputPath, '\uFEFF' + csvContent, 'utf-8') // 添加BOM以支持Excel
@@ -146,7 +152,9 @@ class ContactExportService {
                 const noteParts = [
                     c.remark ? String(c.remark) : '',
                     Array.isArray(c.labels) && c.labels.length > 0 ? `标签: ${c.labels.join(', ')}` : '',
-                    c.detailDescription ? `详细描述: ${c.detailDescription}` : ''
+                    c.description ? `描述: ${c.description}` : '',
+                    c.detailDescription ? `个性签名: ${c.detailDescription}` : '',
+                    c.region ? `地区: ${c.region}` : ''
                 ].filter(Boolean)
                 if (noteParts.length > 0) {
                     lines.push(`NOTE:${noteParts.join('\\n')}`)
