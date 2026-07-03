@@ -1,10 +1,7 @@
-import { join } from 'path'
-import { readdirSync, existsSync } from 'fs'
 import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
-import { chatService, Message } from './chatService'
+import { chatService } from './chatService'
 import { ipcMain } from 'electron'
-import { createHash } from 'crypto'
 
 export interface BizAccount {
   username: string
@@ -14,6 +11,24 @@ export interface BizAccount {
   last_time: number
   formatted_last_time: string
   unread_count?: number
+  status?: 'active' | 'inactive'
+  health_reason?: string
+  stale_level?: 'none' | 'one_year' | 'two_year' | 'unknown'
+  days_since_last_article?: number
+}
+
+export interface BizAccountHealth {
+  summary: {
+    active_total: number
+    subscription_total: number
+    service_total: number
+    invalid_total: number
+    stale_one_year_total: number
+    stale_two_year_total: number
+    unknown_last_article_total: number
+  }
+  accounts: BizAccount[]
+  invalid_accounts: BizAccount[]
 }
 
 export interface BizMessage {
@@ -39,9 +54,46 @@ export interface BizPayRecord {
 
 export class BizService {
   private configService: ConfigService
+  private readonly builtinOfficialHelpers = new Set([
+    'gh_f0a92aa7146c' // 微信收款助手不出现在通讯录的公众号/服务号分组里
+  ])
 
   constructor() {
     this.configService = new ConfigService()
+  }
+
+  private isVisibleOfficialAccount(username: string, localType: number): boolean {
+    return username.startsWith('gh_') && localType === 1 && !this.builtinOfficialHelpers.has(username)
+  }
+
+  private toInt(value: unknown, fallback: number = 0): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  private getRowString(row: Record<string, any>, keys: string[]): string {
+    for (const key of keys) {
+      const value = row[key]
+      if (value !== undefined && value !== null && String(value).trim()) return String(value).trim()
+    }
+    return ''
+  }
+
+  private formatBizTime(ts: number): string {
+    if (!ts) return ''
+    const date = new Date(ts * 1000)
+    const now = new Date()
+    const isToday = date.toDateString() === now.toDateString()
+    if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    if (date.toDateString() === yesterday.toDateString()) return '昨天'
+
+    const isThisYear = date.getFullYear() === now.getFullYear()
+    if (isThisYear) return `${date.getMonth() + 1}/${date.getDate()}`
+
+    return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`
   }
 
   private extractXmlValue(xml: string, tagName: string): string {
@@ -99,10 +151,9 @@ export class BizService {
       const enrichment = await chatService.enrichSessionsContactInfo(usernames)
       const contactInfoMap = enrichment.success && enrichment.contacts ? enrichment.contacts : {}
 
-      const root = this.configService.get('dbPath')
       const myWxid = this.configService.getMyWxidCleaned()
       const accountWxid = account || myWxid
-      if (!root || !accountWxid) return []
+      if (!accountWxid) return []
 
       const bizLatestTime: Record<string, number> = {}
       const bizUnreadCount: Record<string, number> = {}
@@ -129,24 +180,6 @@ export class BizService {
         console.error('获取 Sessions 失败:', e)
       }
 
-      // 3. 格式化时间显示
-      const formatBizTime = (ts: number) => {
-        if (!ts) return ''
-        const date = new Date(ts * 1000)
-        const now = new Date()
-        const isToday = date.toDateString() === now.toDateString()
-        if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-
-        const yesterday = new Date(now)
-        yesterday.setDate(now.getDate() - 1)
-        if (date.toDateString() === yesterday.toDateString()) return '昨天'
-
-        const isThisYear = date.getFullYear() === now.getFullYear()
-        if (isThisYear) return `${date.getMonth() + 1}/${date.getDate()}`
-
-        return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`
-      }
-
       // 4. 组装数据
       const result: BizAccount[] = officialContacts.map(contact => {
         const uname = contact.username
@@ -158,20 +191,19 @@ export class BizService {
           avatar: info?.avatarUrl || '',
           type: 0,
           last_time: lastTime,
-          formatted_last_time: formatBizTime(lastTime),
-          unread_count: bizUnreadCount[uname] || 0
+          formatted_last_time: this.formatBizTime(lastTime),
+          unread_count: bizUnreadCount[uname] || 0,
+          status: 'active',
+          stale_level: 'none'
         }
       })
 
       // 5. 补充公众号类型 (订阅号/服务号)
-      const contactDbPath = join(root, accountWxid, 'db_storage', 'contact', 'contact.db')
-      if (existsSync(contactDbPath)) {
-        const bizInfoRes = await wcdbService.execQuery('contact', contactDbPath, 'SELECT username, type FROM biz_info')
-        if (bizInfoRes.success && bizInfoRes.rows) {
-          const typeMap: Record<string, number> = {}
-          for (const r of bizInfoRes.rows) typeMap[r.username] = r.type
-          for (const acc of result) if (typeMap[acc.username] !== undefined) acc.type = typeMap[acc.username]
-        }
+      const bizInfoRes = await wcdbService.execQuery('contact', null, 'SELECT username, type FROM biz_info')
+      if (bizInfoRes.success && bizInfoRes.rows) {
+        const typeMap: Record<string, number> = {}
+        for (const r of bizInfoRes.rows as Array<Record<string, any>>) typeMap[String(r.username || '')] = this.toInt(r.type)
+        for (const acc of result) if (typeMap[acc.username] !== undefined) acc.type = typeMap[acc.username]
       }
 
       // 6. 排序输出
@@ -185,6 +217,131 @@ export class BizService {
     } catch (e) {
       console.error('获取账号列表发生错误:', e)
       return []
+    }
+  }
+
+  async listAccountHealth(account?: string): Promise<BizAccountHealth> {
+    const empty: BizAccountHealth = {
+      summary: {
+        active_total: 0,
+        subscription_total: 0,
+        service_total: 0,
+        invalid_total: 0,
+        stale_one_year_total: 0,
+        stale_two_year_total: 0,
+        unknown_last_article_total: 0
+      },
+      accounts: [],
+      invalid_accounts: []
+    }
+
+    try {
+      const contactsRes = await wcdbService.execQuery(
+        'contact',
+        null,
+        "SELECT username, nick_name, remark, alias, local_type, delete_flag, verify_flag, flag FROM contact WHERE username LIKE 'gh_%'"
+      )
+      if (!contactsRes.success || !Array.isArray(contactsRes.rows)) return empty
+
+      const bizInfoRes = await wcdbService.execQuery('contact', null, 'SELECT username, type FROM biz_info')
+      const typeMap: Record<string, number> = {}
+      if (bizInfoRes.success && Array.isArray(bizInfoRes.rows)) {
+        for (const row of bizInfoRes.rows as Array<Record<string, any>>) {
+          const username = String(row.username || '').trim()
+          if (username) typeMap[username] = this.toInt(row.type)
+        }
+      }
+
+      const rows = contactsRes.rows as Array<Record<string, any>>
+      const usernames = rows.map((row) => String(row.username || '').trim()).filter(Boolean)
+      const enrichment = await chatService.enrichSessionsContactInfo(usernames)
+      const contactInfoMap = enrichment.success && enrichment.contacts ? enrichment.contacts : {}
+
+      const latestTime: Record<string, number> = {}
+      const unreadCount: Record<string, number> = {}
+      try {
+        const sessionsRes = await chatService.getSessions()
+        if (sessionsRes.success && sessionsRes.sessions) {
+          for (const session of sessionsRes.sessions) {
+            const username = String(session.username || session.strUsrName || session.userName || session.id || '').trim()
+            if (!username) continue
+            const time = this.toInt(session.lastTimestamp || session.sortTimestamp || session.last_timestamp || session.sort_timestamp || session.nTime || session.timestamp)
+            if (time > 0) latestTime[username] = time
+            const unread = Number(session.unreadCount ?? session.unread_count ?? 0)
+            unreadCount[username] = Number.isFinite(unread) ? Math.max(0, Math.floor(unread)) : 0
+          }
+        }
+      } catch (e) {
+        console.error('获取 Sessions 失败:', e)
+      }
+
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const oneYearSeconds = 365 * 24 * 60 * 60
+      const accounts: BizAccount[] = []
+      const invalidAccounts: BizAccount[] = []
+
+      for (const row of rows) {
+        const username = String(row.username || '').trim()
+        if (!username || this.builtinOfficialHelpers.has(username)) continue
+        const hasBizInfo = typeMap[username] !== undefined
+        if (!hasBizInfo) continue
+
+        const localType = this.toInt(row.local_type ?? row.localType)
+        const info = contactInfoMap[username]
+        const lastTime = latestTime[username] || 0
+        const isActive = this.isVisibleOfficialAccount(username, localType)
+        let staleLevel: BizAccount['stale_level'] = 'none'
+        let daysSinceLastArticle: number | undefined
+        if (!lastTime) {
+          staleLevel = 'unknown'
+        } else {
+          daysSinceLastArticle = Math.max(0, Math.floor((nowSeconds - lastTime) / 86400))
+          if (nowSeconds - lastTime >= oneYearSeconds * 2) staleLevel = 'two_year'
+          else if (nowSeconds - lastTime >= oneYearSeconds) staleLevel = 'one_year'
+        }
+
+        const accountInfo: BizAccount = {
+          username,
+          name: info?.displayName || this.getRowString(row, ['remark', 'nick_name', 'alias']) || username,
+          avatar: info?.avatarUrl || '',
+          type: typeMap[username] ?? 3,
+          last_time: lastTime,
+          formatted_last_time: this.formatBizTime(lastTime),
+          unread_count: unreadCount[username] || 0,
+          status: isActive ? 'active' : 'inactive',
+          health_reason: isActive ? undefined : '不在微信通讯录的公众号/服务号有效分组中，可能是历史残留、已取消关注或已失效账号',
+          stale_level: staleLevel,
+          days_since_last_article: daysSinceLastArticle
+        }
+
+        if (isActive) accounts.push(accountInfo)
+        else invalidAccounts.push(accountInfo)
+      }
+
+      const sortAccounts = (items: BizAccount[]) => items.sort((a, b) => {
+        if (a.username === 'gh_3dfda90e39d6') return -1
+        if (b.username === 'gh_3dfda90e39d6') return 1
+        return (b.last_time || 0) - (a.last_time || 0) || a.name.localeCompare(b.name, 'zh-Hans-CN')
+      })
+
+      sortAccounts(accounts)
+      sortAccounts(invalidAccounts)
+      return {
+        summary: {
+          active_total: accounts.length,
+          subscription_total: accounts.filter((item) => item.type === 0).length,
+          service_total: accounts.filter((item) => item.type === 1).length,
+          invalid_total: invalidAccounts.length,
+          stale_one_year_total: accounts.filter((item) => item.stale_level === 'one_year' || item.stale_level === 'two_year').length,
+          stale_two_year_total: accounts.filter((item) => item.stale_level === 'two_year').length,
+          unknown_last_article_total: accounts.filter((item) => item.stale_level === 'unknown').length
+        },
+        accounts,
+        invalid_accounts: invalidAccounts
+      }
+    } catch (e) {
+      console.error('获取公众号健康状态失败:', e)
+      return empty
     }
   }
 
@@ -242,6 +399,7 @@ export class BizService {
 
   registerHandlers() {
     ipcMain.handle('biz:listAccounts', (_, account) => this.listAccounts(account))
+    ipcMain.handle('biz:listAccountHealth', (_, account) => this.listAccountHealth(account))
     ipcMain.handle('biz:listMessages', (_, username, account, limit, offset) => this.listMessages(username, account, limit, offset))
     ipcMain.handle('biz:listPayRecords', (_, account, limit, offset) => this.listPayRecords(account, limit, offset))
   }

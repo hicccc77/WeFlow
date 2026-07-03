@@ -1393,8 +1393,15 @@ export class ExportContext {
         if (normalizedSessionId.startsWith('gh_')) return '公众号_'
         const rawLocalType = contact?.local_type ?? contact?.localType ?? contact?.WCDB_CT_local_type;
         const localType = Number.parseInt(String(rawLocalType ?? ''), 10);
+        const rawFlag = contact?.flag ?? contact?.contact_flag ?? contact?.contactFlag ?? contact?.WCDB_CT_flag;
+        const flag = Number.parseInt(String(rawFlag ?? '0'), 10);
         const quanPin = String(contact?.quan_pin ?? contact?.quanPin ?? contact?.WCDB_CT_quan_pin ?? '').trim();
-        if (Number.isFinite(localType) && localType === 0 && quanPin) {
+        const alias = String(contact?.alias ?? contact?.WCDB_CT_alias ?? '').trim();
+        const remark = String(contact?.remark ?? contact?.WCDB_CT_remark ?? '').trim();
+        if (Number.isFinite(localType) && (
+          (localType === 0 && quanPin) ||
+          (localType === 3 && Number.isFinite(flag) && flag !== 4 && (quanPin || alias || remark))
+        )) {
           return '曾经的好友_'
         }
 
@@ -2912,9 +2919,13 @@ export class ExportContext {
             destFileName = `${md5}${ext || '.gif'}`
           } else if (kind === 'file') {
             const safeBaseName = path.basename(String(msg?.fileName || path.basename(sourcePath))).replace(/[\\/:*?"<>|]/g, '_') || path.basename(sourcePath)
-            destFileName = `${String(msg?.localId || Date.now())}_${safeBaseName}`
+            destFileName = safeBaseName
           }
-          const destPath = path.join(targetDir, destFileName)
+          let destPath = path.join(targetDir, destFileName)
+          if (kind === 'file' && this.resolveExportConflictStrategy(options) === 'rename') {
+            destPath = await reserveUniqueOutputPath(destPath, new Set<string>())
+            destFileName = path.basename(destPath)
+          }
           if (path.resolve(sourcePath) !== path.resolve(destPath)) {
             if (kind === 'image' || kind === 'emoji' || kind === 'video') {
               const copied = await this.copyMediaWithCacheAndDedup(kind, sourcePath, destPath, options.control, options)
@@ -3945,10 +3956,12 @@ export class ExportContext {
             return null
           }
 
-          const safeBaseName = path.basename(fileNameRaw).replace(/[\\/:*?"<>|]/g, '_') || 'file'
-          const messageId = String(msg?.localId || Date.now())
-          const destFileName = `${messageId}_${safeBaseName}`
-          const destPath = path.join(fileDir, destFileName)
+          let destFileName = path.basename(fileNameRaw).replace(/[\\/:*?"<>|]/g, '_') || 'file'
+          let destPath = path.join(fileDir, destFileName)
+          if (this.resolveExportConflictStrategy(options) === 'rename') {
+            destPath = await reserveUniqueOutputPath(destPath, new Set<string>())
+            destFileName = path.basename(destPath)
+          }
           const existedBeforeCopy = await pathExists(destPath)
           if (existedBeforeCopy && this.shouldReuseExistingExportFile(options)) {
             this.noteMediaTelemetry({ doneFiles: 1, dedupReuseFiles: 1 })

@@ -170,8 +170,15 @@ export interface ContactInfo {
   detailDescription?: string
   region?: string
   avatarUrl?: string
-  type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
+  type: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other'
+  officialAccountKind?: 'subscription' | 'service' | 'enterprise' | 'unknown'
+  officialAccountType?: number
 }
+
+const BUILTIN_OFFICIAL_HELPER_USERNAMES = new Set([
+  'gh_f0a92aa7146c' // 微信收款助手不出现在通讯录的公众号/服务号分组里
+])
+const CONTACT_CLASSIFICATION_CACHE_VERSION = 'contact-classification-v5'
 
 interface GetContactsOptions {
   lite?: boolean
@@ -220,6 +227,7 @@ interface ExportTabCounts {
   group: number
   official: number
   former_friend: number
+  blocked?: number
 }
 
 interface SessionDetailFast {
@@ -359,6 +367,8 @@ class ChatService {
   private readonly messageCursorSessionLimit = 8
   private avatarCache: Map<string, ContactCacheEntry>
   private readonly avatarCacheTtlMs = 10 * 60 * 1000
+  private groupNicknameCache = new Map<string, { nicknames: Map<string, string>; updatedAt: number }>()
+  private readonly groupNicknameCacheTtlMs = 3 * 60 * 1000
   private readonly defaultV1AesKey = 'cfcd208495d565ef'
   private readonly contactCacheService: ContactCacheService
   private readonly messageCacheService: MessageCacheService
@@ -1677,7 +1687,8 @@ class ChatService {
         private: Number(result.counts.private || 0),
         group: Number(result.counts.group || 0),
         official: Number(result.counts.official || 0),
-        former_friend: Number(result.counts.former_friend || 0)
+        former_friend: Number(result.counts.former_friend || 0),
+        blocked: Number(result.counts.blocked || 0)
       }
 
       return { success: true, counts }
@@ -2053,7 +2064,7 @@ class ChatService {
   private getContactsCacheScope(): string {
     const dbPath = String(this.configService.get('dbPath') || '').trim()
     const myWxid = String(this.configService.getMyWxidCleaned() || '').trim()
-    return `${dbPath}::${myWxid}`
+    return `${dbPath}::${myWxid}::${CONTACT_CLASSIFICATION_CACHE_VERSION}`
   }
 
   private cloneContacts(contacts: ContactInfo[]): ContactInfo[] {
@@ -2143,6 +2154,7 @@ class ChatService {
       const transformStartedAt = Date.now()
       const contacts: (ContactInfo & { lastContactTime: number })[] = []
       let contactLabelNameMap = new Map<number, string>()
+      const officialAccountTypeMap = await this.getOfficialAccountTypeMap()
       if (!isLiteMode) {
         const labelMapStartedAt = Date.now()
         contactLabelNameMap = await this.getContactLabelNameMap()
@@ -2153,11 +2165,18 @@ class ChatService {
 
         if (!username) continue
 
-        let type: 'friend' | 'group' | 'official' | 'former_friend' | 'other' = 'other'
+        let type: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other' = 'other'
         const localType = this.getRowInt(row, ['local_type', 'localType', 'WCDB_CT_local_type'], 0)
+        const flag = this.getRowInt(row, ['flag', 'contact_flag', 'contactFlag', 'WCDB_CT_flag'], 0)
         const quanPin = String(this.getRowField(row, ['quan_pin', 'quanPin', 'WCDB_CT_quan_pin']) || '').trim()
+        const alias = String(this.getRowField(row, ['alias', 'WCDB_CT_alias']) || '').trim()
+        const remark = String(this.getRowField(row, ['remark', 'WCDB_CT_remark']) || '').trim()
         const loweredUsername = username.toLowerCase()
         const isOpenimEnterprise = this.isEnterpriseOpenimUsername(username)
+        const isFormerFriendResidual = !username.startsWith('gh_') && (
+          (localType === 0 && quanPin) ||
+          (localType === 3 && flag !== 4 && (quanPin || alias || remark))
+        )
         if (isOpenimEnterprise && !this.isAllowedEnterpriseOpenimByLocalType(username, localType)) {
           continue
         }
@@ -2165,16 +2184,18 @@ class ChatService {
 
         if (username.endsWith('@chatroom')) {
           type = 'group'
-        } else if (username.startsWith('gh_')) {
+        } else if (username.startsWith('gh_') && localType === 1 && !BUILTIN_OFFICIAL_HELPER_USERNAMES.has(username)) {
           type = 'official'
+        } else if (!username.startsWith('gh_') && (flag & 8) === 8) {
+          type = 'blocked'
+        } else if (isFormerFriendResidual) {
+          type = 'former_friend'
         } else if (isOpenimEnterprise) {
           type = 'friend'
         } else if (isVisibleWeixinContact) {
           type = 'friend'
         } else if (localType === 1 && !FRIEND_EXCLUDE_USERNAMES.has(username)) {
           type = 'friend'
-        } else if (localType === 0 && quanPin) {
-          type = 'former_friend'
         } else {
           continue
         }
@@ -2184,6 +2205,7 @@ class ChatService {
         const description = isLiteMode ? '' : this.getContactDescription(row)
         const detailDescription = isLiteMode ? '' : this.getContactSignature(row)
         const region = isLiteMode ? '' : this.getContactRegion(row)
+        const officialAccountType = type === 'official' ? officialAccountTypeMap.get(username) : undefined
 
         contacts.push({
           username,
@@ -2197,6 +2219,8 @@ class ChatService {
           region: region || undefined,
           avatarUrl: undefined,
           type,
+          officialAccountType,
+          officialAccountKind: type === 'official' ? this.getOfficialAccountKind(officialAccountType) : undefined,
           lastContactTime: lastContactTimeMap.get(username) || 0
         })
       }
@@ -2572,6 +2596,7 @@ class ChatService {
     if (normalized.length > 0) {
       await this.repairEmojiMessages(normalized)
       await this.resolveQuotedMessages(normalized, sessionId)
+      await this.enrichGroupMessageSenderProfiles(normalized, sessionId)
     }
 
     return {
@@ -2657,6 +2682,7 @@ class ChatService {
     if (normalized.length > 0) {
       await this.repairEmojiMessages(normalized)
       await this.resolveQuotedMessages(normalized, sessionId)
+      await this.enrichGroupMessageSenderProfiles(normalized, sessionId)
     }
 
     return {
@@ -2824,6 +2850,7 @@ class ChatService {
       if (fixPromises.length > 0) {
         await Promise.allSettled(fixPromises)
       }
+      await this.enrichGroupMessageSenderProfiles(normalized, sessionId)
 
       return { success: true, messages: normalized }
     } catch (e) {
@@ -2891,6 +2918,7 @@ class ChatService {
 
     if (collected.length > 0) {
       await this.repairEmojiMessages(collected)
+      await this.enrichGroupMessageSenderProfiles(collected, sessionId)
     }
     return { success: true, messages: collected }
   }
@@ -3157,6 +3185,7 @@ class ChatService {
     if (normalized.length > 0) {
       await this.repairEmojiMessages(normalized)
       await this.resolveQuotedMessages(normalized, sessionId)
+      await this.enrichGroupMessageSenderProfiles(normalized, sessionId)
     }
     return {
       success: true,
@@ -3165,6 +3194,41 @@ class ChatService {
       rawRowsConsumed,
       filteredOut,
       bufferedRows: queuedRows.length > 0 ? queuedRows : undefined
+    }
+  }
+
+  private async enrichGroupMessageSenderProfiles(messages: Message[], sessionId: string): Promise<void> {
+    const normalizedSessionId = String(sessionId || '').trim()
+    if (!normalizedSessionId.endsWith('@chatroom') || messages.length === 0) return
+
+    const senderUsernames = Array.from(new Set(
+      messages
+        .map((message) => String(message.senderUsername || '').trim())
+        .filter(Boolean)
+    ))
+    if (senderUsernames.length === 0) return
+
+    try {
+      const [groupNicknames, contactsResult] = await Promise.all([
+        this.getGroupNicknamesForRoom(normalizedSessionId),
+        this.enrichSessionsContactInfo(senderUsernames)
+      ])
+      const contacts = contactsResult.success && contactsResult.contacts ? contactsResult.contacts : {}
+
+      for (const message of messages) {
+        const sender = String(message.senderUsername || '').trim()
+        if (!sender) continue
+
+        const groupNickname = this.resolveGroupNicknameByCandidates(
+          groupNicknames,
+          this.buildSenderGroupNicknameCandidates(sender)
+        )
+        const contact = contacts[sender]
+        message.senderDisplayName = groupNickname || contact?.displayName || message.senderDisplayName || sender
+        message.senderAvatarUrl = contact?.avatarUrl || message.senderAvatarUrl
+      }
+    } catch (error) {
+      console.warn('[ChatService] 补充群消息发送者资料失败:', error)
     }
   }
 
@@ -3421,6 +3485,45 @@ class ChatService {
     this.contactLabelNameMapCache = labelMap
     this.contactLabelNameMapCacheAt = now
     return new Map(labelMap)
+  }
+
+  private async getOfficialAccountTypeMap(): Promise<Map<string, number>> {
+    const typeMap = new Map<string, number>()
+    try {
+      const tableResult = await wcdbService.execQuery(
+        'contact',
+        null,
+        "SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='biz_info' LIMIT 1"
+      )
+      const tableName = tableResult.success && Array.isArray(tableResult.rows)
+        ? String((tableResult.rows[0] as Record<string, any> | undefined)?.name || '').trim()
+        : ''
+      if (!tableName) return typeMap
+
+      const result = await wcdbService.execQuery(
+        'contact',
+        null,
+        `SELECT username, type FROM ${this.quoteSqlIdentifier(tableName)}`
+      )
+      if (!result.success || !Array.isArray(result.rows)) return typeMap
+
+      for (const row of result.rows as Array<Record<string, any>>) {
+        const username = String(this.getRowField(row, ['username', 'user_name', 'userName']) || '').trim()
+        if (!username) continue
+        const type = this.getRowInt(row, ['type', 'biz_type', 'bizType'], -1)
+        if (type >= 0) typeMap.set(username, type)
+      }
+    } catch (error) {
+      console.warn('读取 biz_info 公众号类型失败:', error)
+    }
+    return typeMap
+  }
+
+  private getOfficialAccountKind(type: number | undefined): 'subscription' | 'service' | 'enterprise' | 'unknown' {
+    if (type === 0) return 'subscription'
+    if (type === 1) return 'service'
+    if (type === 2 || type === 3) return 'enterprise'
+    return 'unknown'
   }
 
   private toExtraBufferBytes(row: Record<string, any>): Buffer | null {
@@ -3970,6 +4073,114 @@ class ChatService {
       return [cleaned, lowerRaw]
     }
     return [lowerRaw]
+  }
+
+  private getGroupNicknameCacheKey(chatroomId: string): string {
+    const dbPath = String(this.configService.get('dbPath') || '').trim()
+    const myWxid = String(this.configService.getMyWxidCleaned() || '').trim()
+    return `${dbPath}::${myWxid}::${String(chatroomId || '').trim()}`
+  }
+
+  private normalizeGroupNickname(value: unknown): string {
+    const trimmed = String(value || '').trim()
+    if (!trimmed) return ''
+    const cleaned = trimmed.replace(/[\x00-\x1F\x7F]/g, '').trim()
+    if (!cleaned) return ''
+    if (/^[,"'“”‘’，、]+$/.test(cleaned)) return ''
+    return cleaned
+  }
+
+  private normalizeGroupNicknameIdentity(value: unknown): string {
+    return String(value || '').trim().toLowerCase()
+  }
+
+  private buildGroupNicknameIdCandidates(values: Array<unknown>): string[] {
+    const candidates = new Set<string>()
+    for (const rawValue of values) {
+      const raw = String(rawValue || '').trim()
+      if (!raw) continue
+      candidates.add(raw)
+      for (const identityKey of this.buildIdentityKeys(raw)) {
+        if (identityKey) candidates.add(identityKey)
+      }
+    }
+    return Array.from(candidates)
+  }
+
+  private buildTrustedGroupNicknameMap(entries: Iterable<[string, string]>): Map<string, string> {
+    const buckets = new Map<string, Set<string>>()
+    for (const [memberIdRaw, nicknameRaw] of entries) {
+      const identity = this.normalizeGroupNicknameIdentity(memberIdRaw)
+      if (!identity) continue
+      const nickname = this.normalizeGroupNickname(nicknameRaw)
+      if (!nickname) continue
+      const bucket = buckets.get(identity)
+      if (bucket) {
+        bucket.add(nickname)
+      } else {
+        buckets.set(identity, new Set([nickname]))
+      }
+    }
+
+    const trusted = new Map<string, string>()
+    for (const [identity, nicknameSet] of buckets.entries()) {
+      if (nicknameSet.size === 1) {
+        trusted.set(identity, Array.from(nicknameSet)[0])
+      }
+    }
+    return trusted
+  }
+
+  private async getGroupNicknamesForRoom(chatroomId: string): Promise<Map<string, string>> {
+    const normalizedChatroomId = String(chatroomId || '').trim()
+    if (!normalizedChatroomId.endsWith('@chatroom')) return new Map<string, string>()
+
+    const cacheKey = this.getGroupNicknameCacheKey(normalizedChatroomId)
+    const cached = this.groupNicknameCache.get(cacheKey)
+    if (cached && Date.now() - cached.updatedAt <= this.groupNicknameCacheTtlMs) {
+      return cached.nicknames
+    }
+
+    try {
+      const result = await wcdbService.getGroupNicknames(normalizedChatroomId)
+      const nicknames = result.success && result.nicknames
+        ? this.buildTrustedGroupNicknameMap(Object.entries(result.nicknames))
+        : new Map<string, string>()
+      this.groupNicknameCache.set(cacheKey, { nicknames, updatedAt: Date.now() })
+      return nicknames
+    } catch (error) {
+      console.warn('[ChatService] 获取群成员群名片失败:', error)
+      return new Map<string, string>()
+    }
+  }
+
+  private resolveGroupNicknameByCandidates(groupNicknames: Map<string, string>, candidates: Array<unknown>): string {
+    let resolved = ''
+    for (const candidate of this.buildGroupNicknameIdCandidates(candidates)) {
+      const normalizedId = this.normalizeGroupNicknameIdentity(candidate)
+      if (!normalizedId) continue
+      const nickname = this.normalizeGroupNickname(groupNicknames.get(normalizedId) || '')
+      if (!nickname) continue
+      if (!resolved) {
+        resolved = nickname
+        continue
+      }
+      if (resolved !== nickname) return ''
+    }
+    return resolved
+  }
+
+  private buildSenderGroupNicknameCandidates(username: string): string[] {
+    const normalizedUsername = String(username || '').trim()
+    const candidates: unknown[] = [normalizedUsername, this.cleanAccountDirName(normalizedUsername)]
+    const myWxid = String(this.configService.getMyWxidCleaned() || '').trim()
+    if (myWxid) {
+      const myIdentityKeys = new Set(this.buildIdentityKeys(myWxid))
+      if (this.buildIdentityKeys(normalizedUsername).some((key) => myIdentityKeys.has(key))) {
+        candidates.push(myWxid, this.cleanAccountDirName(myWxid))
+      }
+    }
+    return this.buildGroupNicknameIdCandidates(candidates)
   }
 
   private resolveMessageIsSend(rawIsSend: number | null, senderUsername?: string | null): {
@@ -7596,45 +7807,56 @@ class ChatService {
   /**
    * 获取联系人头像和显示名称（用于群聊消息）
    */
-  async getContactAvatar(username: string): Promise<{ avatarUrl?: string; displayName?: string } | null> {
-    if (!username) return null
+  async getContactAvatar(username: string, chatroomId?: string): Promise<{ avatarUrl?: string; displayName?: string } | null> {
+    const normalizedUsername = String(username || '').trim()
+    const normalizedChatroomId = String(chatroomId || '').trim()
+    if (!normalizedUsername) return null
 
     try {
       const connectResult = await this.ensureConnected()
       if (!connectResult.success) return null
-      const cached = this.avatarCache.get(username)
+
+      const groupNicknames = normalizedChatroomId.endsWith('@chatroom')
+        ? await this.getGroupNicknamesForRoom(normalizedChatroomId)
+        : new Map<string, string>()
+      const groupDisplayName = this.resolveGroupNicknameByCandidates(
+        groupNicknames,
+        this.buildSenderGroupNicknameCandidates(normalizedUsername)
+      )
+
+      const cached = this.avatarCache.get(normalizedUsername)
       // 检查缓存是否有效，且头像不是错误的 hex 格式
       const cachedAvatarUrl = this.shouldPersistAvatarUrl(cached?.avatarUrl) ? cached?.avatarUrl : undefined
       if (cached && cachedAvatarUrl && Date.now() - cached.updatedAt < this.avatarCacheTtlMs) {
-        return { avatarUrl: cachedAvatarUrl, displayName: cached.displayName }
+        return { avatarUrl: cachedAvatarUrl, displayName: groupDisplayName || cached.displayName }
       }
 
-      const contact = await this.getContact(username)
-      const avatarResult = await wcdbService.getAvatarUrls([username])
-      let avatarUrl = avatarResult.success && avatarResult.map ? avatarResult.map[username] : undefined
+      const contact = await this.getContact(normalizedUsername)
+      const avatarResult = await wcdbService.getAvatarUrls([normalizedUsername])
+      let avatarUrl = avatarResult.success && avatarResult.map ? avatarResult.map[normalizedUsername] : undefined
       if (!this.isValidAvatarUrl(avatarUrl)) {
         avatarUrl = undefined
       }
       if (!avatarUrl) {
-        const headImageAvatars = await this.getAvatarsFromHeadImageDb([username])
-        const fallbackAvatarUrl = headImageAvatars[username]
+        const headImageAvatars = await this.getAvatarsFromHeadImageDb([normalizedUsername])
+        const fallbackAvatarUrl = headImageAvatars[normalizedUsername]
         if (this.isValidAvatarUrl(fallbackAvatarUrl)) {
           avatarUrl = fallbackAvatarUrl
         }
       }
-      const displayName = contact?.remark || contact?.nickName || contact?.alias || cached?.displayName || username
+      const effectiveAvatarUrl = this.shouldPersistAvatarUrl(avatarUrl)
+        ? avatarUrl
+        : cachedAvatarUrl
+      const contactDisplayName = contact?.remark || contact?.nickName || contact?.alias || cached?.displayName || normalizedUsername
+      const displayName = groupDisplayName || contactDisplayName
       const cacheEntry: ContactCacheEntry = {
-        avatarUrl: this.shouldPersistAvatarUrl(avatarUrl)
-          ? avatarUrl
-          : this.shouldPersistAvatarUrl(cached?.avatarUrl)
-            ? cached?.avatarUrl
-            : undefined,
-        displayName,
+        avatarUrl: effectiveAvatarUrl,
+        displayName: contactDisplayName,
         updatedAt: Date.now()
       }
-      this.avatarCache.set(username, cacheEntry)
-      this.contactCacheService.setEntries({ [username]: cacheEntry })
-      return { avatarUrl, displayName }
+      this.avatarCache.set(normalizedUsername, cacheEntry)
+      this.contactCacheService.setEntries({ [normalizedUsername]: cacheEntry })
+      return { avatarUrl: effectiveAvatarUrl, displayName }
     } catch {
       return null
     }

@@ -5,21 +5,36 @@ export interface ContactTypeTabCounts {
   private: number
   group: number
   official: number
+  official_subscription: number
+  official_service: number
+  official_enterprise: number
+  official_unknown: number
   former_friend: number
+  blocked: number
 }
 
 export interface ContactTypeCardCounts {
   friends: number
   groups: number
   officials: number
+  officialSubscriptions: number
+  officialServices: number
+  officialEnterprises: number
+  officialUnknown: number
   deletedFriends: number
+  blocked: number
 }
 
 const emptyTabCounts: ContactTypeTabCounts = {
   private: 0,
   group: 0,
   official: 0,
-  former_friend: 0
+  official_subscription: 0,
+  official_service: 0,
+  official_enterprise: 0,
+  official_unknown: 0,
+  former_friend: 0,
+  blocked: 0
 }
 
 let inflightPromise: Promise<ContactTypeTabCounts> | null = null
@@ -29,7 +44,12 @@ const normalizeCounts = (counts?: Partial<ContactTypeTabCounts> | null): Contact
     private: Number.isFinite(counts?.private) ? Math.max(0, Math.floor(Number(counts?.private))) : 0,
     group: Number.isFinite(counts?.group) ? Math.max(0, Math.floor(Number(counts?.group))) : 0,
     official: Number.isFinite(counts?.official) ? Math.max(0, Math.floor(Number(counts?.official))) : 0,
-    former_friend: Number.isFinite(counts?.former_friend) ? Math.max(0, Math.floor(Number(counts?.former_friend))) : 0
+    official_subscription: Number.isFinite(counts?.official_subscription) ? Math.max(0, Math.floor(Number(counts?.official_subscription))) : 0,
+    official_service: Number.isFinite(counts?.official_service) ? Math.max(0, Math.floor(Number(counts?.official_service))) : 0,
+    official_enterprise: Number.isFinite(counts?.official_enterprise) ? Math.max(0, Math.floor(Number(counts?.official_enterprise))) : 0,
+    official_unknown: Number.isFinite(counts?.official_unknown) ? Math.max(0, Math.floor(Number(counts?.official_unknown))) : 0,
+    former_friend: Number.isFinite(counts?.former_friend) ? Math.max(0, Math.floor(Number(counts?.former_friend))) : 0,
+    blocked: Number.isFinite(counts?.blocked) ? Math.max(0, Math.floor(Number(counts?.blocked))) : 0
   }
 }
 
@@ -38,8 +58,15 @@ export const toContactTypeTabCountsFromContacts = (contacts: ContactInfo[]): Con
   for (const contact of contacts || []) {
     if (contact.type === 'friend') next.private += 1
     if (contact.type === 'group') next.group += 1
-    if (contact.type === 'official') next.official += 1
+    if (contact.type === 'official') {
+      next.official += 1
+      if (contact.officialAccountKind === 'subscription') next.official_subscription += 1
+      else if (contact.officialAccountKind === 'service') next.official_service += 1
+      else if (contact.officialAccountKind === 'enterprise') next.official_enterprise += 1
+      else next.official_unknown += 1
+    }
     if (contact.type === 'former_friend') next.former_friend += 1
+    if (contact.type === 'blocked') next.blocked += 1
   }
   return next
 }
@@ -49,7 +76,12 @@ export const toContactTypeCardCounts = (counts: ContactTypeTabCounts): ContactTy
     friends: counts.private,
     groups: counts.group,
     officials: counts.official,
-    deletedFriends: counts.former_friend
+    officialSubscriptions: counts.official_subscription,
+    officialServices: counts.official_service,
+    officialEnterprises: counts.official_enterprise,
+    officialUnknown: counts.official_unknown,
+    deletedFriends: counts.former_friend,
+    blocked: counts.blocked
   }
 }
 

@@ -20,6 +20,7 @@ const VIRTUAL_ROW_HEIGHT = 64
 const VIRTUAL_OVERSCAN = 10
 const DEFAULT_CONTACTS_LOAD_TIMEOUT_MS = 10000
 const AVATAR_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
+const CONTACTS_CACHE_SCHEMA_VERSION = 'contacts-v5'
 
 interface ContactsLoadSession {
     requestId: string
@@ -49,8 +50,10 @@ function ContactsPage() {
     const [contactTypes, setContactTypes] = useState({
         friends: true,
         groups: false,
-        officials: false,
-        deletedFriends: false
+        officialSubscriptions: false,
+        officialServices: false,
+        deletedFriends: false,
+        blocked: false
     })
 
     // 导出模式与查看详情
@@ -103,8 +106,8 @@ function ContactsPage() {
             configService.getMyWxid()
         ])
         const scopeKey = dbPath || myWxid
-            ? `${dbPath || ''}::${myWxid || ''}`
-            : 'default'
+            ? `${dbPath || ''}::${myWxid || ''}::${CONTACTS_CACHE_SCHEMA_VERSION}`
+            : `default::${CONTACTS_CACHE_SCHEMA_VERSION}`
         contactsCacheScopeRef.current = scopeKey
         return scopeKey
     }, [])
@@ -402,7 +405,9 @@ function ContactsPage() {
                         description: contact.description,
                         detailDescription: contact.detailDescription,
                         region: contact.region,
-                        type: contact.type
+                        type: contact.type,
+                        officialAccountKind: contact.officialAccountKind,
+                        officialAccountType: contact.officialAccountType
                     }))
                 ).catch((error) => {
                     console.error('写入通讯录缓存失败:', error)
@@ -550,8 +555,12 @@ function ContactsPage() {
         let filtered = contacts.filter(contact => {
             if (contact.type === 'friend' && !contactTypes.friends) return false
             if (contact.type === 'group' && !contactTypes.groups) return false
-            if (contact.type === 'official' && !contactTypes.officials) return false
+            if (contact.type === 'official') {
+                if (contact.officialAccountKind === 'service') return contactTypes.officialServices
+                return contactTypes.officialSubscriptions
+            }
             if (contact.type === 'former_friend' && !contactTypes.deletedFriends) return false
+            if (contact.type === 'blocked' && !contactTypes.blocked) return false
             return true
         })
 
@@ -668,7 +677,7 @@ function ContactsPage() {
                 ? { key: 'signature', label: '个性签名', value: selectedContact.detailDescription }
                 : null,
             selectedContact.region ? { key: 'region', label: '地区', value: selectedContact.region } : null,
-            { key: 'type', label: '类型', value: getContactTypeName(selectedContact.type) }
+            { key: 'type', label: '类型', value: getContactTypeName(selectedContact) }
         ].filter((row): row is { key: string; label: string; value: string } => Boolean(row && row.value))
     }, [selectedContact])
 
@@ -793,16 +802,24 @@ function ContactsPage() {
             case 'group': return <Users size={14} />
             case 'official': return <MessageSquare size={14} />
             case 'former_friend': return <UserX size={14} />
+            case 'blocked': return <UserX size={14} />
             default: return <User size={14} />
         }
     }
 
-    function getContactTypeName(type: string) {
+    function getContactTypeName(contactOrType: ContactInfo | string) {
+        const type = typeof contactOrType === 'string' ? contactOrType : contactOrType.type
+        if (typeof contactOrType !== 'string' && type === 'official') {
+            if (contactOrType.officialAccountKind === 'service') return '服务号'
+            if (contactOrType.officialAccountKind === 'enterprise') return '企业号'
+            return '公众号'
+        }
         switch (type) {
             case 'friend': return '好友'
             case 'group': return '群聊'
             case 'official': return '公众号'
             case 'former_friend': return '曾经的好友'
+            case 'blocked': return '黑名单'
             default: return '其他'
         }
     }
@@ -840,7 +857,8 @@ function ContactsPage() {
                 contactTypes: {
                     friends: contactTypes.friends,
                     groups: contactTypes.groups,
-                    officials: contactTypes.officials
+                    officials: contactTypes.officialSubscriptions || contactTypes.officialServices,
+                    blocked: contactTypes.blocked
                 },
                 selectedUsernames: Array.from(selectedUsernames)
             }
@@ -918,17 +936,29 @@ function ContactsPage() {
                         <span className="chip-label">群聊</span>
                         <span className="chip-count">{contactTypeCounts.groups}</span>
                     </label>
-                    <label className={`filter-chip ${contactTypes.officials ? 'active' : ''}`}>
-                        <input type="checkbox" checked={contactTypes.officials} onChange={e => setContactTypes({ ...contactTypes, officials: e.target.checked })} />
+                    <label className={`filter-chip ${contactTypes.officialSubscriptions ? 'active' : ''}`}>
+                        <input type="checkbox" checked={contactTypes.officialSubscriptions} onChange={e => setContactTypes({ ...contactTypes, officialSubscriptions: e.target.checked })} />
                         <MessageSquare size={16} />
                         <span className="chip-label">公众号</span>
-                        <span className="chip-count">{contactTypeCounts.officials}</span>
+                        <span className="chip-count">{contactTypeCounts.officialSubscriptions}</span>
+                    </label>
+                    <label className={`filter-chip ${contactTypes.officialServices ? 'active' : ''}`}>
+                        <input type="checkbox" checked={contactTypes.officialServices} onChange={e => setContactTypes({ ...contactTypes, officialServices: e.target.checked })} />
+                        <MessageSquare size={16} />
+                        <span className="chip-label">服务号</span>
+                        <span className="chip-count">{contactTypeCounts.officialServices}</span>
                     </label>
                     <label className={`filter-chip ${contactTypes.deletedFriends ? 'active' : ''}`}>
                         <input type="checkbox" checked={contactTypes.deletedFriends} onChange={e => setContactTypes({ ...contactTypes, deletedFriends: e.target.checked })} />
                         <UserX size={16} />
                         <span className="chip-label">曾经的好友</span>
                         <span className="chip-count">{contactTypeCounts.deletedFriends}</span>
+                    </label>
+                    <label className={`filter-chip ${contactTypes.blocked ? 'active' : ''}`}>
+                        <input type="checkbox" checked={contactTypes.blocked} onChange={e => setContactTypes({ ...contactTypes, blocked: e.target.checked })} />
+                        <UserX size={16} />
+                        <span className="chip-label">黑名单</span>
+                        <span className="chip-count">{contactTypeCounts.blocked}</span>
                     </label>
                 </div>
 
@@ -1038,9 +1068,9 @@ function ContactsPage() {
                                                 <div className="contact-remark">备注: {contact.remark}</div>
                                             )}
                                         </div>
-                                        <div className={`contact-type ${contact.type}`}>
+                                        <div className={`contact-type ${contact.type} ${contact.officialAccountKind || ''}`}>
                                             {getContactTypeIcon(contact.type)}
-                                            <span>{getContactTypeName(contact.type)}</span>
+                                            <span>{getContactTypeName(contact)}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1138,9 +1168,9 @@ function ContactsPage() {
                                 )}
                             </div>
                             <div className="contact-detail-heading">
-                                <div className={`contact-type detail-type ${selectedContact.type}`}>
+                                <div className={`contact-type detail-type ${selectedContact.type} ${selectedContact.officialAccountKind || ''}`}>
                                     {getContactTypeIcon(selectedContact.type)}
-                                    <span>{getContactTypeName(selectedContact.type)}</span>
+                                    <span>{getContactTypeName(selectedContact)}</span>
                                 </div>
                                 <h2>{selectedContactTitle}</h2>
                                 {selectedContactSubtitle && <p>{selectedContactSubtitle}</p>}

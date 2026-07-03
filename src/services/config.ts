@@ -1005,7 +1005,9 @@ export interface ContactsListCacheContact {
   description?: string
   detailDescription?: string
   region?: string
-  type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
+  type: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other'
+  officialAccountKind?: 'subscription' | 'service' | 'enterprise' | 'unknown'
+  officialAccountType?: number
 }
 
 export interface ContactsListCacheItem {
@@ -1532,9 +1534,13 @@ export async function getContactsListCache(scopeKey: string): Promise<ContactsLi
       description: typeof item.description === 'string' ? (item.description.trim() || undefined) : undefined,
       detailDescription: typeof item.detailDescription === 'string' ? (item.detailDescription.trim() || undefined) : undefined,
       region: typeof item.region === 'string' ? (item.region.trim() || undefined) : undefined,
-      type: (type === 'friend' || type === 'group' || type === 'official' || type === 'former_friend' || type === 'other')
+      type: (type === 'friend' || type === 'group' || type === 'official' || type === 'former_friend' || type === 'blocked' || type === 'other')
         ? type
-        : 'other'
+        : 'other',
+      officialAccountKind: item.officialAccountKind === 'subscription' || item.officialAccountKind === 'service' || item.officialAccountKind === 'enterprise' || item.officialAccountKind === 'unknown'
+        ? item.officialAccountKind
+        : undefined,
+      officialAccountType: Number.isFinite(Number(item.officialAccountType)) ? Math.floor(Number(item.officialAccountType)) : undefined
     })
   }
 
@@ -1557,7 +1563,7 @@ export async function setContactsListCache(scopeKey: string, contacts: ContactsL
     if (!username) continue
     const displayName = String(contact?.displayName || username)
     const type = contact?.type || 'other'
-    if (type !== 'friend' && type !== 'group' && type !== 'official' && type !== 'former_friend' && type !== 'other') {
+    if (type !== 'friend' && type !== 'group' && type !== 'official' && type !== 'former_friend' && type !== 'blocked' && type !== 'other') {
       continue
     }
     normalized.push({
@@ -1572,7 +1578,11 @@ export async function setContactsListCache(scopeKey: string, contacts: ContactsL
       description: contact?.description ? (String(contact.description).trim() || undefined) : undefined,
       detailDescription: contact?.detailDescription ? (String(contact.detailDescription).trim() || undefined) : undefined,
       region: contact?.region ? (String(contact.region).trim() || undefined) : undefined,
-      type
+      type,
+      officialAccountKind: contact?.officialAccountKind === 'subscription' || contact?.officialAccountKind === 'service' || contact?.officialAccountKind === 'enterprise' || contact?.officialAccountKind === 'unknown'
+        ? contact.officialAccountKind
+        : undefined,
+      officialAccountType: Number.isFinite(Number(contact?.officialAccountType)) ? Math.floor(Number(contact.officialAccountType)) : undefined
     })
   }
 

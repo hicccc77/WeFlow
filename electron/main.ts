@@ -823,7 +823,7 @@ interface OpenSessionChatWindowOptions {
   source?: 'chat' | 'export'
   initialDisplayName?: string
   initialAvatarUrl?: string
-  initialContactType?: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
+  initialContactType?: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other'
 }
 
 const normalizeSessionChatWindowSource = (source: unknown): 'chat' | 'export' => {
@@ -2781,8 +2781,8 @@ function registerIpcHandlers() {
   })
 
 
-  ipcMain.handle('chat:getContactAvatar', async (_, username: string) => {
-    return await chatService.getContactAvatar(username)
+  ipcMain.handle('chat:getContactAvatar', async (_, username: string, chatroomId?: string) => {
+    return await chatService.getContactAvatar(username, chatroomId)
   })
 
   ipcMain.handle('chat:resolveTransferDisplayNames', async (_, chatroomId: string, payerUsername: string, receiverUsername: string) => {

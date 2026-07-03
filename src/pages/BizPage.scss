@@ -3,6 +3,63 @@
   overflow-y: auto;
   background-color: var(--bg-secondary); // 对齐会话列表背景
 
+  .biz-health-panel {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+  }
+
+  .biz-health-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .biz-health-filter {
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 0 8px;
+    font-size: 12px;
+    cursor: pointer;
+
+    strong {
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    &.active {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+
+      strong {
+        color: var(--primary);
+      }
+    }
+  }
+
+  .biz-health-counts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
   .biz-loading {
     padding: 20px;
     text-align: center;
@@ -93,17 +150,28 @@
         }
       }
 
+      .biz-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 2px;
+      }
+
       .biz-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
         font-size: 10px;
         padding: 1px 6px;
         border-radius: 4px;
         width: fit-content;
-        margin-top: 2px;
 
         &.type-service { color: #07c160; background: rgba(7, 193, 96, 0.1); }
         &.type-sub { color: var(--primary); background: var(--primary-light); }
         &.type-enterprise { color: #f5222d; background: rgba(245, 34, 45, 0.1); }
         &.type-unknown { color: var(--text-tertiary); background: var(--bg-tertiary); }
+        &.type-invalid { color: #d46b08; background: rgba(250, 173, 20, 0.14); }
+        &.type-stale { color: #722ed1; background: rgba(114, 46, 209, 0.1); }
       }
     }
   }

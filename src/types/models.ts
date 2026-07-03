@@ -42,7 +42,9 @@ export interface ContactInfo {
   detailDescription?: string
   region?: string
   avatarUrl?: string
-  type: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
+  type: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other'
+  officialAccountKind?: 'subscription' | 'service' | 'enterprise' | 'unknown'
+  officialAccountType?: number
 }
 
 // 消息

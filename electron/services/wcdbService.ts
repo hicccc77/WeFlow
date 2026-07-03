@@ -426,7 +426,7 @@ export class WcdbService {
     return this.callWorker('getContactStatus', { usernames })
   }
 
-  async getContactTypeCounts(): Promise<{ success: boolean; counts?: { private: number; group: number; official: number; former_friend: number }; error?: string }> {
+  async getContactTypeCounts(): Promise<{ success: boolean; counts?: { private: number; group: number; official: number; former_friend: number; blocked?: number }; error?: string }> {
     return this.callWorker('getContactTypeCounts')
   }
 

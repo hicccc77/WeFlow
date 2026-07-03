@@ -146,7 +146,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         source?: 'chat' | 'export'
         initialDisplayName?: string
         initialAvatarUrl?: string
-        initialContactType?: 'friend' | 'group' | 'official' | 'former_friend' | 'other'
+        initialContactType?: 'friend' | 'group' | 'official' | 'former_friend' | 'blocked' | 'other'
       }
     ) =>
       ipcRenderer.invoke('window:openSessionChatWindow', sessionId, options)
@@ -224,7 +224,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }) =>
       ipcRenderer.invoke('chat:getNewMessages', sessionId, minTime, limit, cursor),
     getContact: (username: string) => ipcRenderer.invoke('chat:getContact', username),
-    getContactAvatar: (username: string) => ipcRenderer.invoke('chat:getContactAvatar', username),
+    getContactAvatar: (username: string, chatroomId?: string) => ipcRenderer.invoke('chat:getContactAvatar', username, chatroomId),
     updateMessage: (sessionId: string, localId: number, createTime: number, newContent: string) =>
       ipcRenderer.invoke('chat:updateMessage', sessionId, localId, createTime, newContent),
     deleteMessage: (sessionId: string, localId: number, createTime: number, dbPathHint?: string) =>
@@ -582,6 +582,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   biz: {
     listAccounts: (account?: string) => ipcRenderer.invoke('biz:listAccounts', account),
+    listAccountHealth: (account?: string) => ipcRenderer.invoke('biz:listAccountHealth', account),
     listMessages: (username: string, account?: string, limit?: number, offset?: number) =>
         ipcRenderer.invoke('biz:listMessages', username, account, limit, offset),
     listPayRecords: (account?: string, limit?: number, offset?: number) =>

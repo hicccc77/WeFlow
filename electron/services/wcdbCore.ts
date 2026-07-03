@@ -691,14 +691,16 @@ export class WcdbCore {
     return `SELECT * FROM contact WHERE username IN (${inList})`
   }
 
-  private deriveContactTypeCounts(rows: Array<Record<string, any>>): { private: number; group: number; official: number; former_friend: number } {
+  private deriveContactTypeCounts(rows: Array<Record<string, any>>): { private: number; group: number; official: number; former_friend: number; blocked: number } {
     const counts = {
       private: 0,
       group: 0,
       official: 0,
-      former_friend: 0
+      former_friend: 0,
+      blocked: 0
     }
     const excludeNames = new Set(['medianote', 'floatbottle', 'qmessage', 'qqmail', 'fmessage'])
+    const builtinOfficialHelpers = new Set(['gh_f0a92aa7146c'])
 
     for (const row of rows || []) {
       const username = this.pickFirstStringField(row, ['username', 'user_name', 'userName'])
@@ -706,16 +708,26 @@ export class WcdbCore {
 
       const localTypeRaw = row.local_type ?? row.localType ?? row.WCDB_CT_local_type ?? 0
       const localType = Number.isFinite(Number(localTypeRaw)) ? Math.floor(Number(localTypeRaw)) : 0
+      const flagRaw = row.flag ?? row.contact_flag ?? row.contactFlag ?? row.WCDB_CT_flag ?? 0
+      const flag = Number.isFinite(Number(flagRaw)) ? Math.floor(Number(flagRaw)) : 0
       const quanPin = this.pickFirstStringField(row, ['quan_pin', 'quanPin', 'WCDB_CT_quan_pin'])
+      const alias = this.pickFirstStringField(row, ['alias', 'WCDB_CT_alias'])
+      const remark = this.pickFirstStringField(row, ['remark', 'WCDB_CT_remark'])
+      const isFormerFriendResidual = !username.startsWith('gh_') && (
+        (localType === 0 && quanPin) ||
+        (localType === 3 && flag !== 4 && (quanPin || alias || remark))
+      )
 
       if (username.endsWith('@chatroom')) {
         counts.group += 1
-      } else if (username.startsWith('gh_')) {
+      } else if (username.startsWith('gh_') && localType === 1 && !builtinOfficialHelpers.has(username)) {
         counts.official += 1
-      } else if (localType === 1 && !excludeNames.has(username)) {
-        counts.private += 1
-      } else if (localType === 0 && quanPin) {
+      } else if (!username.startsWith('gh_') && (flag & 8) === 8) {
+        counts.blocked += 1
+      } else if (isFormerFriendResidual) {
         counts.former_friend += 1
+      } else if (localType === 1 && (flag & 8) === 0 && !excludeNames.has(username)) {
+        counts.private += 1
       }
     }
 
@@ -3468,7 +3480,7 @@ export class WcdbCore {
     }
   }
 
-  async getContactTypeCounts(): Promise<{ success: boolean; counts?: { private: number; group: number; official: number; former_friend: number }; error?: string }> {
+  async getContactTypeCounts(): Promise<{ success: boolean; counts?: { private: number; group: number; official: number; former_friend: number; blocked?: number }; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     const runFallback = async (reason: string) => {
       const contactsResult = await this.getContactsCompact()
@@ -3494,7 +3506,8 @@ export class WcdbCore {
           private: Number(raw.private || 0),
           group: Number(raw.group || 0),
           official: Number(raw.official || 0),
-          former_friend: Number(raw.former_friend || 0)
+          former_friend: Number(raw.former_friend || 0),
+          blocked: Number(raw.blocked || 0)
         }
       }
     } catch (e) {

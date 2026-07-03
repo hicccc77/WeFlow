@@ -563,6 +563,7 @@ export interface ElectronAPI {
         group: number
         official: number
         former_friend: number
+        blocked?: number
       }
       error?: string
     }>
@@ -573,6 +574,7 @@ export interface ElectronAPI {
         group: number
         official: number
         former_friend: number
+        blocked?: number
       }
       error?: string
     }>
@@ -626,7 +628,7 @@ export interface ElectronAPI {
       error?: string
     }>
     getContact: (username: string) => Promise<Contact | null>
-    getContactAvatar: (username: string) => Promise<{ avatarUrl?: string; displayName?: string } | null>
+    getContactAvatar: (username: string, chatroomId?: string) => Promise<{ avatarUrl?: string; displayName?: string } | null>
     updateMessage: (sessionId: string, localId: number, createTime: number, newContent: string) => Promise<{ success: boolean; error?: string }>
     deleteMessage: (sessionId: string, localId: number, createTime: number, dbPathHint?: string) => Promise<{ success: boolean; error?: string }>
     checkAntiRevokeTriggers: (sessionIds: string[]) => Promise<{
@@ -900,6 +902,7 @@ export interface ElectronAPI {
   }
   biz: {
     listAccounts: (account?: string) => Promise<any[]>
+    listAccountHealth: (account?: string) => Promise<any>
     listMessages: (username: string, account?: string, limit?: number, offset?: number) => Promise<any[]>
     listPayRecords: (account?: string, limit?: number, offset?: number) => Promise<any[]>
   }
@@ -1505,7 +1508,7 @@ export interface ElectronAPI {
       success: boolean
       error?: string
     }>
-    exportContacts: (outputDir: string, options: { format: 'json' | 'csv' | 'vcf'; exportAvatars: boolean; contactTypes: { friends: boolean; groups: boolean; officials: boolean }; selectedUsernames?: string[] }) => Promise<{
+    exportContacts: (outputDir: string, options: { format: 'json' | 'csv' | 'vcf'; exportAvatars: boolean; contactTypes: { friends: boolean; groups: boolean; officials: boolean; blocked?: boolean }; selectedUsernames?: string[] }) => Promise<{
       success: boolean
       successCount?: number
       error?: string

@@ -1,17 +1,37 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useThemeStore } from '../stores/themeStore';
-import { Newspaper, MessageSquareOff } from 'lucide-react';
+import { AlertTriangle, Clock, MessageSquareOff, Newspaper } from 'lucide-react';
 import './BizPage.scss';
 
 export interface BizAccount {
   username: string;
   name: string;
   avatar: string;
-  type: string;
+  type: number | string;
   last_time: number;
   formatted_last_time: string;
   unread_count?: number;
+  status?: 'active' | 'inactive';
+  health_reason?: string;
+  stale_level?: 'none' | 'one_year' | 'two_year' | 'unknown';
+  days_since_last_article?: number;
 }
+
+interface BizAccountHealth {
+  summary: {
+    active_total: number;
+    subscription_total: number;
+    service_total: number;
+    invalid_total: number;
+    stale_one_year_total: number;
+    stale_two_year_total: number;
+    unknown_last_article_total: number;
+  };
+  accounts: BizAccount[];
+  invalid_accounts: BizAccount[];
+}
+
+type BizFilter = 'active' | 'invalid' | 'one_year' | 'two_year' | 'unknown';
 
 export const BizAccountList: React.FC<{
   onSelect: (account: BizAccount) => void;
@@ -19,6 +39,8 @@ export const BizAccountList: React.FC<{
   searchKeyword?: string;
 }> = ({ onSelect, selectedUsername, searchKeyword }) => {
   const [accounts, setAccounts] = useState<BizAccount[]>([]);
+  const [health, setHealth] = useState<BizAccountHealth | null>(null);
+  const [filter, setFilter] = useState<BizFilter>('active');
   const [loading, setLoading] = useState(false);
 
   const [myWxid, setMyWxid] = useState<string>('');
@@ -44,8 +66,15 @@ export const BizAccountList: React.FC<{
 
     setLoading(true);
     try {
-      const res = await window.electronAPI.biz.listAccounts(myWxid)
-      setAccounts(res || []);
+      if (window.electronAPI.biz.listAccountHealth) {
+        const res = await window.electronAPI.biz.listAccountHealth(myWxid) as BizAccountHealth;
+        setHealth(res || null);
+        setAccounts([...(res?.accounts || []), ...(res?.invalid_accounts || [])]);
+      } else {
+        const res = await window.electronAPI.biz.listAccounts(myWxid)
+        setHealth(null);
+        setAccounts(res || []);
+      }
     } catch (err) {
       console.error('获取服务号列表失败:', err);
     } finally {
@@ -76,9 +105,14 @@ export const BizAccountList: React.FC<{
 
   const filtered = useMemo(() => {
     let result = accounts;
+    if (health) {
+      if (filter === 'active') result = health.accounts || [];
+      else if (filter === 'invalid') result = health.invalid_accounts || [];
+      else result = (health.accounts || []).filter(a => a.stale_level === filter || (filter === 'one_year' && a.stale_level === 'two_year'));
+    }
     if (searchKeyword) {
       const q = searchKeyword.toLowerCase();
-      result = accounts.filter(a =>
+      result = result.filter(a =>
           (a.name && a.name.toLowerCase().includes(q)) ||
           (a.username && a.username.toLowerCase().includes(q))
       );
@@ -88,13 +122,40 @@ export const BizAccountList: React.FC<{
       if (b.username === 'gh_3dfda90e39d6') return 1;
       return b.last_time - a.last_time;
     });
-  }, [accounts, searchKeyword]);
+  }, [accounts, filter, health, searchKeyword]);
 
+  const renderFilterButton = (nextFilter: BizFilter, label: string, count: number) => (
+    <button
+      type="button"
+      className={`biz-health-filter ${filter === nextFilter ? 'active' : ''}`}
+      onClick={() => setFilter(nextFilter)}
+    >
+      <span>{label}</span>
+      <strong>{count}</strong>
+    </button>
+  );
 
   if (loading) return <div className="biz-loading">加载中...</div>;
 
   return (
       <div className="biz-account-list">
+        {health && (
+          <div className="biz-health-panel">
+            <div className="biz-health-row">
+              {renderFilterButton('active', '有效', health.summary.active_total)}
+              {renderFilterButton('invalid', '疑似失效', health.summary.invalid_total)}
+            </div>
+            <div className="biz-health-row">
+              {renderFilterButton('one_year', '1年未发', health.summary.stale_one_year_total)}
+              {renderFilterButton('two_year', '2年未发', health.summary.stale_two_year_total)}
+            </div>
+            <div className="biz-health-counts">
+              <span>公众号 {health.summary.subscription_total}</span>
+              <span>服务号 {health.summary.service_total}</span>
+              <span>无记录 {health.summary.unknown_last_article_total}</span>
+            </div>
+          </div>
+        )}
         {filtered.map(item => (
             <div
                 key={item.username}
@@ -123,13 +184,32 @@ export const BizAccountList: React.FC<{
                 {/*    <div className="biz-badge type-service">微信支付</div>*/}
                 {/*)}*/}
 
-                <div className={`biz-badge ${
-                    item.type === '1' ? 'type-service' :
-                        item.type === '0' ? 'type-sub' :
-                            item.type === '2' ? 'type-enterprise' : 
-                                item.type === '3' ? 'type-enterprise' : 'type-unknown'
-                }`}>
-                  {item.type === '0' ? '公众号' : item.type === '1' ? '服务号' : item.type === '2' ? '企业号' : item.type === '3' ? '企业附属' :  '未知'}
+                <div className="biz-badge-row">
+                {(() => {
+                  const typeValue = Number(item.type);
+                  return (
+                    <div className={`biz-badge ${
+                        typeValue === 1 ? 'type-service' :
+                            typeValue === 0 ? 'type-sub' :
+                                typeValue === 2 ? 'type-enterprise' :
+                                    typeValue === 3 ? 'type-enterprise' : 'type-unknown'
+                    }`}>
+                      {typeValue === 0 ? '公众号' : typeValue === 1 ? '服务号' : typeValue === 2 ? '企业号' : typeValue === 3 ? '企业附属' :  '未知'}
+                    </div>
+                  );
+                })()}
+                {item.status === 'inactive' && (
+                  <div className="biz-badge type-invalid"><AlertTriangle size={11} />疑似失效</div>
+                )}
+                {item.status !== 'inactive' && item.stale_level === 'one_year' && (
+                  <div className="biz-badge type-stale"><Clock size={11} />1年未发</div>
+                )}
+                {item.status !== 'inactive' && item.stale_level === 'two_year' && (
+                  <div className="biz-badge type-stale"><Clock size={11} />2年未发</div>
+                )}
+                {item.status !== 'inactive' && item.stale_level === 'unknown' && (
+                  <div className="biz-badge type-unknown"><Clock size={11} />无记录</div>
+                )}
                 </div>
 
               </div>
