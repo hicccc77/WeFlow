@@ -58,7 +58,7 @@
     "sass": "^1.101.0",
     "sharp": "^0.35.3",
     "typescript": "^6.0.3",
-    "vite": "^8.1.0",
+    "vite": "^8.1.3",
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^1.0.0"
   },
