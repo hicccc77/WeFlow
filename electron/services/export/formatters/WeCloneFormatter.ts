@@ -60,6 +60,7 @@ export class WeCloneFormatter {
       await this.exportService.createWeliveRawOutputPlaceholder(outputPath, control)
 
       await this.exportService.hydrateEmojiCaptionsForMessages(sessionId, collected.rows, control)
+      await this.exportService.resolveQuotedMessagesForExport(collected.rows, sessionId)
 
       const senderUsernames = new Set<string>()
       let senderScanIndex = 0
@@ -85,7 +86,6 @@ export class WeCloneFormatter {
         : new Map<string, string>()
 
       const sortedMessages = collected.rows
-        .filter((msg: any) => !this.exportService.isQuotedReplyMessage(msg.localType, msg.content || ''))
       totalMessages = sortedMessages.length
       if (totalMessages === 0) {
         return { success: false, error: '该会话在指定时间范围内没有可导出的消息' }
@@ -289,7 +289,7 @@ export class WeCloneFormatter {
           )
         }
 
-        const msgText = msg.localType === 34 && options.exportVoiceAsText
+        let msgText = msg.localType === 34 && options.exportVoiceAsText
           ? (voiceTranscriptMap.get(this.exportService.getStableMessageKey(msg)) || '[语音消息 - 转文字失败]')
           : (this.exportService.parseMessageContent(
             msg.content,
@@ -301,6 +301,26 @@ export class WeCloneFormatter {
             msg.isSend,
             msg.emojiCaption
           ) || '')
+        const quotedReplyDisplay = await this.exportService.resolveQuotedReplyDisplayWithNames({
+          content: msg.content,
+          isGroup,
+          displayNamePreference: options.displayNamePreference,
+          getContact: getContactCached,
+          groupNicknamesMap,
+          cleanedMyWxid,
+          rawMyWxid,
+          myDisplayName: myInfo.displayName || cleanedMyWxid
+        })
+        if (quotedReplyDisplay) {
+          msgText = this.exportService.buildQuotedReplyText(quotedReplyDisplay)
+        } else if (
+          msg.localType === 244813135921 &&
+          msgText === '[引用消息]' &&
+          typeof msg.content === 'string' &&
+          msg.content.trim()
+        ) {
+          msgText = msg.content.trim()
+        }
         const formattedMediaItem = mediaItem?.relativePath
           ? {
             ...mediaItem,
