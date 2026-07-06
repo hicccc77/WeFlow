@@ -17,12 +17,13 @@
     "rebuild": "electron-rebuild",
     "dev": "node scripts/prepare-electron-runtime.cjs && vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc && vite build && electron-builder",
+    "build": "node scripts/clean-dist-electron.cjs && tsc && vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "node scripts/prepare-electron-runtime.cjs && vite --mode electron",
     "electron:build": "npm run build"
   },
   "dependencies": {
+    "@hicccc77/electron-liquid-glass": "^0.3.0",
     "@vscode/sudo-prompt": "^9.3.2",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.2",
@@ -264,6 +265,7 @@
       "node_modules/sherpa-onnx-*/*",
       "node_modules/sherpa-onnx-*/**/*",
       "node_modules/ffmpeg-static/**/*",
+      "node_modules/@hicccc77/electron-liquid-glass/**/*",
       "resources/wedecrypt/**/*.node"
     ],
     "icon": "resources/icons/macos/icon.icns"
@@ -272,6 +274,7 @@
     "brace-expansion": {
       ".": "^5.0.6"
     },
+    "node-abi": ">=4.33.0",
     "exceljs": {
       "uuid": "11.1.1"
     },

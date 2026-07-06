@@ -21,10 +21,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     click: (payload: any) => ipcRenderer.send('notification-clicked', payload),
     ready: () => ipcRenderer.send('notification:ready'),
     resize: (width: number, height: number) => ipcRenderer.send('notification:resize', { width, height }),
+    // 原生玻璃面板：卡片实测几何上报 / 退场淡出 / 亮度带回调（Windows 原生模式专用）
+    glassRect: (payload: any) => ipcRenderer.send('notification:glassRect', payload),
+    glassHide: () => ipcRenderer.send('notification:glassHide'),
+    onLuma: (callback: (bands: any) => void) => {
+      const listener = (_: any, bands: any) => callback(bands)
+      ipcRenderer.on('notification:luma', listener)
+      return () => ipcRenderer.removeListener('notification:luma', listener)
+    },
     onShow: (callback: (event: any, data: any) => void) => {
       ipcRenderer.on('notification:show', callback)
       return () => ipcRenderer.removeAllListeners('notification:show')
-    }, // 监听原本发送出来的navigate-to-session事件，跳转到具体的会话
+    },
+    // 监听原本发送出来的navigate-to-session事件，跳转到具体的会话
     onNavigateToSession: (callback: (sessionId: string) => void) => {
       const listener = (_: any, sessionId: string) => callback(sessionId)
       ipcRenderer.on('navigate-to-session', listener)

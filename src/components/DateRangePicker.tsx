@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './DateRangePicker.scss'
 
 interface DateRangePickerProps {
@@ -198,6 +199,13 @@ function DateRangePicker({ startDate, endDate, onStartDateChange, onEndDateChang
 
       {isOpen && (
         <div className="picker-dropdown">
+          <LiquidGlass
+            cornerRadius={16}
+            displacementScale={48}
+            aberrationIntensity={1.5}
+            blurAmount={0.25}
+          >
+            <div className="picker-dropdown-body">
           <div className="quick-options">
             {QUICK_OPTIONS.map(opt => (
               <button key={opt.label} className="quick-option" onClick={() => handleQuickOption(opt.days)}>
@@ -246,6 +254,8 @@ function DateRangePicker({ startDate, endDate, onStartDateChange, onEndDateChang
               {selectingStart ? '请选择开始日期' : '请选择结束日期'}
             </div>
           </div>
+            </div>
+          </LiquidGlass>
         </div>
       )}
     </div>

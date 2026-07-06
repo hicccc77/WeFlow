@@ -39,6 +39,12 @@ import { bizService } from './services/bizService'
 import { backupService } from './services/backupService'
 import { imageDownloadService } from './services/imageDownloadService'
 
+// 屏幕采集去节流（仅影响通知玻璃的 Chromium 流回退管线；Windows 主路径为
+// 原生面板渲染，不经过 Chromium 采集）：默认桌面采集 CPU 预算限制在 50%，
+// 会自适应压低采集帧率、显著增加回退路径下折射的跟随延迟。
+// 回退采集只在通知展示的数秒内运行且分辨率已降为逻辑尺寸，放开预算不影响常态性能
+app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '100')
+
 // 配置自动更新
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
@@ -1268,12 +1274,14 @@ function createSplashWindow(): BrowserWindow {
     const splashUrl = new URL('splash.html', process.env.VITE_DEV_SERVER_URL)
     splashUrl.searchParams.set('themeId', splashThemeId)
     splashUrl.searchParams.set('themeMode', splashThemeMode)
+    splashUrl.searchParams.set('version', app.getVersion())
     splashWindow.loadURL(splashUrl.toString())
   } else {
     splashWindow.loadFile(join(__dirname, '../dist/splash.html'), {
       query: {
         themeId: splashThemeId,
-        themeMode: splashThemeMode
+        themeMode: splashThemeMode,
+        version: app.getVersion()
       }
     })
   }
@@ -4553,10 +4561,10 @@ app.whenReady().then(async () => {
   shouldShowMain = onboardingDone
 
   if (!startInBackground) {
-    // 非静默模式下显示 Splash，提供启动反馈
+    // 非静默模式下显示 Splash，提供启动反馈（主题/版本号通过 URL 参数传入）
     createSplashWindow()
 
-    // 等待 Splash 页面加载完成后再推送进度
+    // 等待 Splash 页面加载完成，确保后续 executeJavaScript 推送的进度可靠送达
     if (splashWindow) {
       await new Promise<void>((resolve) => {
         if (splashWindow!.webContents.isLoading()) {
@@ -4565,13 +4573,9 @@ app.whenReady().then(async () => {
           resolve()
         }
       })
-      splashWindow.webContents
-        .executeJavaScript(`setVersion(${JSON.stringify(app.getVersion())})`)
-        .catch(() => {})
     }
   }
 
-  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   const withTimeout = <T>(task: () => Promise<T>, timeoutMs: number): Promise<{ timedOut: boolean; value?: T; error?: string }> => {
     return new Promise((resolve) => {
       let settled = false
@@ -4597,111 +4601,28 @@ app.whenReady().then(async () => {
     })
   }
 
-  updateSplashProgress(5, '正在加载配置...')
-
-  // 将用户主题配置推送给 Splash 窗口
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    const themeId = configService.get('themeId') || 'cloud-dancer'
-    const themeMode = configService.get('theme') || 'system'
-    splashWindow.webContents
-      .executeJavaScript(`applyTheme(${JSON.stringify(themeId)}, ${JSON.stringify(themeMode)})`)
-      .catch(() => {})
-  }
-  await delay(200)
-
-  // 设置资源路径
-  updateSplashProgress(12, '正在初始化...')
+  // 基础初始化均为毫秒级操作，直接顺序执行
+  updateSplashProgress(10, '正在初始化...')
   const candidateResources = app.isPackaged
     ? join(process.resourcesPath, 'resources')
     : join(app.getAppPath(), 'resources')
   const fallbackResources = join(process.cwd(), 'resources')
   const resourcesPath = existsSync(candidateResources) ? candidateResources : fallbackResources
   const userDataPath = app.getPath('userData')
-  await delay(200)
-
-  // 初始化数据库服务
-  updateSplashProgress(20, '正在初始化...')
   wcdbService.setPaths(resourcesPath, userDataPath)
   wcdbService.setLogEnabled(configService.get('logEnabled') === true)
-  await delay(200)
-
-  // 注册 IPC 处理器
-  updateSplashProgress(28, '正在初始化...')
   registerIpcHandlers()
-  if (configService.get('autoDownloadHighRes')) {
-    const whitelistArr = configService.get('autoDownloadWhitelist') || []
-    const whitelistStr = (Array.isArray(whitelistArr) && whitelistArr.length > 0)
-      ? (whitelistArr.join('\0') + '\0\0')
-      : ''
-    imageDownloadService.startAutoDownload(whitelistStr)
-  }
   chatService.addDbMonitorListener((type, json) => {
     messagePushService.handleDbMonitorChange(type, json)
     insightService.handleDbMonitorChange(type, json)
   })
-  messagePushService.start()
-  insightService.start()
-  groupSummaryService.start()
-  await delay(200)
 
-  // 已完成引导时，在 Splash 阶段预热核心数据（联系人、消息库索引等）
-  if (onboardingDone) {
-    updateSplashProgress(34, '正在连接数据库...')
-    const connectWarmup = await withTimeout(() => chatService.connect(), 12000)
-    const connected = !connectWarmup.timedOut && connectWarmup.value?.success === true
-
-    if (!connected) {
-      const reason = connectWarmup.timedOut
-        ? connectWarmup.error
-        : (connectWarmup.value?.error || connectWarmup.error || 'unknown')
-      console.warn('[StartupWarmup] 跳过预热，数据库连接失败:', reason)
-      updateSplashProgress(68, '数据库预热已跳过')
-    } else {
-      const preloadUsernames = new Set<string>()
-
-      updateSplashProgress(44, '正在预加载会话...')
-      const sessionsWarmup = await withTimeout(() => chatService.getSessions(), 12000)
-      if (!sessionsWarmup.timedOut && sessionsWarmup.value?.success && Array.isArray(sessionsWarmup.value.sessions)) {
-        for (const session of sessionsWarmup.value.sessions) {
-          const username = String((session as any)?.username || '').trim()
-          if (username) preloadUsernames.add(username)
-        }
-      }
-
-      updateSplashProgress(56, '正在预加载联系人...')
-      const contactsWarmup = await withTimeout(() => chatService.getContacts(), 15000)
-      if (!contactsWarmup.timedOut && contactsWarmup.value?.success && Array.isArray(contactsWarmup.value.contacts)) {
-        for (const contact of contactsWarmup.value.contacts) {
-          const username = String((contact as any)?.username || '').trim()
-          if (username) preloadUsernames.add(username)
-        }
-      }
-
-      updateSplashProgress(63, '正在缓存联系人头像...')
-      const avatarWarmupUsernames = Array.from(preloadUsernames).slice(0, 2000)
-      if (avatarWarmupUsernames.length > 0) {
-        await withTimeout(() => chatService.enrichSessionsContactInfo(avatarWarmupUsernames), 15000)
-      }
-
-      updateSplashProgress(68, '正在初始化消息库索引...')
-      await withTimeout(() => chatService.warmupMessageDbSnapshot(), 10000)
-
-      updateSplashProgress(69, '正在预加载导出统计...')
-      if (avatarWarmupUsernames.length > 0) {
-        await withTimeout(() => chatService.getExportSessionStats(avatarWarmupUsernames, { includeRelations: false }), 8000)
-      }
-    }
-  } else {
-    updateSplashProgress(68, '首次启动准备中...')
-  }
-
-  // 创建主窗口（不显示，由启动流程统一控制）
-  updateSplashProgress(70, '正在准备主窗口...')
+  // 提前创建主窗口（隐藏），让渲染进程加载与数据库预热并行进行
+  updateSplashProgress(20, '正在准备主窗口...')
   ensureWeChatRequestHeaderInterceptor()
   mainWindow = createWindow({ autoShow: false })
 
   const resolvedTrayIcon = resolveAppIconPath()
-
 
   try {
     tray = new Tray(resolvedTrayIcon)
@@ -4746,8 +4667,38 @@ app.whenReady().then(async () => {
     console.warn('[Tray] Failed to create tray icon:', e)
   }
 
-  // 等待主窗口加载完成（真正耗时阶段，进度条末端呼吸光点）
-  updateSplashProgress(70, '正在准备主窗口...', true)
+  // 已完成引导时，与渲染进程加载并行预热会话列表和联系人名字/头像缓存
+  if (onboardingDone) {
+    updateSplashProgress(35, '正在连接数据库...')
+    const connectWarmup = await withTimeout(() => chatService.connect(), 12000)
+    const connected = !connectWarmup.timedOut && connectWarmup.value?.success === true
+
+    if (!connected) {
+      const reason = connectWarmup.timedOut
+        ? connectWarmup.error
+        : (connectWarmup.value?.error || connectWarmup.error || 'unknown')
+      console.warn('[StartupWarmup] 跳过预热，数据库连接失败:', reason)
+    } else {
+      updateSplashProgress(55, '正在预加载会话...')
+      const preloadUsernames = new Set<string>()
+      const sessionsWarmup = await withTimeout(() => chatService.getSessions(), 12000)
+      if (!sessionsWarmup.timedOut && sessionsWarmup.value?.success && Array.isArray(sessionsWarmup.value.sessions)) {
+        for (const session of sessionsWarmup.value.sessions) {
+          const username = String((session as any)?.username || '').trim()
+          if (username) preloadUsernames.add(username)
+        }
+      }
+
+      updateSplashProgress(75, '正在缓存联系人头像...')
+      const avatarWarmupUsernames = Array.from(preloadUsernames).slice(0, 2000)
+      if (avatarWarmupUsernames.length > 0) {
+        await withTimeout(() => chatService.enrichSessionsContactInfo(avatarWarmupUsernames), 15000)
+      }
+    }
+  }
+
+  // 等待主窗口加载完成（进度条末端呼吸光点）
+  updateSplashProgress(90, '正在准备主窗口...', true)
   await new Promise<void>((resolve) => {
     if (mainWindowReady) {
       resolve()
@@ -4761,7 +4712,6 @@ app.whenReady().then(async () => {
 
   // 加载完成，收尾
   updateSplashProgress(100, '启动完成')
-  await new Promise((resolve) => setTimeout(resolve, 250))
   closeSplash()
 
   if (!onboardingDone) {
@@ -4770,6 +4720,18 @@ app.whenReady().then(async () => {
     mainWindow?.hide()
   } else {
     mainWindow?.show()
+  }
+
+  // 依赖数据库的后台服务在窗口显示后再启动，避免与启动预热争抢数据库 worker
+  messagePushService.start()
+  insightService.start()
+  groupSummaryService.start()
+  if (configService.get('autoDownloadHighRes')) {
+    const whitelistArr = configService.get('autoDownloadWhitelist') || []
+    const whitelistStr = (Array.isArray(whitelistArr) && whitelistArr.length > 0)
+      ? (whitelistArr.join('\0') + '\0\0')
+      : ''
+    imageDownloadService.startAutoDownload(whitelistStr)
   }
 
   // 启动时检测更新（不阻塞启动）

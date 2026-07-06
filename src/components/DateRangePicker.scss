@@ -54,16 +54,29 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    background: var(--bg-secondary-solid, var(--bg-primary, var(--card-bg)));
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 1px solid var(--border-color);
     z-index: 1000;
-    display: flex;
-    overflow: hidden;
     animation: dropdownFadeIn 0.15s ease-out;
+  }
+
+  // 内容层底色：中心保留半透明底保证日历可读，四周 26px 渐隐露出玻璃的边缘折射带
+  .picker-dropdown-body {
+    position: relative;
+    display: flex;
+    border-radius: 16px;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      background-color: color-mix(in srgb, var(--bg-secondary-solid, var(--bg-primary, var(--card-bg))) 68%, transparent);
+      mask:
+        linear-gradient(to right, transparent, #000 26px, #000 calc(100% - 26px), transparent),
+        linear-gradient(to bottom, transparent, #000 26px, #000 calc(100% - 26px), transparent);
+      mask-composite: intersect;
+    }
   }
 
   @keyframes dropdownFadeIn {

@@ -13,16 +13,20 @@
   animation: windowCloseDialogFadeIn 0.2s ease-out;
 }
 
-.window-close-dialog {
+// 液态玻璃外壳：宽度与入场动画在玻璃根节点上
+.window-close-dialog-glass {
   width: min(560px, 100%);
-  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  animation: windowCloseDialogSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.window-close-dialog {
+  width: 100%;
   border-radius: 24px;
+  // 半透明背景透出玻璃折射，边框与阴影由 LiquidGlass 提供
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 94%, white 6%) 0%, var(--bg-primary) 100%);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 72%, transparent) 0%, color-mix(in srgb, var(--bg-primary) 84%, transparent) 100%);
   overflow: hidden;
   position: relative;
-  animation: windowCloseDialogSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .window-close-dialog-header {

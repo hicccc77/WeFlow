@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation, type Location } from 'react-router-dom'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -6,17 +6,10 @@ import RouteGuard from './components/RouteGuard'
 import WelcomePage from './pages/WelcomePage'
 import HomePage from './pages/HomePage'
 import ChatPage from './pages/ChatPage'
-import AnalyticsPage from './pages/AnalyticsPage'
 import AnalyticsWelcomePage from './pages/AnalyticsWelcomePage'
 import ChatAnalyticsHubPage from './pages/ChatAnalyticsHubPage'
-import AnnualReportPage from './pages/AnnualReportPage'
-import AnnualReportWindow from './pages/AnnualReportWindow'
-import DualReportPage from './pages/DualReportPage'
-import DualReportWindow from './pages/DualReportWindow'
 import AgreementPage from './pages/AgreementPage'
-import GroupAnalyticsPage from './pages/GroupAnalyticsPage'
 import SettingsPage from './pages/SettingsPage'
-import ExportPage from './pages/Export/ExportPage'
 import MyFootprintPage from './pages/MyFootprintPage'
 import VideoWindow from './pages/VideoWindow'
 import ImageWindow from './pages/ImageWindow'
@@ -42,6 +35,16 @@ import UpdateProgressCapsule from './components/UpdateProgressCapsule'
 import LockScreen from './components/LockScreen'
 import { GlobalSessionMonitor } from './components/GlobalSessionMonitor'
 import WindowCloseDialog from './components/WindowCloseDialog'
+
+// 重型页面懒加载：echarts 分析页、年度/双人报告（含大字体样式）、导出页模块树，
+// 从首屏 bundle 中拆出，显著缩短主窗口首次渲染时间
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
+const GroupAnalyticsPage = lazy(() => import('./pages/GroupAnalyticsPage'))
+const AnnualReportPage = lazy(() => import('./pages/AnnualReportPage'))
+const AnnualReportWindow = lazy(() => import('./pages/AnnualReportWindow'))
+const DualReportPage = lazy(() => import('./pages/DualReportPage'))
+const DualReportWindow = lazy(() => import('./pages/DualReportWindow'))
+const ExportPage = lazy(() => import('./pages/Export/ExportPage'))
 
 function RouteStateRedirect({ to }: { to: string }) {
   const location = useLocation()
@@ -532,12 +535,20 @@ function App() {
 
   // 独立年度报告全屏窗口
   if (isAnnualReportWindow) {
-    return <AnnualReportWindow />
+    return (
+      <Suspense fallback={null}>
+        <AnnualReportWindow />
+      </Suspense>
+    )
   }
 
   // 独立双人报告全屏窗口
   if (isDualReportWindow) {
-    return <DualReportWindow />
+    return (
+      <Suspense fallback={null}>
+        <DualReportWindow />
+      </Suspense>
+    )
   }
 
   // 主窗口 - 完整布局
@@ -696,38 +707,43 @@ function App() {
         <Sidebar collapsed={sidebarCollapsed} />
         <main className="content">
           <RouteGuard>
-            <div className={`export-keepalive-page ${isExportRoute ? 'active' : 'hidden'}`} aria-hidden={!isExportRoute}>
-              <ExportPage />
-            </div>
+            {/* 独立 Suspense 边界：Export chunk 异步加载时不阻塞首屏路由渲染 */}
+            <Suspense fallback={null}>
+              <div className={`export-keepalive-page ${isExportRoute ? 'active' : 'hidden'}`} aria-hidden={!isExportRoute}>
+                <ExportPage />
+              </div>
+            </Suspense>
 
-            <Routes location={routeLocation}>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/home" element={<HomePage />} />
-              <Route path="/account-management" element={<AccountManagementPage />} />
-              <Route path="/chat" element={<ChatPage />} />
+            <Suspense fallback={null}>
+              <Routes location={routeLocation}>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/home" element={<HomePage />} />
+                <Route path="/account-management" element={<AccountManagementPage />} />
+                <Route path="/chat" element={<ChatPage />} />
 
-              <Route path="/analytics" element={<ChatAnalyticsHubPage />} />
-              <Route path="/analytics/private" element={<AnalyticsWelcomePage />} />
-              <Route path="/analytics/private/view" element={<AnalyticsPage />} />
-              <Route path="/analytics/group" element={<GroupAnalyticsPage />} />
-              <Route path="/analytics/view" element={<RouteStateRedirect to="/analytics/private/view" />} />
-              <Route path="/group-analytics" element={<RouteStateRedirect to="/analytics/group" />} />
-              <Route path="/annual-report" element={<AnnualReportPage />} />
-              <Route path="/annual-report/view" element={<AnnualReportWindow />} />
-              <Route path="/dual-report" element={<DualReportPage />} />
-              <Route path="/dual-report/view" element={<DualReportWindow />} />
-              <Route path="/footprint" element={<MyFootprintPage />} />
+                <Route path="/analytics" element={<ChatAnalyticsHubPage />} />
+                <Route path="/analytics/private" element={<AnalyticsWelcomePage />} />
+                <Route path="/analytics/private/view" element={<AnalyticsPage />} />
+                <Route path="/analytics/group" element={<GroupAnalyticsPage />} />
+                <Route path="/analytics/view" element={<RouteStateRedirect to="/analytics/private/view" />} />
+                <Route path="/group-analytics" element={<RouteStateRedirect to="/analytics/group" />} />
+                <Route path="/annual-report" element={<AnnualReportPage />} />
+                <Route path="/annual-report/view" element={<AnnualReportWindow />} />
+                <Route path="/dual-report" element={<DualReportPage />} />
+                <Route path="/dual-report/view" element={<DualReportWindow />} />
+                <Route path="/footprint" element={<MyFootprintPage />} />
 
-              <Route path="/export" element={<div className="export-route-anchor" aria-hidden="true" />} />
-              <Route path="/sns" element={<SnsPage />} />
-              <Route path="/insight-inbox" element={<InsightInboxPage />} />
-              <Route path="/biz" element={<BizPage />} />
-              <Route path="/contacts" element={<ContactsPage />} />
-              <Route path="/resources" element={<ResourcesPage />} />
-              <Route path="/backup" element={<BackupPage />} />
-              <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
-              <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
-            </Routes>
+                <Route path="/export" element={<div className="export-route-anchor" aria-hidden="true" />} />
+                <Route path="/sns" element={<SnsPage />} />
+                <Route path="/insight-inbox" element={<InsightInboxPage />} />
+                <Route path="/biz" element={<BizPage />} />
+                <Route path="/contacts" element={<ContactsPage />} />
+                <Route path="/resources" element={<ResourcesPage />} />
+                <Route path="/backup" element={<BackupPage />} />
+                <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
+                <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
+              </Routes>
+            </Suspense>
           </RouteGuard>
         </main>
       </div>

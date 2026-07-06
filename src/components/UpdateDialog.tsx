@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Quote, X } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './UpdateDialog.scss'
 
 interface UpdateInfo {
@@ -70,7 +71,13 @@ const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
     return (
         <div className="update-dialog-overlay">
-            <div className="update-dialog">
+            <LiquidGlass
+                className="update-dialog-glass"
+                cornerRadius={24}
+                displacementScale={40}
+                aberrationIntensity={1.5}
+            >
+                <div className="update-dialog">
                 {!isDownloading && !isMandatory && (
                     <button className="close-btn" onClick={onClose}>
                         <X size={20} />
@@ -135,7 +142,8 @@ const UpdateDialog: React.FC<UpdateDialogProps> = ({
                         </div>
                     )}
                 </div>
-            </div>
+                </div>
+            </LiquidGlass>
         </div>
     )
 }

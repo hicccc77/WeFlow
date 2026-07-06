@@ -382,6 +382,22 @@ export interface ElectronAPI {
     click: (payload: string | { sessionId?: string; channel?: string; insightRecordId?: string; targetRoute?: string }) => void
     ready: () => void
     resize: (width: number, height: number) => void
+    glassRect: (payload: {
+      card: { x: number; y: number; width: number; height: number }
+      bands: Array<{ id: number; x: number; y: number; width: number; height: number }>
+      dpr: number
+      cornerRadius: number
+      blurSigma: number
+      displacementScale: number
+      aberrationIntensity: number
+      saturation: number
+    }) => void
+    glassHide: () => void
+    onLuma: (
+      callback: (
+        bands: Record<string, { r: number; g: number; b: number; darkTail: number; lightTail: number }>
+      ) => void
+    ) => () => void
     onShow: (callback: (event: any, data: any) => void) => () => void
     onNavigateToSession: (callback: (sessionId: string) => void) => () => void
     onNavigateToRoute: (callback: (route: string) => void) => () => void
@@ -1568,7 +1584,7 @@ export interface ElectronAPI {
     downloadImage: (payload: { url: string; key?: string | number }) => Promise<{ success: boolean; data?: any; contentType?: string; error?: string }>
     exportTimeline: (options: {
       outputDir: string
-      format: 'json' | 'html' | 'arkmejson'
+      format: 'json' | 'html' | 'arkmejson' | 'markdown'
       usernames?: string[]
       keyword?: string
       exportImages?: boolean

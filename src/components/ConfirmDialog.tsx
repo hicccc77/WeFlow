@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './ConfirmDialog.scss'
 
 interface ConfirmDialogProps {
@@ -14,19 +15,26 @@ export default function ConfirmDialog({ open, title, message, onConfirm, onCance
 
   return (
     <div className="confirm-dialog-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
-        <button className="close-btn" onClick={onCancel}>
-          <X size={20} />
-        </button>
-        {title && <div className="dialog-title">{title}</div>}
-        <div className="dialog-content">
-          <p style={{ whiteSpace: 'pre-line' }}>{message}</p>
+      <LiquidGlass
+        className="confirm-dialog-glass"
+        cornerRadius={20}
+        displacementScale={36}
+        aberrationIntensity={1.5}
+      >
+        <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+          <button className="close-btn" onClick={onCancel}>
+            <X size={20} />
+          </button>
+          {title && <div className="dialog-title">{title}</div>}
+          <div className="dialog-content">
+            <p style={{ whiteSpace: 'pre-line' }}>{message}</p>
+          </div>
+          <div className="dialog-actions">
+            <button className="btn-cancel" onClick={onCancel}>取消</button>
+            <button className="btn-confirm" onClick={onConfirm}>开始获取</button>
+          </div>
         </div>
-        <div className="dialog-actions">
-          <button className="btn-cancel" onClick={onCancel}>取消</button>
-          <button className="btn-confirm" onClick={onConfirm}>开始获取</button>
-        </div>
-      </div>
+      </LiquidGlass>
     </div>
   )
 }

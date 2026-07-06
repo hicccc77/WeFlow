@@ -1,6 +1,7 @@
 import React from 'react'
 import { useAppStore } from '../stores/appStore'
 import { Download, X, AlertCircle, Info } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './UpdateProgressCapsule.scss'
 
 const UpdateProgressCapsule: React.FC = () => {
@@ -102,15 +103,22 @@ const UpdateProgressCapsule: React.FC = () => {
     }
 
     return (
-        <div className={capsuleClass} onClick={() => setShowUpdateDialog(true)}>
-            <div className="capsule-content">
-                {content}
-                {!isDownloading && (
-                    <button className="capsule-close" onClick={handleClose}>
-                        <X size={12} />
-                    </button>
-                )}
-            </div>
+        <div className={capsuleClass}>
+            <LiquidGlass
+                cornerRadius={24}
+                displacementScale={48}
+                aberrationIntensity={1.5}
+                onClick={() => setShowUpdateDialog(true)}
+            >
+                <div className="capsule-content">
+                    {content}
+                    {!isDownloading && (
+                        <button className="capsule-close" onClick={handleClose}>
+                            <X size={12} />
+                        </button>
+                    )}
+                </div>
+            </LiquidGlass>
         </div>
     )
 }

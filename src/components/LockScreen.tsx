@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, Fingerprint, Lock, ScanFace, ShieldCheck } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './LockScreen.scss'
 
 interface LockScreenProps {
@@ -99,7 +100,14 @@ export default function LockScreen({ onUnlock, avatar, useHello = false }: LockS
 
     return (
         <div className={`lock-screen ${isUnlocked ? 'unlocked' : ''}`}>
-            <div className="lock-content">
+            <div className="lock-card">
+                <LiquidGlass
+                    cornerRadius={28}
+                    padding="40px 36px"
+                    displacementScale={48}
+                    aberrationIntensity={1.5}
+                >
+                    <div className="lock-content">
                 <div className="lock-avatar">
                     {avatar ? (
                         <img src={avatar} alt="User" style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
@@ -138,6 +146,8 @@ export default function LockScreen({ onUnlock, avatar, useHello = false }: LockS
                 </form>
 
                 {error && <div className="lock-error">{error}</div>}
+                    </div>
+                </LiquidGlass>
             </div>
         </div>
     )

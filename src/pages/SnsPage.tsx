@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react'
-import { RefreshCw, Search, X, Download, FolderOpen, FileJson, FileText, Image, CheckCircle, AlertCircle, Calendar, Info, Shield, ShieldOff, Loader2, Pause, Play, Square } from 'lucide-react'
+import { RefreshCw, Search, X, Download, FolderOpen, FileCode, FileJson, FileText, Image, CheckCircle, AlertCircle, Calendar, Info, Shield, ShieldOff, Loader2, Pause, Play, Square } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import './SnsPage.scss'
 import { SnsPost } from '../types/sns'
@@ -86,7 +86,7 @@ interface SnsExportResult {
 interface SnsExportRequest {
     taskId: string
     outputDir: string
-    format: 'json' | 'html' | 'arkmejson'
+    format: 'json' | 'html' | 'arkmejson' | 'markdown'
     usernames?: string[]
     keyword?: string
     exportImages: boolean
@@ -204,7 +204,7 @@ export default function SnsPage() {
     // 导出相关状态
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [exportScope, setExportScope] = useState<SnsExportScope>({ kind: 'all' })
-    const [exportFormat, setExportFormat] = useState<'json' | 'html' | 'arkmejson'>('html')
+    const [exportFormat, setExportFormat] = useState<'json' | 'html' | 'arkmejson' | 'markdown'>('html')
     const [exportFolder, setExportFolder] = useState('')
     const [exportImages, setExportImages] = useState(false)
     const [exportLivePhotos, setExportLivePhotos] = useState(false)
@@ -2405,6 +2405,15 @@ export default function SnsPage() {
                                                 <FileText size={20} />
                                                 <span>HTML</span>
                                                 <small>浏览器可直接查看</small>
+                                            </button>
+                                            <button
+                                                className={`format-option ${exportFormat === 'markdown' ? 'active' : ''}`}
+                                                onClick={() => setExportFormat('markdown')}
+                                                disabled={isExportLocked}
+                                            >
+                                                <FileCode size={20} />
+                                                <span>Markdown</span>
+                                                <small>纯文本，通用性强</small>
                                             </button>
                                             <button
                                                 className={`format-option ${exportFormat === 'json' ? 'active' : ''}`}

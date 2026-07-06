@@ -8,6 +8,7 @@ import { basename, join } from 'path'
 import crypto from 'crypto'
 import { WasmService } from './wasmService'
 import zlib from 'zlib'
+import { escapeMarkdownLinkText, escapeMarkdownText, toMarkdownUrl } from './export/utils/markdown'
 
 export interface SnsLivePhoto {
     url: string
@@ -330,6 +331,30 @@ const decodeXmlText = (text: string): string => {
         .replace(/&gt;/gi, '>')
         .replace(/&quot;/gi, '"')
         .replace(/&#39;/gi, "'")
+}
+
+const normalizeSnsLocationText = (value?: string): string => (
+    decodeXmlText(String(value || '')).replace(/\s+/g, ' ').trim()
+)
+
+/** 解析朋友圈位置的展示文本（POI 优先，附加国家/城市信息） */
+const resolveSnsLocationText = (location?: SnsLocation): string => {
+    if (!location) return ''
+    const primaryCandidates = [
+        normalizeSnsLocationText(location.poiName),
+        normalizeSnsLocationText(location.poiAddressName),
+        normalizeSnsLocationText(location.label),
+        normalizeSnsLocationText(location.poiAddress)
+    ].filter(Boolean)
+    const primary = primaryCandidates[0] || ''
+    const region = [
+        normalizeSnsLocationText(location.country),
+        normalizeSnsLocationText(location.city)
+    ].filter(Boolean).join(' ')
+    if (primary && region && !primary.includes(region)) {
+        return `${primary} · ${region}`
+    }
+    return primary || region
 }
 
 class SnsService {
@@ -1358,7 +1383,7 @@ class SnsService {
      */
     async exportTimeline(options: {
         outputDir: string
-        format: 'json' | 'html' | 'arkmejson'
+        format: 'json' | 'html' | 'arkmejson' | 'markdown'
         usernames?: string[]
         keyword?: string
         exportMedia?: boolean
@@ -1735,6 +1760,11 @@ class SnsService {
                 }
                 recordCreatedFileBeforeWrite(outputFilePath)
                 await writeFile(outputFilePath, JSON.stringify(exportData, null, 2), 'utf-8')
+            } else if (format === 'markdown') {
+                outputFilePath = join(outputDir, `朋友圈导出_${timestamp}.md`)
+                const markdown = this.generateMarkdown(allPosts, { usernames, keyword })
+                recordCreatedFileBeforeWrite(outputFilePath)
+                await writeFile(outputFilePath, markdown, 'utf-8')
             } else {
                 // HTML 格式
                 outputFilePath = join(outputDir, `朋友圈导出_${timestamp}.html`)
@@ -1750,6 +1780,99 @@ class SnsService {
             console.error('[SnsExport] 导出失败:', e)
             return { success: false, error: e.message || String(e) }
         }
+    }
+
+    /**
+     * 生成朋友圈 Markdown 导出文件
+     */
+    private generateMarkdown(posts: SnsPost[], filters: { usernames?: string[]; keyword?: string }): string {
+        const formatTime = (ts: number) => {
+            const d = new Date(ts * 1000)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`
+        }
+        // 逐行转义正文，行尾补两个空格以在渲染时保留换行
+        const formatMultilineText = (text: string): string => text
+            .split(/\r?\n/)
+            .map(line => escapeMarkdownText(line))
+            .join('  \n')
+
+        const lines: string[] = []
+        lines.push('# 朋友圈导出')
+        lines.push('')
+        lines.push(`- 动态数量: ${posts.length}`)
+        if (filters.keyword) lines.push(`- 筛选关键词: ${escapeMarkdownText(filters.keyword)}`)
+        if (filters.usernames && filters.usernames.length > 0) lines.push(`- 筛选用户: ${filters.usernames.length} 人`)
+        lines.push(`- 导出时间: ${new Date().toLocaleString('zh-CN')}`)
+        lines.push('- 导出工具: WeFlow')
+
+        for (const post of posts) {
+            lines.push('')
+            lines.push('---')
+            lines.push('')
+            lines.push(`## ${escapeMarkdownText(post.nickname)} · ${formatTime(post.createTime)}`)
+            lines.push('')
+
+            if (post.contentDesc) {
+                lines.push(formatMultilineText(post.contentDesc))
+                lines.push('')
+            }
+
+            const locationText = resolveSnsLocationText(post.location)
+            if (locationText) {
+                lines.push(`📍 ${escapeMarkdownText(locationText)}`)
+                lines.push('')
+            }
+
+            const mediaLines: string[] = []
+            post.media.forEach((m, mi) => {
+                const indexSuffix = post.media.length > 1 ? ` ${mi + 1}` : ''
+                const localPath = (m as any).localPath as string | undefined
+                const isVideo = isVideoUrl(m.url)
+                if (localPath) {
+                    mediaLines.push(isVideo
+                        ? `[视频${indexSuffix}](${toMarkdownUrl(localPath)})`
+                        : `![图片${indexSuffix}](${toMarkdownUrl(localPath)})`)
+                } else if (m.url) {
+                    mediaLines.push(`[${isVideo ? '视频' : '图片'}${indexSuffix}](${toMarkdownUrl(m.url)})`)
+                }
+                const livePhotoLocalPath = m.livePhoto ? (m.livePhoto as any).localPath as string | undefined : undefined
+                if (livePhotoLocalPath) {
+                    mediaLines.push(`[实况视频${indexSuffix}](${toMarkdownUrl(livePhotoLocalPath)})`)
+                }
+            })
+            if (mediaLines.length > 0) {
+                // 行尾两个空格产生硬换行，让每个媒体渲染时各占一行
+                lines.push(mediaLines.join('  \n'))
+                lines.push('')
+            }
+
+            if (post.linkTitle && post.linkUrl) {
+                lines.push(`🔗 [${escapeMarkdownLinkText(post.linkTitle)}](${toMarkdownUrl(post.linkUrl)})`)
+                lines.push('')
+            }
+
+            if (post.likes.length > 0) {
+                lines.push(`♥ ${post.likes.map(l => escapeMarkdownText(l)).join('、')}`)
+                lines.push('')
+            }
+
+            if (post.comments.length > 0) {
+                lines.push('💬 评论:')
+                lines.push('')
+                for (const c of post.comments) {
+                    const ref = c.refNickname ? ` 回复 **${escapeMarkdownText(c.refNickname)}**` : ''
+                    lines.push(`- **${escapeMarkdownText(c.nickname)}**${ref}：${escapeMarkdownLinkText(c.content)}`)
+                }
+                lines.push('')
+            }
+
+            // 去掉每条动态末尾多余的空行，统一由分隔符控制间距
+            while (lines[lines.length - 1] === '') lines.pop()
+        }
+
+        lines.push('')
+        return lines.join('\n')
     }
 
     /**
@@ -1778,27 +1901,6 @@ class SnsService {
             const ch = name.charAt(0)
             return escapeHtml(ch || '?')
         }
-        const normalizeLocationText = (value?: string): string => (
-            decodeXmlText(String(value || '')).replace(/\s+/g, ' ').trim()
-        )
-        const resolveLocationText = (location?: SnsLocation): string => {
-            if (!location) return ''
-            const primaryCandidates = [
-                normalizeLocationText(location.poiName),
-                normalizeLocationText(location.poiAddressName),
-                normalizeLocationText(location.label),
-                normalizeLocationText(location.poiAddress)
-            ].filter(Boolean)
-            const primary = primaryCandidates[0] || ''
-            const region = [
-                normalizeLocationText(location.country),
-                normalizeLocationText(location.city)
-            ].filter(Boolean).join(' ')
-            if (primary && region && !primary.includes(region)) {
-                return `${primary} · ${region}`
-            }
-            return primary || region
-        }
 
         let filterInfo = ''
         if (filters.keyword) filterInfo += `关键词: "${escapeHtml(filters.keyword)}" `
@@ -1822,7 +1924,7 @@ class SnsService {
             const linkHtml = post.linkTitle && post.linkUrl
                 ? `<a class="lk" href="${escapeHtml(post.linkUrl)}" target="_blank"><span class="lk-t">${escapeHtml(post.linkTitle)}</span><span class="lk-a">›</span></a>`
                 : ''
-            const locationText = resolveLocationText(post.location)
+            const locationText = resolveSnsLocationText(post.location)
             const locationHtml = locationText
                 ? `<div class="loc"><span class="loc-i">📍</span><span class="loc-t">${escapeHtml(locationText)}</span></div>`
                 : ''

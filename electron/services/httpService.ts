@@ -1453,9 +1453,9 @@ class HttpService {
     }
 
     const rawFormat = String(url.searchParams.get('format') || 'json').trim().toLowerCase()
-    const format = rawFormat === 'arkme-json' ? 'arkmejson' : rawFormat
-    if (!['json', 'html', 'arkmejson'].includes(format)) {
-      this.sendError(res, 400, 'Invalid format, supported: json/html/arkmejson')
+    const format = rawFormat === 'arkme-json' ? 'arkmejson' : rawFormat === 'md' ? 'markdown' : rawFormat
+    if (!['json', 'html', 'arkmejson', 'markdown'].includes(format)) {
+      this.sendError(res, 400, 'Invalid format, supported: json/html/arkmejson/markdown')
       return
     }
 
@@ -1466,7 +1466,7 @@ class HttpService {
 
     const options: {
       outputDir: string
-      format: 'json' | 'html' | 'arkmejson'
+      format: 'json' | 'html' | 'arkmejson' | 'markdown'
       usernames?: string[]
       keyword?: string
       exportMedia?: boolean
@@ -1477,7 +1477,7 @@ class HttpService {
       endTime?: number
     } = {
       outputDir,
-      format: format as 'json' | 'html' | 'arkmejson',
+      format: format as 'json' | 'html' | 'arkmejson' | 'markdown',
       usernames,
       keyword,
       exportMedia: this.parseBooleanParam(url, ['exportMedia'], false)

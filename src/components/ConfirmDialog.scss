@@ -12,13 +12,18 @@
   z-index: 100;
   animation: fadeIn 0.2s ease-out;
 
-  .confirm-dialog {
-    width: 480px;
-    background: var(--bg-primary);
-    border-radius: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    position: relative;
+  // 液态玻璃外壳：宽度与入场动画在玻璃根节点上
+  .confirm-dialog-glass {
+    width: min(480px, calc(100% - 48px));
     animation: slideUp 0.2s ease-out;
+  }
+
+  .confirm-dialog {
+    width: 100%;
+    // 半透明背景透出玻璃折射，阴影由 LiquidGlass 提供
+    background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+    border-radius: 20px;
+    position: relative;
     overflow: hidden;
 
     .close-btn {

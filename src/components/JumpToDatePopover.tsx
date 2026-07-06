@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import LiquidGlass from './LiquidGlass'
 import './JumpToDatePopover.scss'
 
 interface JumpToDatePopoverProps {
@@ -185,6 +186,13 @@ const JumpToDatePopover: React.FC<JumpToDatePopoverProps> = ({
 
   return (
     <div className={mergedClassName} style={style} role="dialog" aria-label="跳转日期">
+      <LiquidGlass
+        cornerRadius={14}
+        displacementScale={48}
+        aberrationIntensity={1.5}
+        blurAmount={0.25}
+      >
+        <div className="jump-date-popover-body">
       <div className="calendar-nav">
         <button
           className="nav-btn"
@@ -293,6 +301,8 @@ const JumpToDatePopover: React.FC<JumpToDatePopoverProps> = ({
           ))}
         </div>
       )}
+        </div>
+      </LiquidGlass>
     </div>
   )
 }

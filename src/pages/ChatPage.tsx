@@ -9,7 +9,7 @@ import { useBatchTranscribeStore, type BatchVoiceTaskType } from '../stores/batc
 import { useBatchImageDecryptStore } from '../stores/batchImageDecryptStore'
 import type { ChatRecordItem, ChatSession, Message } from '../types/models'
 import type { GroupSummaryRecord, GroupSummaryRecordSummary } from '../types/electron'
-import { getEmojiPath } from 'wechat-emojis'
+import { renderTextWithEmoji } from '../utils/renderTextWithEmoji'
 import { VoiceTranscribeDialog } from '../components/VoiceTranscribeDialog'
 import { LivePhotoIcon } from '../components/LivePhotoIcon'
 import { AnimatedStreamingText } from '../components/AnimatedStreamingText'
@@ -10983,33 +10983,6 @@ function MessageBubble({
   const cleanMessageContent = useCallback((content: string) => {
     if (!content) return ''
     return content.replace(/^[a-zA-Z0-9]+@openim:\n?/, '')
-  }, [])
-
-  // 解析混合文本和表情
-  const renderTextWithEmoji = useCallback((text: string) => {
-    if (!text) return text
-    const parts = text.split(/\[(.*?)\]/g)
-    return parts.map((part, index) => {
-      // 奇数索引是捕获组的内容（即括号内的文字）
-      if (index % 2 === 1) {
-        // @ts-ignore
-        const path = getEmojiPath(part as any)
-        if (path) {
-          // path 例如 'assets/face/微笑.png'，需要添加 base 前缀
-          return (
-            <img
-              key={index}
-              src={`${import.meta.env.BASE_URL}${path}`}
-              alt={`[${part}]`}
-              className="inline-emoji"
-              style={{ width: 22, height: 22, verticalAlign: 'bottom', margin: '0 1px' }}
-            />
-          )
-        }
-        return `[${part}]`
-      }
-      return part
-    })
   }, [])
 
   const cleanedParsedContent = useMemo(

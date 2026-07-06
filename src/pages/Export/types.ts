@@ -44,7 +44,7 @@ export type TextExportFormat =
   | 'weclone'
   | 'sql'
 
-export type SnsTimelineExportFormat = 'json' | 'html' | 'arkmejson'
+export type SnsTimelineExportFormat = 'json' | 'html' | 'arkmejson' | 'markdown'
 
 export type ContactsSortKey = 'messageCount' | 'latestMessageTime'
 export type ContactsSortOrder = 'desc' | 'asc'

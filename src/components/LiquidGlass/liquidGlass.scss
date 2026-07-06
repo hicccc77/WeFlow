@@ -1,0 +1,19 @@
+// 液态玻璃全局兼容层
+// 所有 LiquidGlass 实例的主题适配统一由这些变量控制：
+// - --liquid-glass-tint：玻璃色调层。浅色主题用白色磨砂保证深色文字可读，
+//   深色主题用暗色磨砂保证浅色文字可读（替代原库有合成缺陷的黑色 mix-blend 压暗层）
+// - --liquid-glass-shadow：玻璃投影 + 1px 描边，浅色页面上靠它与背景分离
+// - --liquid-glass-ring：边缘高光环强度系数（0~1）。玻璃直接叠在透明窗口背景上时
+//   混合层会全强度过曝，需要调低（如独立通知窗口）
+// 个别表面需要微调时，在其玻璃节点的 class 上覆盖同名变量即可
+
+:root {
+    --liquid-glass-tint: rgba(255, 255, 255, 0.42);
+    --liquid-glass-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 12px 40px rgba(0, 0, 0, 0.24);
+    --liquid-glass-ring: 1;
+}
+
+[data-mode="dark"] {
+    --liquid-glass-tint: rgba(24, 22, 20, 0.4);
+    --liquid-glass-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 12px 40px rgba(0, 0, 0, 0.45);
+}

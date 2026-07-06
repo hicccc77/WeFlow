@@ -4,7 +4,7 @@ import { Heart, ChevronRight, ImageIcon, Code, Trash2, MapPin } from 'lucide-rea
 import { SnsPost, SnsLinkCardData, SnsLocation } from '../../types/sns'
 import { Avatar } from '../Avatar'
 import { SnsMediaGrid } from './SnsMediaGrid'
-import { getEmojiPath } from 'wechat-emojis'
+import { renderTextWithEmoji } from '../../utils/renderTextWithEmoji'
 
 // Helper functions (extracted from SnsPage.tsx but simplified/reused)
 const LINK_XML_URL_TAGS = ['url', 'shorturl', 'weburl', 'webpageurl', 'jumpurl']
@@ -434,23 +434,6 @@ export const SnsPostItem: React.FC<SnsPostItemProps> = ({ post, onPreview, onDeb
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
-        })
-    }
-
-    // 解析微信表情
-    const renderTextWithEmoji = (text: string) => {
-        if (!text) return text
-        const parts = text.split(/\[(.*?)\]/g)
-        return parts.map((part, index) => {
-            if (index % 2 === 1) {
-                // @ts-ignore
-                const path = getEmojiPath(part as any)
-                if (path) {
-                    return <img key={index} src={`${import.meta.env.BASE_URL}${path}`} alt={`[${part}]`} className="inline-emoji" style={{ width: 22, height: 22, verticalAlign: 'bottom', margin: '0 1px' }} />
-                }
-                return `[${part}]`
-            }
-            return part
         })
     }
 

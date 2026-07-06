@@ -31,6 +31,10 @@ out
 release
 tmp/
 
+# electron-liquid-glass 是嵌套的独立 git 仓库（发布到 npm，WeFlow 走 registry 依赖），
+# 不能被外层仓库跟踪（会变成悬空 gitlink）
+/packages/electron-liquid-glass/
+
 # Database
 *.db
 *.db-shm

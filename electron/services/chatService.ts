@@ -449,6 +449,7 @@ class ChatService {
   private readonly visibilityAnomalyLogBurst = 3
   private visibilityAnomalyLogState = new Map<string, { windowStart: number; total: number; suppressed: number }>()
   private readonly contactLabelNameMapCacheTtlMs = 10 * 60 * 1000
+  private connectInFlight: Promise<{ success: boolean; error?: string }> | null = null
   private contactsLoadInFlight: { mode: 'lite' | 'full'; promise: Promise<{ success: boolean; contacts?: ContactInfo[]; error?: string }> } | null = null
   private contactsMemoryCache = new Map<'lite' | 'full', { scope: string; updatedAt: number; contacts: ContactInfo[] }>()
   private readonly contactsMemoryCacheTtlMs = 3 * 60 * 1000
@@ -561,9 +562,27 @@ class ChatService {
   }
 
   /**
-   * 连接数据库
+   * 连接数据库（并发调用共享同一次连接过程，避免重复 open）
    */
   async connect(): Promise<{ success: boolean; error?: string }> {
+    if (this.connected && wcdbService.isReady()) {
+      return { success: true }
+    }
+    if (this.connectInFlight) {
+      return this.connectInFlight
+    }
+    const promise = this.connectInternal()
+    this.connectInFlight = promise
+    try {
+      return await promise
+    } finally {
+      if (this.connectInFlight === promise) {
+        this.connectInFlight = null
+      }
+    }
+  }
+
+  private async connectInternal(): Promise<{ success: boolean; error?: string }> {
     try {
       const wxid = String(this.runtimeConfig?.myWxid || this.configService.get('myWxid') || '').trim()
       const dbPath = String(this.runtimeConfig?.dbPath || this.configService.get('dbPath') || '').trim()

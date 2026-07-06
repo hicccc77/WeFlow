@@ -685,7 +685,7 @@ Body 示例：
 }
 ```
 
-`format` 支持：`json`、`html`、`arkmejson`（兼容写法：`arkme-json`）。
+`format` 支持：`json`、`html`、`arkmejson`（兼容写法：`arkme-json`）、`markdown`（兼容写法：`md`）。
 
 ### 7.6 朋友圈防删开关
 

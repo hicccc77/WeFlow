@@ -578,6 +578,7 @@
     (function bootstrapSplash() {
       var params = new URLSearchParams(window.location.search || "");
       applyTheme(params.get("themeId") || "cloud-dancer", params.get("themeMode") || "system");
+      setVersion(params.get("version") || "");
       updateProgress(0, "", false);
     })();
   </script>

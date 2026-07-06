@@ -4,7 +4,8 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: var(--bg-primary);
+    // 保留少量透明度，让 backdrop blur 透出模糊后的应用内容，供解锁卡片折射
+    background-color: color-mix(in srgb, var(--bg-primary) 86%, transparent);
     z-index: 9999;
     display: flex;
     flex-direction: column;
@@ -14,8 +15,6 @@
     -webkit-app-region: drag;
     transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
     backdrop-filter: blur(25px) saturate(180%);
-    background-color: var(--bg-primary);
-    // 让背景带一点透明度以增强毛玻璃效果
     opacity: 1;
 
     &.unlocked {
@@ -24,11 +23,18 @@
         backdrop-filter: blur(0) saturate(100%);
         transform: scale(1.02);
 
-        .lock-content {
+        .lock-card {
             transform: translateY(-20px) scale(0.95);
             filter: blur(10px);
             opacity: 0;
         }
+    }
+
+    // 液态玻璃卡片外壳：承载出入场动画
+    .lock-card {
+        -webkit-app-region: no-drag;
+        animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .lock-content {
@@ -36,9 +42,6 @@
         flex-direction: column;
         align-items: center;
         width: 320px;
-        -webkit-app-region: no-drag;
-        animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 
         .lock-avatar {
             width: 100px;

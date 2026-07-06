@@ -8,29 +8,17 @@
     animation: capsuleSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     user-select: none;
 
-    &:hover {
-        .capsule-content {
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-            transform: scale(1.02);
-        }
-    }
-
+    // 视觉背景（毛玻璃、边框、阴影）由 LiquidGlass 提供，这里只负责内容布局
     .capsule-content {
-        background: var(--bg-primary);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
         padding: 8px 18px;
         border-radius: 24px;
-        border: 1px solid var(--border-color);
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
         display: flex;
         align-items: center;
         gap: 12px;
         height: 40px;
         position: relative;
         overflow: hidden;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
         .icon-wrapper {
             display: flex;
@@ -112,11 +100,10 @@
         }
     }
 
-    // State Modifiers
+    // State Modifiers（改为半透明色调叠加在玻璃之上）
     &.state-available {
         .capsule-content {
-            background: var(--primary);
-            border-color: rgba(255, 255, 255, 0.1);
+            background: color-mix(in srgb, var(--primary) 82%, transparent);
             color: white;
 
             .icon-wrapper {
@@ -139,16 +126,9 @@
         }
     }
 
-    &.state-downloading {
-        .capsule-content {
-            background: var(--bg-primary);
-        }
-    }
-
     &.state-error {
         .capsule-content {
-            background: #fff1f0;
-            border-color: #ffa39e;
+            background: color-mix(in srgb, #ff4d4f 14%, transparent);
 
             .icon-wrapper {
                 color: #ff4d4f;

@@ -161,13 +161,18 @@ class VideoService {
     return `${dbPath}::${this.cleanWxid(wxid)}`.toLowerCase()
   }
 
+  /**
+   * 判断 dbPath 本身是否就是账号目录。
+   * 无论 wxid_ 开头还是自定义微信号，账号目录下必然存在 db_storage 子目录，
+   * 以此为判据。不可用路径子串匹配 wxid（#1128：Windows 用户名与微信号相同时，
+   * `C:\Users\<同名>` 会让子串匹配误判，导致视频目录解析到错误位置）。
+   */
+  private isAccountDir(dirPath: string): boolean {
+    return existsSync(join(dirPath, 'db_storage'))
+  }
+
   private resolveVideoBaseDir(dbPath: string, wxid: string): string {
-    const cleanedWxid = this.cleanWxid(wxid)
-    const dbPathLower = dbPath.toLowerCase()
-    const wxidLower = wxid.toLowerCase()
-    const cleanedWxidLower = cleanedWxid.toLowerCase()
-    const dbPathContainsWxid = dbPathLower.includes(wxidLower) || dbPathLower.includes(cleanedWxidLower)
-    if (dbPathContainsWxid) {
+    if (this.isAccountDir(dbPath)) {
       return join(dbPath, 'msg', 'video')
     }
 
@@ -182,12 +187,7 @@ class VideoService {
   }
 
   private getHardlinkDbPaths(dbPath: string, wxid: string, cleanedWxid: string): string[] {
-    const dbPathLower = dbPath.toLowerCase()
-    const wxidLower = wxid.toLowerCase()
-    const cleanedWxidLower = cleanedWxid.toLowerCase()
-    const dbPathContainsWxid = dbPathLower.includes(wxidLower) || dbPathLower.includes(cleanedWxidLower)
-
-    if (dbPathContainsWxid) {
+    if (this.isAccountDir(dbPath)) {
       return [join(dbPath, 'db_storage', 'hardlink', 'hardlink.db')]
     }
 

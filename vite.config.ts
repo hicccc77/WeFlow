@@ -112,7 +112,9 @@ export default defineConfig({
                 'exceljs',
                 'node-llama-cpp',
                 '@vscode/sudo-prompt',
-                'silk-wasm'
+                'silk-wasm',
+                // 原生 .node 二进制不可打包，运行时从 asarUnpack 目录解析
+                '@hicccc77/electron-liquid-glass'
               ]
             }
           }

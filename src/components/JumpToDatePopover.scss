@@ -3,18 +3,27 @@
   top: calc(100% + 10px);
   right: 0;
   width: 312px;
-  border-radius: 14px;
-  border: 1px solid var(--border-color);
-  background: none;
-  background-color: var(--bg-secondary-solid, #ffffff) !important;
-  opacity: 1;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  mix-blend-mode: normal;
-  isolation: isolate;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
-  padding: 12px;
   z-index: 1600;
+}
+
+// 内容层底色：中心保留半透明底保证日历可读，四周 26px 渐隐露出玻璃的边缘折射带
+.jump-date-popover-body {
+  position: relative;
+  border-radius: 14px;
+  padding: 12px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: color-mix(in srgb, var(--bg-secondary-solid, #ffffff) 68%, transparent);
+    mask:
+      linear-gradient(to right, transparent, #000 26px, #000 calc(100% - 26px), transparent),
+      linear-gradient(to bottom, transparent, #000 26px, #000 calc(100% - 26px), transparent);
+    mask-composite: intersect;
+  }
 }
 
 .jump-date-popover .calendar-nav {
@@ -49,8 +58,7 @@
   height: 28px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: none;
-  background-color: var(--bg-secondary-solid, #ffffff) !important;
+  background-color: color-mix(in srgb, var(--bg-secondary-solid, #ffffff) 80%, transparent);
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;

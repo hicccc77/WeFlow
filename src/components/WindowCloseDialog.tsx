@@ -1,5 +1,6 @@
 import { Minimize2, Power, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import LiquidGlass from './LiquidGlass'
 import './WindowCloseDialog.scss'
 
 interface WindowCloseDialogProps {
@@ -39,13 +40,19 @@ export default function WindowCloseDialog({
 
   return (
     <div className="window-close-dialog-overlay" onClick={onCancel}>
-      <div
-        className="window-close-dialog"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="window-close-dialog-title"
+      <LiquidGlass
+        className="window-close-dialog-glass"
+        cornerRadius={24}
+        displacementScale={40}
+        aberrationIntensity={1.5}
       >
+        <div
+          className="window-close-dialog"
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="window-close-dialog-title"
+        >
         <button
           type="button"
           className="window-close-dialog-close"
@@ -118,7 +125,8 @@ export default function WindowCloseDialog({
             取消
           </button>
         </div>
-      </div>
+        </div>
+      </LiquidGlass>
     </div>
   )
 }
