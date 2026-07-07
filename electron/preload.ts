@@ -293,7 +293,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       offset?: number
     }) => ipcRenderer.invoke('chat:getMediaStream', options),
     resolveVoiceCache: (sessionId: string, msgId: string) => ipcRenderer.invoke('chat:resolveVoiceCache', sessionId, msgId),
-    getVoiceTranscript: (sessionId: string, msgId: string, createTime?: number) => ipcRenderer.invoke('chat:getVoiceTranscript', sessionId, msgId, createTime),
+    getVoiceTranscript: (sessionId: string, msgId: string, createTime?: number, serverId?: string | number) => ipcRenderer.invoke('chat:getVoiceTranscript', sessionId, msgId, createTime, serverId),
     onVoiceTranscriptPartial: (callback: (payload: { sessionId?: string; msgId: string; createTime?: number; text: string }) => void) => {
       const listener = (_: any, payload: { sessionId?: string; msgId: string; createTime?: number; text: string }) => callback(payload)
       ipcRenderer.on('chat:voiceTranscriptPartial', listener)

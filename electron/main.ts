@@ -3052,10 +3052,10 @@ function registerIpcHandlers() {
     return chatService.resolveVoiceCache(sessionId, msgId)
   })
 
-  ipcMain.handle('chat:getVoiceTranscript', async (event, sessionId: string, msgId: string, createTime?: number) => {
+  ipcMain.handle('chat:getVoiceTranscript', async (event, sessionId: string, msgId: string, createTime?: number, serverId?: string | number) => {
     return chatService.getVoiceTranscript(sessionId, msgId, createTime, (text) => {
       event.sender.send('chat:voiceTranscriptPartial', { sessionId, msgId, createTime, text })
-    })
+    }, undefined, serverId)
   })
 
   ipcMain.handle('chat:getMessage', async (_, sessionId: string, localId: number) => {

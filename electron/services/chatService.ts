@@ -8993,27 +8993,44 @@ class ChatService {
 
       const t3 = Date.now()
       // 从数据库读取 silk 数据
-      const silkData = await this.getVoiceDataFromMediaDb(sessionId, msgCreateTime, localId, resolvedServerId || 0, candidates, lookupPath, myWxid)
+      let silkData = await this.getVoiceDataFromMediaDb(sessionId, msgCreateTime, localId, resolvedServerId || 0, candidates, lookupPath, myWxid)
       const t4 = Date.now()
       lookupPath.push(`DB定位耗时=${t4 - t3}ms`)
 
 
       if (!silkData) {
-        logLookupPath('fail', '未找到语音数据')
-        return { success: false, error: '未找到语音数据 (请确保已在微信中播放过该语音)' }
+        lookupPath.push('native未找到语音数据，尝试media.db直查fallback')
+        const fallbackStart = Date.now()
+        silkData = await this.getVoiceDataFromMediaDbFallback(sessionId, msgCreateTime, localId, resolvedServerId || 0, candidates, lookupPath)
+        lookupPath.push(`fallback定位耗时=${Date.now() - fallbackStart}ms`)
+        if (!silkData) {
+          logLookupPath('fail', '未找到语音数据')
+          return { success: false, error: '未找到语音数据 (请确保已在微信中播放过该语音)' }
+        }
       }
       lookupPath.push('语音二进制定位完成')
 
       const t5 = Date.now()
       // 使用 silk-wasm 解码
-      const pcmData = await this.decodeSilkToPcm(silkData, 24000)
+      let pcmData = await this.decodeSilkToPcm(silkData, 24000)
       const t6 = Date.now()
       lookupPath.push(`silk解码耗时=${t6 - t5}ms`)
 
 
       if (!pcmData) {
-        logLookupPath('fail', 'Silk解码失败')
-        return { success: false, error: 'Silk 解码失败' }
+        lookupPath.push('native语音BLOB解码失败，尝试media.db直查fallback重新定位')
+        const fallbackStart = Date.now()
+        const fallbackSilkData = await this.getVoiceDataFromMediaDbFallback(sessionId, msgCreateTime, localId, resolvedServerId || 0, candidates, lookupPath)
+        lookupPath.push(`fallback重定位耗时=${Date.now() - fallbackStart}ms`)
+        if (fallbackSilkData && fallbackSilkData.length > 0) {
+          const fallbackDecodeStart = Date.now()
+          pcmData = await this.decodeSilkToPcm(fallbackSilkData, 24000)
+          lookupPath.push(`fallback silk解码耗时=${Date.now() - fallbackDecodeStart}ms`)
+        }
+        if (!pcmData) {
+          logLookupPath('fail', 'Silk解码失败')
+          return { success: false, error: 'Silk 解码失败' }
+        }
       }
       lookupPath.push('silk解码成功')
 
@@ -9152,6 +9169,260 @@ class ChatService {
     }
   }
 
+  private async listVoiceMediaDbs(): Promise<string[]> {
+    const now = Date.now()
+    if (this.mediaDbsCache && now - this.mediaDbsCacheTime <= this.mediaDbsCacheTtl) {
+      return this.mediaDbsCache
+    }
+
+    const discovered = new Set<string>()
+    try {
+      const nativeResult = await wcdbService.listMediaDbs()
+      if (nativeResult.success && Array.isArray(nativeResult.data)) {
+        for (const dbPath of nativeResult.data) {
+          const normalized = String(dbPath || '').trim()
+          if (normalized) discovered.add(normalized)
+        }
+      }
+    } catch {
+      // ignore native list failure; manual fallback below
+    }
+
+    if (discovered.size === 0) {
+      const manual = await this.findMediaDbsManually()
+      for (const dbPath of manual) {
+        const normalized = String(dbPath || '').trim()
+        if (normalized) discovered.add(normalized)
+      }
+    }
+
+    const mediaDbs = Array.from(discovered)
+    this.mediaDbsCache = mediaDbs
+    this.mediaDbsCacheTime = now
+    return mediaDbs
+  }
+
+  private getRowString(row: Record<string, any> | null | undefined, keys: string[], fallback = ''): string {
+    if (!row) return fallback
+    for (const key of keys) {
+      const value = row[key]
+      if (value === null || value === undefined) continue
+      const text = String(value).trim()
+      if (text) return text
+    }
+    return fallback
+  }
+
+  private async getVoiceSameTimeIndex(sessionId: string, createTime: number, localId: number): Promise<number> {
+    try {
+      const tables = await this.getSessionMessageTables(sessionId)
+      if (!Array.isArray(tables) || tables.length === 0) return 0
+
+      const allLocalIds: number[] = []
+      for (const table of tables) {
+        const tableName = String(table.tableName || '').trim()
+        const dbPath = String(table.dbPath || '').trim()
+        if (!tableName || !dbPath) continue
+
+        const columns = await this.getMessageTableColumns(dbPath, tableName)
+        const localIdCol = columns.has('local_id') ? 'local_id' : (columns.has('id') ? 'id' : '')
+        const createTimeCol = columns.has('create_time') ? 'create_time' : (columns.has('createtime') ? 'createtime' : '')
+        const localTypeCol = columns.has('local_type') ? 'local_type' : (columns.has('type') ? 'type' : '')
+        if (!localIdCol || !createTimeCol || !localTypeCol) continue
+
+        const sql = [
+          `SELECT ${this.quoteSqlIdentifier(localIdCol)} AS local_id`,
+          `FROM ${this.quoteSqlIdentifier(tableName)}`,
+          `WHERE ${this.quoteSqlIdentifier(createTimeCol)} = ${Math.floor(createTime)}`,
+          `AND ${this.quoteSqlIdentifier(localTypeCol)} = 34`,
+          `ORDER BY ${this.quoteSqlIdentifier(localIdCol)} ASC`
+        ].join(' ')
+        const result = await wcdbService.execQuery('message', dbPath, sql)
+        if (!result.success || !Array.isArray(result.rows)) continue
+        for (const row of result.rows) {
+          const id = this.toSafeInt((row as Record<string, any>).local_id, 0)
+          if (id > 0) allLocalIds.push(id)
+        }
+      }
+
+      const uniqueSorted = Array.from(new Set(allLocalIds)).sort((a, b) => a - b)
+      const index = uniqueSorted.indexOf(localId)
+      return index >= 0 ? index : 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * CipherTalk 风格兜底：绕过 native getVoiceData，直接扫 media_*.db 的 VoiceInfo/Name2Id。
+   * 主要用于 native 命中错 BLOB 或旧表结构缺少精确字段时，避免导出/转写阶段卡在 Silk 解码失败。
+   */
+  private async getVoiceDataFromMediaDbFallback(
+    sessionId: string,
+    createTime: number,
+    localId: number,
+    svrId: string | number,
+    candidates: string[],
+    lookupPath?: string[]
+  ): Promise<Buffer | null> {
+    const createTimeInt = Math.max(0, Math.floor(Number(createTime || 0)))
+    const localIdInt = Math.max(0, Math.floor(Number(localId || 0)))
+    const svrIdToken = this.normalizeUnsignedIntegerToken(svrId)
+    if (!createTimeInt) return null
+
+    const mediaDbs = await this.listVoiceMediaDbs()
+    lookupPath?.push(`fallback直查media.db: dbs=${mediaDbs.length}, createTime=${createTimeInt}, localId=${localIdInt}, svrId=${svrIdToken || '0'}`)
+    if (mediaDbs.length === 0) return null
+
+    let sameTimeIndex: number | null = null
+    const getSameTimeIndex = async (): Promise<number> => {
+      if (sameTimeIndex !== null) return sameTimeIndex
+      sameTimeIndex = await this.getVoiceSameTimeIndex(sessionId, createTimeInt, localIdInt)
+      lookupPath?.push(`fallback同秒语音索引=${sameTimeIndex}`)
+      return sameTimeIndex
+    }
+
+    const candidateList = Array.from(new Set((candidates || []).map(v => String(v || '').trim()).filter(Boolean)))
+    const queryFirstData = async (dbPath: string, sql: string): Promise<Buffer | null> => {
+      const result = await wcdbService.execQuery('media', dbPath, sql)
+      if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) return null
+      const row = result.rows[0] as Record<string, any>
+      return this.decodeVoiceBlob(row.data ?? row.voice_data ?? row.buf ?? row.voicebuf)
+    }
+
+    const queryRowsData = async (dbPath: string, sql: string): Promise<Buffer[]> => {
+      const result = await wcdbService.execQuery('media', dbPath, sql)
+      if (!result.success || !Array.isArray(result.rows) || result.rows.length === 0) return []
+      const output: Buffer[] = []
+      for (const row of result.rows as Record<string, any>[]) {
+        const decoded = this.decodeVoiceBlob(row.data ?? row.voice_data ?? row.buf ?? row.voicebuf)
+        if (decoded && decoded.length > 0) output.push(decoded)
+      }
+      return output
+    }
+
+    for (const dbPath of mediaDbs) {
+      try {
+        const tableResult = await wcdbService.execQuery(
+          'media',
+          dbPath,
+          "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'VoiceInfo%' ORDER BY name ASC"
+        )
+        if (!tableResult.success || !Array.isArray(tableResult.rows) || tableResult.rows.length === 0) continue
+
+        const name2IdResult = await wcdbService.execQuery(
+          'media',
+          dbPath,
+          "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Name2Id%' ORDER BY name ASC LIMIT 1"
+        )
+        const name2IdTable = name2IdResult.success && Array.isArray(name2IdResult.rows) && name2IdResult.rows.length > 0
+          ? this.getRowString(name2IdResult.rows[0] as Record<string, any>, ['name'])
+          : ''
+
+        for (const tableRow of tableResult.rows as Record<string, any>[]) {
+          const voiceTable = this.getRowString(tableRow, ['name'])
+          if (!voiceTable) continue
+
+          const schemaResult = await wcdbService.execQuery('media', dbPath, `PRAGMA table_info(${this.quoteSqlIdentifier(voiceTable)})`)
+          if (!schemaResult.success || !Array.isArray(schemaResult.rows) || schemaResult.rows.length === 0) continue
+          const columnNames = schemaResult.rows
+            .map(row => this.getRowString(row as Record<string, any>, ['name']).trim())
+            .filter(Boolean)
+          const lowerToActual = new Map<string, string>()
+          for (const col of columnNames) lowerToActual.set(col.toLowerCase(), col)
+          const pickColumn = (names: string[]): string => {
+            for (const name of names) {
+              const actual = lowerToActual.get(name.toLowerCase())
+              if (actual) return actual
+            }
+            return ''
+          }
+
+          const dataColumn = pickColumn(['voice_data', 'buf', 'voicebuf', 'data'])
+          const chatNameIdColumn = pickColumn(['chat_name_id', 'chatnameid', 'chat_nameid'])
+          const timeColumn = pickColumn(['create_time', 'createtime', 'time'])
+          const svrIdColumn = pickColumn(['msg_svr_id', 'msgsvrid', 'svr_id', 'svrid', 'server_id', 'serverid'])
+          if (!dataColumn) continue
+
+          const dataExpr = `hex(${this.quoteSqlIdentifier(dataColumn)}) AS data`
+          const voiceTableSql = this.quoteSqlIdentifier(voiceTable)
+
+          // A. svr_id 精确匹配，优先结合 chat_name_id 限定候选身份。
+          if (svrIdColumn && svrIdToken && svrIdToken !== '0') {
+            if (chatNameIdColumn && name2IdTable && candidateList.length > 0) {
+              for (const candidate of candidateList) {
+                const nameSql = `SELECT rowid FROM ${this.quoteSqlIdentifier(name2IdTable)} WHERE user_name = '${this.escapeSqlString(candidate)}' LIMIT 1`
+                const nameResult = await wcdbService.execQuery('media', dbPath, nameSql)
+                const chatNameId = nameResult.success && Array.isArray(nameResult.rows) && nameResult.rows.length > 0
+                  ? this.toSafeInt((nameResult.rows[0] as Record<string, any>).rowid, 0)
+                  : 0
+                if (!chatNameId) continue
+
+                const sql = `SELECT ${dataExpr} FROM ${voiceTableSql} WHERE ${this.quoteSqlIdentifier(chatNameIdColumn)} = ${chatNameId} AND ${this.quoteSqlIdentifier(svrIdColumn)} = ${svrIdToken} LIMIT 1`
+                const data = await queryFirstData(dbPath, sql)
+                if (data && data.length > 0) {
+                  lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=svr+chat`)
+                  return data
+                }
+              }
+            }
+
+            const sql = `SELECT ${dataExpr} FROM ${voiceTableSql} WHERE ${this.quoteSqlIdentifier(svrIdColumn)} = ${svrIdToken} LIMIT 1`
+            const data = await queryFirstData(dbPath, sql)
+            if (data && data.length > 0) {
+              lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=svr`)
+              return data
+            }
+          }
+
+          // B. chat_name_id + create_time；多条同秒时按消息表中的 local_id 顺序取相对位置。
+          if (chatNameIdColumn && timeColumn && name2IdTable && candidateList.length > 0) {
+            for (const candidate of candidateList) {
+              const nameSql = `SELECT rowid FROM ${this.quoteSqlIdentifier(name2IdTable)} WHERE user_name = '${this.escapeSqlString(candidate)}' LIMIT 1`
+              const nameResult = await wcdbService.execQuery('media', dbPath, nameSql)
+              const chatNameId = nameResult.success && Array.isArray(nameResult.rows) && nameResult.rows.length > 0
+                ? this.toSafeInt((nameResult.rows[0] as Record<string, any>).rowid, 0)
+                : 0
+              if (!chatNameId) continue
+
+              const sql = `SELECT ${dataExpr} FROM ${voiceTableSql} WHERE ${this.quoteSqlIdentifier(chatNameIdColumn)} = ${chatNameId} AND ${this.quoteSqlIdentifier(timeColumn)} = ${createTimeInt} ORDER BY rowid ASC`
+              const rows = await queryRowsData(dbPath, sql)
+              if (rows.length === 1) {
+                lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=chat+time`)
+                return rows[0]
+              }
+              if (rows.length > 1) {
+                const idx = await getSameTimeIndex()
+                lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=chat+time+index, rows=${rows.length}, idx=${idx}`)
+                return rows[Math.min(idx, rows.length - 1)]
+              }
+            }
+          }
+
+          // C. 仅 create_time 兜底。
+          if (timeColumn) {
+            const sql = `SELECT ${dataExpr} FROM ${voiceTableSql} WHERE ${this.quoteSqlIdentifier(timeColumn)} = ${createTimeInt} ORDER BY rowid ASC`
+            const rows = await queryRowsData(dbPath, sql)
+            if (rows.length === 1) {
+              lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=time`)
+              return rows[0]
+            }
+            if (rows.length > 1) {
+              const idx = await getSameTimeIndex()
+              lookupPath?.push(`fallback命中: db=${dbPath}, table=${voiceTable}, strategy=time+index, rows=${rows.length}, idx=${idx}`)
+              return rows[Math.min(idx, rows.length - 1)]
+            }
+          }
+        }
+      } catch (error) {
+        lookupPath?.push(`fallback跳过db=${dbPath}: ${String(error)}`)
+      }
+    }
+
+    lookupPath?.push('fallback直查media.db未命中')
+    return null
+  }
+
   async preloadVoiceDataBatch(
     sessionId: string,
     messages: Array<{
@@ -9245,18 +9516,35 @@ class ChatService {
           byIndex.set(idx, hex)
         }
 
-        const readyItems: Array<{ cacheKey: string; hex: string }> = []
+        const readyItems: Array<{
+          cacheKey: string
+          hex: string
+          request: { session_id: string; create_time: number; local_id: number; svr_id: string | number; candidates: string[] }
+        }> = []
         for (let rowIdx = 0; rowIdx < chunk.length; rowIdx += 1) {
           const hex = byIndex.get(rowIdx)
           if (!hex) continue
-          readyItems.push({ cacheKey: chunk[rowIdx].cacheKey, hex })
+          readyItems.push({ cacheKey: chunk[rowIdx].cacheKey, hex, request: chunk[rowIdx].request })
         }
 
         await this.forEachWithConcurrency(readyItems, decodeConcurrency, async (item) => {
-          const silkData = this.decodeVoiceBlob(item.hex)
+          let silkData = this.decodeVoiceBlob(item.hex)
           if (!silkData || silkData.length === 0) return
 
-          const pcmData = await this.decodeSilkToPcm(silkData, 24000)
+          let pcmData = await this.decodeSilkToPcm(silkData, 24000)
+          if (!pcmData || pcmData.length === 0) {
+            const fallbackSilk = await this.getVoiceDataFromMediaDbFallback(
+              item.request.session_id,
+              item.request.create_time,
+              item.request.local_id,
+              item.request.svr_id,
+              item.request.candidates
+            )
+            if (fallbackSilk && fallbackSilk.length > 0) {
+              silkData = fallbackSilk
+              pcmData = await this.decodeSilkToPcm(silkData, 24000)
+            }
+          }
           if (!pcmData || pcmData.length === 0) return
 
           const wavData = this.createWavBuffer(pcmData, 24000)
@@ -9377,27 +9665,29 @@ class ChatService {
     msgId: string,
     createTime?: number,
     onPartial?: (text: string) => void,
-    senderWxid?: string
+    senderWxid?: string,
+    inputServerId?: string | number
   ): Promise<{ success: boolean; transcript?: string; error?: string }> {
     const startTime = Date.now()
 
     // 确保磁盘缓存已加载
     this.loadTranscriptCacheIfNeeded()
 
-    try {
-      let msgCreateTime = createTime
-      let serverId: string | number | undefined
+      try {
+        let msgCreateTime = createTime
+        let serverId: string | number | undefined = this.normalizeUnsignedIntegerToken(inputServerId) || undefined
 
-      // 如果前端没传 createTime，才需要查询消息（这个很慢）
-      if (!msgCreateTime) {
+      // 如果缺 createTime/serverId/senderWxid，查询一次消息补强定位键，避免同秒语音或 localId 冲突拿错 BLOB。
+      if (!msgCreateTime || !serverId || !senderWxid) {
         const t1 = Date.now()
         const msgResult = await this.getMessageById(sessionId, parseInt(msgId, 10))
         const t2 = Date.now()
 
 
         if (msgResult.success && msgResult.message) {
-          msgCreateTime = msgResult.message.createTime
-          serverId = msgResult.message.serverIdRaw || msgResult.message.serverId
+          if (!msgCreateTime) msgCreateTime = msgResult.message.createTime
+          if (!serverId) serverId = msgResult.message.serverIdRaw || msgResult.message.serverId
+          if (!senderWxid) senderWxid = msgResult.message.senderUsername || undefined
 
         }
       }

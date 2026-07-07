@@ -3210,7 +3210,7 @@ export class ExportContext {
           normalized.push({
             localId,
             createTime,
-            serverId: msg?.serverId,
+            serverId: msg?.serverIdRaw || msg?.serverId,
             senderWxid: msg?.senderUsername || null
           })
         }
@@ -3256,7 +3256,7 @@ export class ExportContext {
             sessionId,
             msgId,
             Number.isFinite(Number(msg?.createTime)) ? Number(msg.createTime) : undefined,
-            msg?.serverId,
+            msg?.serverIdRaw || msg?.serverId,
             msg?.senderUsername || undefined
           )
           if (!voiceResult.success || !voiceResult.data) {
@@ -3284,9 +3284,9 @@ export class ExportContext {
     /**
      * 转写语音为文字
      */
-    public async transcribeVoice(sessionId: string, msgId: string, createTime: number, senderWxid: string | null): Promise<string> {
+    public async transcribeVoice(sessionId: string, msgId: string, createTime: number, senderWxid: string | null, serverId?: string | number): Promise<string> {
         try {
-          const transcript = await chatService.getVoiceTranscript(sessionId, msgId, createTime, undefined, senderWxid || undefined)
+          const transcript = await chatService.getVoiceTranscript(sessionId, msgId, createTime, undefined, senderWxid || undefined, serverId)
           if (transcript.success) {
             const text = String(transcript.transcript || '').trim()
             return text ? `[语音转文字] ${text}` : '[语音消息 - 未识别到文字]'

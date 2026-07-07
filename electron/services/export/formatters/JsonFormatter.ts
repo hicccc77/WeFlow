@@ -184,7 +184,7 @@ export class JsonFormatter {
         let voiceTranscribed = 0
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg: any) => {
           this.exportService.throwIfStopRequested(control)
-          const transcript = await this.exportService.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
+          const transcript = await this.exportService.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername, msg.serverIdRaw || msg.serverId)
           voiceTranscriptMap.set(this.exportService.getStableMessageKey(msg), transcript)
           voiceTranscribed++
           onProgress?.({

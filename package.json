@@ -35,7 +35,7 @@
     "html2canvas": "^1.4.1",
     "jieba-wasm": "^2.2.0",
     "jszip": "^3.10.1",
-    "koffi": "^2.9.0",
+    "koffi": "^3.1.0",
     "lucide-react": "^1.23.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.7",
@@ -46,21 +46,21 @@
     "sherpa-onnx-node": "^1.13.3",
     "silk-wasm": "^3.7.1",
     "wechat-emojis": "^1.0.2",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.1.0",
-    "@types/react": "^19.1.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^6.0.3",
     "electron": "^43.0.0",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "sass": "^1.101.0",
     "sharp": "^0.35.3",
     "typescript": "^6.0.3",
     "vite": "^8.1.3",
-    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron": "^1.1.0",
     "vite-plugin-electron-renderer": "^1.0.0"
   },
   "pnpm": {
