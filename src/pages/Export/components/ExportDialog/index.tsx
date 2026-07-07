@@ -20,7 +20,7 @@ import {
   serializeExportDateRangeConfig,
   type ExportDefaultDateRangeConfig
 } from '../../../../utils/exportDateRange'
-import type { ExportDialogState, ExportOptions, TextExportFormat } from '../../types'
+import type { DisplayNamePreference, ExportDialogState, ExportOptions, TextExportFormat } from '../../types'
 import { conflictStrategyOptions, displayNameOptions, formatOptions, MAX_EXPORT_FILE_SIZE_MB_LIMIT } from '../../constants'
 import { formatPathBrief } from '../../utils/format'
 import './ExportDialog.scss'
@@ -64,6 +64,20 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
   const dateRangeLabel = React.useMemo(() => {
     return getExportDateRangeLabel(currentSelection)
   }, [currentSelection])
+
+  const hasGroupSession = React.useMemo(() => {
+    return dialogState.sessionIds.some(sessionId => String(sessionId || '').includes('@chatroom'))
+  }, [dialogState.sessionIds])
+
+  const visibleDisplayNameOptions = React.useMemo(() => {
+    return hasGroupSession
+      ? displayNameOptions
+      : displayNameOptions.filter(item => item.value !== 'group-nickname')
+  }, [hasGroupSession])
+
+  const effectiveDisplayNamePreference: DisplayNamePreference = !hasGroupSession && draftOptions.displayNamePreference === 'group-nickname'
+    ? 'remark'
+    : draftOptions.displayNamePreference
 
   if (!dialogState.open) return null
 
@@ -320,12 +334,15 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
 
               <div className="display-name-control">
                 <span>命名方式:</span>
-                <div className="display-name-segmented" title="控制导出群消息时发送者名称的优先级">
-                  {displayNameOptions.map(item => (
+                <div
+                  className="display-name-segmented"
+                  title={hasGroupSession ? '控制导出群消息时发送者名称的优先级' : '控制导出私聊消息时联系人名称的优先级'}
+                >
+                  {visibleDisplayNameOptions.map(item => (
                     <button
                       key={item.value}
                       type="button"
-                      className={draftOptions.displayNamePreference === item.value ? 'active' : ''}
+                      className={effectiveDisplayNamePreference === item.value ? 'active' : ''}
                       title={item.desc}
                       onClick={() => updateDraftOptions({ displayNamePreference: item.value })}
                     >

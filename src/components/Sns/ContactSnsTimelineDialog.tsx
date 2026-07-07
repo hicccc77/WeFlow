@@ -202,16 +202,16 @@ export function ContactSnsTimelineDialog({
     setTimelineStatsLoading(true)
 
     try {
-      const result = await window.electronAPI.sns.getUserPostCounts()
+      const result = await window.electronAPI.sns.getUserPostStats(nextTarget.username)
       if (requestToken !== totalPostsRequestTokenRef.current) return
 
-      if (!result.success || !result.counts) {
+      if (!result.success || !result.data) {
         setTimelineTotalPosts(null)
         setRankTotalPosts(null)
         return
       }
 
-      const rawCount = Number(result.counts[nextTarget.username] || 0)
+      const rawCount = Number(result.data.totalPosts || 0)
       const normalized = Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0
       setTimelineTotalPosts(normalized)
       setRankTotalPosts(normalized)

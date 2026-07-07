@@ -21,7 +21,7 @@ import {
     getExportDateRangeLabel,
     type ExportDateRangeSelection
 } from '../utils/exportDateRange'
-import { displayNameForCompare, displayNameOrFallback } from '../utils/displayName'
+import { displayNameForCompare, displayNameOrFallback, pickDisplayName } from '../utils/displayName'
 
 const SNS_PAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const SNS_PAGE_CACHE_POST_LIMIT = 200
@@ -157,6 +157,21 @@ const normalizeAccountId = (value?: string | null): string => {
 }
 
 const normalizeNameForCompare = (value?: string | null): string => displayNameForCompare(value)
+
+const isRawWxidDisplayName = (value?: string | null): boolean => {
+    const normalized = String(value || '').trim()
+    return /^wxid_[a-z0-9_]+$/i.test(normalized)
+}
+
+const pickMeaningfulContactDisplayName = (username: string, ...values: Array<unknown>): string | undefined => {
+    const picked = pickDisplayName(...values)
+    if (!picked) return undefined
+    const normalizedPicked = normalizeAccountId(picked)
+    const normalizedUsername = normalizeAccountId(username)
+    if (normalizedPicked && normalizedUsername && normalizedPicked === normalizedUsername) return undefined
+    if (isRawWxidDisplayName(picked)) return undefined
+    return picked
+}
 
 export default function SnsPage() {
     const [posts, setPosts] = useState<SnsPost[]>([])
@@ -438,6 +453,38 @@ export default function SnsPage() {
     const sortContactsForRanking = useCallback((input: Contact[]): Contact[] => {
         return [...input].sort(compareContactsForRanking)
     }, [compareContactsForRanking])
+
+    useEffect(() => {
+        if (!contactsLoading || contactsRef.current.length > 0 || posts.length === 0) return
+
+        const fallbackMap = new Map<string, Contact>()
+        for (const post of posts) {
+            const username = String(post.username || '').trim()
+            if (!username || username.endsWith('@chatroom') || username.startsWith('gh_') || fallbackMap.has(username)) {
+                continue
+            }
+            const displayName = pickMeaningfulContactDisplayName(username, post.nickname)
+            if (!displayName) continue
+            fallbackMap.set(username, {
+                username,
+                displayName,
+                avatarUrl: post.avatarUrl,
+                type: 'friend',
+                lastSessionTimestamp: Number(post.createTime || 0),
+                postCountStatus: 'idle'
+            })
+        }
+
+        const fallbackContacts = sortContactsForRanking(Array.from(fallbackMap.values()))
+        if (fallbackContacts.length === 0) return
+        setContacts(fallbackContacts)
+        setContactsLoading(false)
+        setContactsCountProgress({
+            resolved: 0,
+            total: fallbackContacts.length,
+            running: false
+        })
+    }, [contactsLoading, posts, sortContactsForRanking])
 
     const resolvedCurrentUserContact = useMemo(() => {
         const normalizedWxid = normalizeAccountId(currentUserProfile.wxid)
@@ -1448,21 +1495,42 @@ export default function SnsPage() {
         setContactsLoading(true)
         try {
             const snsPostCountsScopeKey = await ensureSnsUserPostCountsCacheScopeKey()
-            const [cachedPostCountsItem, cachedContactsItem, cachedAvatarItem] = await Promise.all([
+            const snsPageCacheScopeKey = await ensureSnsCacheScopeKey()
+            const [cachedPostCountsItem, cachedContactsItem, cachedAvatarItem, cachedSnsPageItem] = await Promise.all([
                 configService.getExportSnsUserPostCountsCache(snsPostCountsScopeKey),
                 configService.getContactsListCache(snsPostCountsScopeKey),
-                configService.getContactsAvatarCache(snsPostCountsScopeKey)
+                configService.getContactsAvatarCache(snsPostCountsScopeKey),
+                configService.getSnsPageCache(snsPageCacheScopeKey)
             ])
             const cachedPostCounts = forceCounts ? {} : (cachedPostCountsItem?.counts || {})
             const cachedAvatarMap = cachedAvatarItem?.avatars || {}
+            const isCachedSnsPost = (post: unknown): post is SnsPost => {
+                if (!post || typeof post !== 'object') return false
+                const candidate = post as Partial<SnsPost>
+                return typeof candidate.username === 'string' && typeof candidate.createTime === 'number'
+            }
+            const cachedPagePosts = Array.isArray(cachedSnsPageItem?.posts)
+                ? cachedSnsPageItem.posts.filter(isCachedSnsPost)
+                : []
+            const latestPostByUsername = new Map<string, SnsPost>()
+            for (const post of [...cachedPagePosts, ...postsRef.current]) {
+                const username = String(post.username || '').trim()
+                if (!username) continue
+                const previous = latestPostByUsername.get(username)
+                if (!previous || Number(post.createTime || 0) > Number(previous.createTime || 0)) {
+                    latestPostByUsername.set(username, post)
+                }
+            }
             const cachedContacts = (cachedContactsItem?.contacts || [])
                 .filter((contact) => contact.type === 'friend' || contact.type === 'former_friend')
-                .map((contact) => {
+                .map((contact): Contact | null => {
+                    const displayName = pickMeaningfulContactDisplayName(contact.username, contact.displayName, contact.remark, contact.nickname)
+                    if (!displayName) return null
                     const cachedCount = cachedPostCounts[contact.username]
                     const hasCachedCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount)
                     return {
                         username: contact.username,
-                        displayName: displayNameOrFallback(contact.username, contact.displayName),
+                        displayName,
                         avatarUrl: cachedAvatarMap[contact.username]?.avatarUrl,
                         remark: contact.remark,
                         nickname: contact.nickname,
@@ -1476,6 +1544,36 @@ export default function SnsPage() {
                                 : 'idle' as ContactPostCountStatus
                     }
                 })
+                .filter((contact): contact is Contact => Boolean(contact))
+            const fallbackContactsFromSns = (() => {
+                const map = new Map<string, Contact>()
+                const addPost = (rawUsername: string, post?: SnsPost) => {
+                    const username = String(rawUsername || '').trim()
+                    if (!username || username.endsWith('@chatroom') || username.startsWith('gh_') || map.has(username)) return
+                    const displayName = pickMeaningfulContactDisplayName(username, post?.nickname)
+                    if (!displayName) return
+                    const cachedCount = cachedPostCounts[username]
+                    const hasCachedCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount)
+                    map.set(username, {
+                        username,
+                        displayName,
+                        avatarUrl: post?.avatarUrl,
+                        type: 'friend',
+                        lastSessionTimestamp: Number(post?.createTime || 0),
+                        postCount: hasCachedCount ? Math.max(0, Math.floor(cachedCount)) : undefined,
+                        postCountStatus: hasCachedCount
+                            ? 'ready' as ContactPostCountStatus
+                            : forceCounts
+                                ? 'loading' as ContactPostCountStatus
+                                : 'idle' as ContactPostCountStatus
+                    })
+                }
+
+                for (const [username, post] of latestPostByUsername.entries()) {
+                    addPost(username, post)
+                }
+                return Array.from(map.values())
+            })()
 
             if (requestToken !== contactsLoadTokenRef.current) {
                 if (activeContactsLoadTaskIdRef.current === taskId) {
@@ -1486,8 +1584,9 @@ export default function SnsPage() {
                 })
                 return
             }
-            if (cachedContacts.length > 0) {
-                const cachedContactsSorted = sortContactsForRanking(cachedContacts)
+            const initialContacts = cachedContacts.length > 0 ? cachedContacts : fallbackContactsFromSns
+            if (initialContacts.length > 0) {
+                const cachedContactsSorted = sortContactsForRanking(initialContacts)
                 setContacts(cachedContactsSorted)
                 setContactsLoading(false)
                 const cachedReadyCount = cachedContactsSorted.filter(contact => contact.postCountStatus === 'ready').length
@@ -1502,9 +1601,10 @@ export default function SnsPage() {
                 detail: '正在读取联系人与最近会话数据',
                 progressText: '联系人快照'
             })
-            const [contactsResult, sessionsResult] = await Promise.all([
-                window.electronAPI.chat.getContacts(),
-                window.electronAPI.chat.getSessions()
+            const [contactsResult, sessionsResult, snsUsernamesResult] = await Promise.all([
+                window.electronAPI.chat.getContacts({ lite: true }),
+                window.electronAPI.chat.getSessions(),
+                window.electronAPI.sns.getSnsUsernames()
             ])
             if (isBackgroundTaskCancelRequested(taskId)) {
                 if (activeContactsLoadTaskIdRef.current === taskId) {
@@ -1536,12 +1636,14 @@ export default function SnsPage() {
             if (contactsResult.success && contactsResult.contacts) {
                 for (const c of contactsResult.contacts) {
                     if (c.type === 'friend' || c.type === 'former_friend') {
+                        const displayName = pickMeaningfulContactDisplayName(c.username, c.displayName, c.remark, c.nickname)
+                        if (!displayName) continue
                         const cachedCount = cachedPostCounts[c.username]
                         const hasCachedCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount)
                         contactMap.set(c.username, {
                             username: c.username,
-                            displayName: c.displayName,
-                            avatarUrl: c.avatarUrl,
+                            displayName,
+                            avatarUrl: c.avatarUrl || cachedAvatarMap[c.username]?.avatarUrl,
                             remark: c.remark,
                             nickname: c.nickname,
                             type: c.type === 'former_friend' ? 'former_friend' : 'friend',
@@ -1550,6 +1652,17 @@ export default function SnsPage() {
                             postCountStatus: hasCachedCount ? 'ready' : (forceCounts ? 'loading' : 'idle')
                         })
                     }
+                }
+            }
+
+            const snsOnlyUsernames: string[] = []
+            if (snsUsernamesResult.success && Array.isArray(snsUsernamesResult.usernames)) {
+                for (const rawUsername of snsUsernamesResult.usernames) {
+                    const username = String(rawUsername || '').trim()
+                    if (!username || username.endsWith('@chatroom') || username.startsWith('gh_') || contactMap.has(username)) {
+                        continue
+                    }
+                    snsOnlyUsernames.push(username)
                 }
             }
 
@@ -1563,18 +1676,11 @@ export default function SnsPage() {
                 })
                 return
             }
-            setContacts(contactsList)
-            const readyUsernames = new Set(
-                contactsList
-                    .filter((contact) => contact.postCountStatus === 'ready' && typeof contact.postCount === 'number')
-                    .map((contact) => contact.username)
-            )
-            void hydrateContactPostCounts(
-                contactsList.map(contact => contact.username),
-                { readyUsernames, force: forceCounts }
-            )
 
-            const allUsernames = contactsList.map(c => c.username)
+            const allUsernames = Array.from(new Set([
+                ...contactsList.map(c => c.username),
+                ...snsOnlyUsernames
+            ]))
 
             // 用 enrichSessionsContactInfo 统一补充头像和显示名
             if (allUsernames.length > 0) {
@@ -1593,15 +1699,44 @@ export default function SnsPage() {
                     return
                 }
                 if (enriched.success && enriched.contacts) {
+                    const nextContactMap = new Map<string, Contact>()
                     contactsList = contactsList.map((contact) => {
                         const extra = enriched.contacts?.[contact.username]
-                        if (!extra) return contact
-                        return {
+                        if (!extra) {
+                            nextContactMap.set(contact.username, contact)
+                            return contact
+                        }
+                        const displayName = pickMeaningfulContactDisplayName(contact.username, extra.displayName, contact.displayName)
+                        const nextContact = {
                             ...contact,
-                            displayName: displayNameOrFallback(contact.displayName, extra.displayName),
+                            displayName: displayName || contact.displayName,
                             avatarUrl: extra.avatarUrl || contact.avatarUrl
                         }
+                        nextContactMap.set(contact.username, nextContact)
+                        return nextContact
                     })
+
+                    for (const username of snsOnlyUsernames) {
+                        if (nextContactMap.has(username)) continue
+                        const extra = enriched.contacts[username]
+                        const displayName = pickMeaningfulContactDisplayName(username, extra?.displayName)
+                        if (!displayName) continue
+                        const cachedCount = cachedPostCounts[username]
+                        const hasCachedCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount)
+                        nextContactMap.set(username, {
+                            username,
+                            displayName,
+                            avatarUrl: extra?.avatarUrl || cachedAvatarMap[username]?.avatarUrl,
+                            type: 'friend',
+                            lastSessionTimestamp: Number(sessionTimestampMap.get(username) || 0),
+                            postCount: hasCachedCount ? Math.max(0, Math.floor(cachedCount)) : undefined,
+                            postCountStatus: hasCachedCount ? 'ready' : (forceCounts ? 'loading' : 'idle')
+                        })
+                    }
+
+                    contactsList = sortContactsForRanking(Array.from(nextContactMap.values()).filter(contact => (
+                        Boolean(pickMeaningfulContactDisplayName(contact.username, contact.displayName, contact.remark, contact.nickname))
+                    )))
                     if (requestToken !== contactsLoadTokenRef.current) {
                         if (activeContactsLoadTaskIdRef.current === taskId) {
                             activeContactsLoadTaskIdRef.current = null
@@ -1618,13 +1753,30 @@ export default function SnsPage() {
                             return {
                                 ...contact,
                                 lastSessionTimestamp: previous?.lastSessionTimestamp ?? contact.lastSessionTimestamp,
-                                postCount: previous?.postCount,
+                                postCount: previous?.postCount ?? contact.postCount,
                                 postCountStatus: previous?.postCountStatus ?? contact.postCountStatus
                             }
                         })
                         return sortContactsForRanking(merged)
                     })
+                } else if (contactsList.length > 0) {
+                    setContacts(contactsList)
                 }
+            } else if (contactsList.length > 0) {
+                setContacts(contactsList)
+            }
+
+            setContactsLoading(false)
+            const readyUsernames = new Set(
+                contactsList
+                    .filter((contact) => contact.postCountStatus === 'ready' && typeof contact.postCount === 'number')
+                    .map((contact) => contact.username)
+            )
+            if (contactsList.length > 0) {
+                void hydrateContactPostCounts(
+                    contactsList.map(contact => contact.username),
+                    { readyUsernames, force: forceCounts }
+                )
             }
             if (activeContactsLoadTaskIdRef.current === taskId) {
                 activeContactsLoadTaskIdRef.current = null
@@ -1659,7 +1811,7 @@ export default function SnsPage() {
                 setContactsLoading(false)
             }
         }
-    }, [ensureSnsUserPostCountsCacheScopeKey, hydrateContactPostCounts, sortContactsForRanking, stopContactsCountHydration])
+    }, [ensureSnsCacheScopeKey, ensureSnsUserPostCountsCacheScopeKey, hydrateContactPostCounts, sortContactsForRanking, stopContactsCountHydration])
 
     const closeAuthorTimeline = useCallback(() => {
         setAuthorTimelineTarget(null)

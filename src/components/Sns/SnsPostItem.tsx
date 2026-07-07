@@ -5,6 +5,7 @@ import { SnsPost, SnsLinkCardData, SnsLocation } from '../../types/sns'
 import { Avatar } from '../Avatar'
 import { SnsMediaGrid } from './SnsMediaGrid'
 import { renderTextWithEmoji } from '../../utils/renderTextWithEmoji'
+import './SnsPostItem.scss'
 
 // Helper functions (extracted from SnsPage.tsx but simplified/reused)
 const LINK_XML_URL_TAGS = ['url', 'shorturl', 'weburl', 'webpageurl', 'jumpurl']
