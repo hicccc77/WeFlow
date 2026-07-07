@@ -63,7 +63,8 @@ export function useExportConfig(): ExportConfigResult {
           excelCompact,
           txtCols,
           concurrency,
-          fileNamingMode
+          fileNamingMode,
+          displayNamePreference
         ] = await Promise.all([
           configService.getExportPath(),
           configService.getExportWriteLayout(),
@@ -76,7 +77,8 @@ export function useExportConfig(): ExportConfigResult {
           configService.getExportDefaultExcelCompactColumns(),
           configService.getExportDefaultTxtColumns(),
           configService.getExportDefaultConcurrency(),
-          configService.getExportDefaultFileNamingMode()
+          configService.getExportDefaultFileNamingMode(),
+          configService.getExportDefaultDisplayNamePreference()
         ])
 
         if (!isMounted) return
@@ -124,6 +126,9 @@ export function useExportConfig(): ExportConfigResult {
         if (Array.isArray(txtCols)) newOptions.txtColumns = txtCols
         if (typeof concurrency === 'number' && concurrency > 0) newOptions.exportConcurrency = concurrency
         if (fileNamingMode === 'classic' || fileNamingMode === 'date-range') newOptions.fileNamingMode = fileNamingMode
+        if (displayNamePreference === 'group-nickname' || displayNamePreference === 'remark' || displayNamePreference === 'nickname') {
+          newOptions.displayNamePreference = displayNamePreference
+        }
 
         // Date range
         setRawDateRangeConfigState(dateRange)
@@ -201,6 +206,9 @@ export function useExportConfig(): ExportConfigResult {
       }
       if (patch.fileNamingMode !== undefined) {
         void configService.setExportDefaultFileNamingMode(patch.fileNamingMode)
+      }
+      if (patch.displayNamePreference !== undefined) {
+        void configService.setExportDefaultDisplayNamePreference(patch.displayNamePreference)
       }
       
       // Auto-derive exportMedia

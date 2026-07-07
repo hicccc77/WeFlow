@@ -21,7 +21,7 @@ import {
   type ExportDefaultDateRangeConfig
 } from '../../../../utils/exportDateRange'
 import type { ExportDialogState, ExportOptions, TextExportFormat } from '../../types'
-import { conflictStrategyOptions, formatOptions, MAX_EXPORT_FILE_SIZE_MB_LIMIT } from '../../constants'
+import { conflictStrategyOptions, displayNameOptions, formatOptions, MAX_EXPORT_FILE_SIZE_MB_LIMIT } from '../../constants'
 import { formatPathBrief } from '../../utils/format'
 import './ExportDialog.scss'
 
@@ -311,6 +311,23 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                       className={draftOptions.exportConflictStrategy === item.value ? 'active' : ''}
                       title={item.desc}
                       onClick={() => updateDraftOptions({ exportConflictStrategy: item.value })}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="display-name-control">
+                <span>命名方式:</span>
+                <div className="display-name-segmented" title="控制导出群消息时发送者名称的优先级">
+                  {displayNameOptions.map(item => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={draftOptions.displayNamePreference === item.value ? 'active' : ''}
+                      title={item.desc}
+                      onClick={() => updateDraftOptions({ displayNamePreference: item.value })}
                     >
                       {item.label}
                     </button>

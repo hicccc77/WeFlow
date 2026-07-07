@@ -332,6 +332,61 @@
     margin-bottom: 10px;
   }
 
+  .display-name-inline-options {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .display-name-option {
+    min-width: 0;
+    min-height: 56px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+
+    &:hover {
+      border-color: var(--text-tertiary);
+    }
+
+    &.active {
+      border-color: var(--primary);
+      background: rgba(var(--primary-rgb), 0.08);
+      color: var(--primary);
+    }
+  }
+
+  .display-name-option-label,
+  .display-name-option-desc {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .display-name-option-label {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .display-name-option-desc {
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text-tertiary);
+  }
+
+  .display-name-option.active .display-name-option-desc {
+    color: var(--primary);
+  }
+
   .concurrency-option {
     border: 1px solid var(--border-color);
     border-radius: 10px;
@@ -472,6 +527,11 @@
       margin-bottom: 0;
     }
 
+    .display-name-inline-options {
+      max-width: 360px;
+      margin-bottom: 0;
+    }
+
     .format-setting-group {
       grid-template-columns: 1fr;
       gap: 10px;
@@ -526,6 +586,7 @@
     .media-default-grid,
     .media-size-limit-control,
     .concurrency-inline-options,
+    .display-name-inline-options,
     .format-grid {
       max-width: none;
     }
@@ -595,7 +656,8 @@
   .log-toggle-line,
   .media-default-grid,
   .media-size-limit-control,
-  .concurrency-inline-options {
+  .concurrency-inline-options,
+  .display-name-inline-options {
     max-width: none;
     width: 100%;
   }
@@ -623,6 +685,14 @@
   .concurrency-option {
     min-width: 0;
     min-height: 36px;
+    border-radius: 8px;
+  }
+
+  .display-name-inline-options {
+    gap: 8px;
+  }
+
+  .display-name-option {
     border-radius: 8px;
   }
 

@@ -56,9 +56,9 @@ export const formatOptions: Array<{ value: TextExportFormat; label: string; desc
 // ─── Display name options ────────────────────────────────────
 
 export const displayNameOptions: Array<{ value: DisplayNamePreference; label: string; desc: string }> = [
-  { value: 'group-nickname', label: '群昵称优先', desc: '仅群聊有效，私聊显示备注/昵称' },
-  { value: 'remark', label: '备注优先', desc: '有备注显示备注，否则显示昵称' },
-  { value: 'nickname', label: '微信昵称', desc: '始终显示微信昵称' }
+  { value: 'group-nickname', label: '群昵称优先', desc: '群聊显示群昵称，缺失时回退备注/用户名' },
+  { value: 'remark', label: '备注优先', desc: '有备注显示备注，否则显示用户名' },
+  { value: 'nickname', label: '用户名优先', desc: '有用户名显示用户名，否则显示备注' }
 ]
 
 export const conflictStrategyOptions: Array<{ value: ExportConflictStrategy; label: string; desc: string }> = [

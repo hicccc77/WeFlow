@@ -4,7 +4,7 @@
  */
 
 import type { ChatSession as AppChatSession, ContactInfo } from '../../../types/models'
-import type { ConversationTab, SessionRow } from '../types'
+import type { ConversationTab, DisplayNamePreference, SessionRow } from '../types'
 import { displayNameOrFallback, pickDisplayName } from '../../../utils/displayName'
 
 // ─── Session type classification ─────────────────────────────
@@ -135,9 +135,12 @@ export const getSelectionScopeFromRows = (rows: SessionRow[]): import('../types'
 
 export const resolveScopeDisplayNames = (
   rows: SessionRow[], 
-  pref: import('../types').DisplayNamePreference
+  pref: DisplayNamePreference
 ): string[] => {
-  return rows.map(r => displayNameOrFallback(r.username, r.remark, r.nickname, r.displayName))
+  return rows.map(r => {
+    if (pref === 'nickname') return displayNameOrFallback(r.username, r.nickname, r.remark, r.displayName)
+    return displayNameOrFallback(r.username, r.remark, r.nickname, r.displayName)
+  })
 }
 
 // ─── Name comparison helper ──────────────────────────────────

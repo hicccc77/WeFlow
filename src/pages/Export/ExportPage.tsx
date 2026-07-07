@@ -154,14 +154,18 @@ function ExportPage() {
     const sessionId = String(payload.sessionId || '').trim()
     const payloadName = pickDisplayName(payload.sessionName)
     const sessionRow = sessions.find(s => s.username === sessionId)
+    if (options.displayNamePreference === 'nickname') {
+      return displayNameOrFallback(sessionId, sessionRow?.nickname, payloadName, sessionRow?.remark, sessionRow?.displayName)
+    }
     return displayNameOrFallback(sessionId, payloadName, sessionRow?.displayName, sessionRow?.remark, sessionRow?.nickname)
-  }, [sessions])
+  }, [options.displayNamePreference, sessions])
 
   const handleExportDefaultsChanged = useCallback((patch: ExportDefaultsSettingsPatch) => {
     updateOptions({
       ...(patch.format ? { format: patch.format as TextExportFormat } : {}),
       ...(patch.avatars !== undefined ? { exportAvatars: patch.avatars } : {}),
       ...(patch.fileNamingMode !== undefined ? { fileNamingMode: patch.fileNamingMode } : {}),
+      ...(patch.displayNamePreference !== undefined ? { displayNamePreference: patch.displayNamePreference } : {}),
       ...(patch.media ? {
         exportImages: patch.media.images,
         exportVideos: patch.media.videos,
@@ -282,6 +286,7 @@ function ExportPage() {
   }, [handleOpenSingleExportRequest, isConfigLoaded, pendingSingleExportRequest])
 
   const handleConfirmExport = useCallback((finalOptions: any) => {
+    updateOptions(finalOptions)
     startTask({
       sessionIds: dialogState.sessionIds,
       sessionNames: dialogState.sessionNames,
@@ -291,9 +296,10 @@ function ExportPage() {
       options: finalOptions
     })
     closeDialog()
-  }, [dialogState, exportPath, startTask, closeDialog])
+  }, [dialogState, exportPath, startTask, closeDialog, updateOptions])
 
   const handleAutomationCreateFromDialog = useCallback((finalOptions: any) => {
+    updateOptions(finalOptions)
     setDraftAutomationPayload({
       sessionIds: dialogState.sessionIds,
       sessionNames: dialogState.sessionNames,
@@ -303,7 +309,7 @@ function ExportPage() {
       options: finalOptions
     })
     closeDialog()
-  }, [closeDialog, dialogState, exportPath])
+  }, [closeDialog, dialogState, exportPath, updateOptions])
 
   const handleAutomationSave = useCallback((task: any) => {
     void addTask(task)

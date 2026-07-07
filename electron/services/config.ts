@@ -60,6 +60,7 @@ interface ConfigSchema {
   transcribeLanguages: string[]
   exportDefaultConcurrency: number
   exportDefaultPathStyle: 'auto' | 'posix' | 'windows'
+  exportDefaultDisplayNamePreference: 'group-nickname' | 'remark' | 'nickname'
   analyticsExcludedUsernames: string[]
 
   // 安全相关
@@ -218,6 +219,7 @@ export class ConfigService {
       transcribeLanguages: ['zh'],
       exportDefaultConcurrency: 4,
       exportDefaultPathStyle: 'auto',
+      exportDefaultDisplayNamePreference: 'remark',
       analyticsExcludedUsernames: [],
       authEnabled: false,
       authPassword: '',

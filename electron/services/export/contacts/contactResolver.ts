@@ -14,9 +14,9 @@ export function getPreferredDisplayName(
     case 'remark':
       return remark || nickname || wxid
     case 'nickname':
-      return nickname || wxid
+      return nickname || remark || wxid
     default:
-      return nickname || wxid
+      return nickname || remark || wxid
   }
 }
 

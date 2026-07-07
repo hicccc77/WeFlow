@@ -25,18 +25,13 @@ export function resolveGroupNicknameByCandidates(groupNicknamesMap: Map<string, 
   const idCandidates = buildGroupNicknameIdCandidates(candidates)
   if (idCandidates.length === 0) return ''
 
-  let resolved = ''
   for (const id of idCandidates) {
     const normalizedId = normalizeGroupNicknameIdentity(id)
     if (!normalizedId) continue
     const candidateNickname = normalizeGroupNickname(groupNicknamesMap.get(normalizedId) || '')
     if (!candidateNickname) continue
-    if (!resolved) {
-      resolved = candidateNickname
-      continue
-    }
-    if (resolved !== candidateNickname) return ''
+    return candidateNickname
   }
 
-  return resolved
+  return ''
 }
