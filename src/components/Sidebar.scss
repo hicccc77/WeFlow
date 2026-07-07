@@ -169,6 +169,10 @@
   box-shadow: 0 0 0 2px var(--bg-sidebar, var(--bg-secondary));
 }
 
+.sidebar-lock-action {
+  justify-content: center;
+}
+
 // ---- Footer ----
 .sidebar-footer {
   padding: 4px 10px;

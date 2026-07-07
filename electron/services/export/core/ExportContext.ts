@@ -4419,7 +4419,15 @@ export class ExportContext {
           control,
           onCollectProgress
         )
-        if (weliveCollected) return weliveCollected
+        if (weliveCollected) {
+          // WeLive 原始数据收集报错（文件缺失 / JSONL 解析失败）意味着数据不完整。
+          // 调用方（各 formatter）不会检查 error 字段，这里必须直接抛错让会话导出失败，
+          // 禁止把截断或空结果当作成功输出（issue #1129 的 WeFlow 侧防线）。
+          if (weliveCollected.error) {
+            throw new Error(`WeLive 原始导出数据不完整: ${weliveCollected.error}`)
+          }
+          return weliveCollected
+        }
 
         const rows: any[] = [];
         const memberSet = new Map<string, { member: ChatLabMember; avatarUrl?: string }>();

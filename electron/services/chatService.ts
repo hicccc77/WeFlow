@@ -384,7 +384,8 @@ class ChatService {
   private mediaDbsCache: string[] | null = null
   private mediaDbsCacheTime = 0
   private readonly mediaDbsCacheTtl = 300000 // 5分钟
-  private readonly voiceWavCacheMaxEntries = 50
+  // WAV 解码产物每条可达 ~2MB，50 条上限最坏 100MB；12 条足够覆盖连续回放场景
+  private readonly voiceWavCacheMaxEntries = 12
   // 缓存 media.db 的表结构信息
   private mediaDbSchemaCache = new Map<string, {
     voiceTable: string
@@ -1085,8 +1086,9 @@ class ChatService {
       for (const row of contactResult.contacts as Record<string, any>[]) {
         const username = String(row.username || '').trim()
         if (!username || !this.isAntiRevokeContactRow(username, row)) continue
+        const displayName = String(row.remark || row.nick_name || row.nickName || row.alias || username)
         map.set(username, {
-          displayName: String(row.remark || row.nick_name || row.nickName || row.alias || username).trim()
+          displayName: displayName.trim() || displayName
         })
       }
     } catch {
@@ -7904,7 +7906,8 @@ class ChatService {
           const nicknameBuckets = new Map<string, Set<string>>()
           for (const [memberIdRaw, nicknameRaw] of Object.entries(nickResult.nicknames)) {
             const memberId = String(memberIdRaw || '').trim().toLowerCase()
-            const nickname = String(nicknameRaw || '').trim()
+            const rawNickname = typeof nicknameRaw === 'string' ? nicknameRaw : String(nicknameRaw || '')
+            const nickname = rawNickname.trim() || rawNickname
             if (!memberId || !nickname) continue
             const slot = nicknameBuckets.get(memberId)
             if (slot) {
@@ -11127,7 +11130,9 @@ class ChatService {
       latest_ts: this.toSafeInt(item?.latest_ts, 0),
       anchor_local_id: this.toSafeInt(item?.anchor_local_id, 0),
       anchor_create_time: this.toSafeInt(item?.anchor_create_time, 0),
-      displayName: String(item?.displayName || '').trim() || undefined,
+      displayName: typeof item?.displayName === 'string' && item.displayName.length > 0
+        ? (item.displayName.trim() || item.displayName)
+        : undefined,
       avatarUrl: String(item?.avatarUrl || '').trim() || undefined
     })).filter((item: MyFootprintPrivateSegment) => item.session_id && item.start_ts > 0)
 

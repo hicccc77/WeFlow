@@ -9,6 +9,7 @@ import {
   type ContactSnsTimelineTarget,
   getAvatarLetter
 } from './contactSnsTimeline'
+import { displayNameOrFallback, pickDisplayName } from '../../utils/displayName'
 import './ContactSnsTimelineDialog.scss'
 
 const TIMELINE_PAGE_SIZE = 20
@@ -54,7 +55,7 @@ const buildContactSnsRankings = (posts: SnsPost[]): { likes: ContactSnsRankItem[
     const comments = Array.isArray(post?.comments) ? post.comments : []
 
     for (const likeNameRaw of likes) {
-      const name = String(likeNameRaw || '').trim() || '未知用户'
+      const name = pickDisplayName(likeNameRaw) || '未知用户'
       const current = likeMap.get(name)
       if (current) {
         current.count += 1
@@ -65,7 +66,7 @@ const buildContactSnsRankings = (posts: SnsPost[]): { likes: ContactSnsRankItem[
     }
 
     for (const comment of comments) {
-      const name = String(comment?.nickname || '').trim() || '未知用户'
+      const name = pickDisplayName(comment?.nickname) || '未知用户'
       const current = commentMap.get(name)
       if (current) {
         current.count += 1
@@ -119,7 +120,7 @@ export function ContactSnsTimelineDialog({
   const rankCacheRef = useRef<Record<string, ContactSnsRankCacheEntry>>({})
 
   const targetUsername = String(target?.username || '').trim()
-  const targetDisplayName = target?.displayName || targetUsername
+  const targetDisplayName = displayNameOrFallback(targetUsername, target?.displayName)
   const targetAvatarUrl = target?.avatarUrl
 
   useEffect(() => {

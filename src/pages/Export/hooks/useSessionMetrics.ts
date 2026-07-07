@@ -19,6 +19,7 @@ export interface SessionContentMetric {
 }
 
 const METRICS_CHUNK_SIZE = 160
+const backgroundRefreshingIds = new Set<string>()
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = []
@@ -34,6 +35,47 @@ interface SessionMetricsState {
   error: Error | null
   loadingRefs: Set<string>
   fetchMetrics: (sessionIds: string[], options?: { forceRefresh?: boolean }) => Promise<void>
+}
+
+async function refreshMetricsInBackground(sessionIds: string[]): Promise<void> {
+  const targetIds = Array.from(new Set(sessionIds.map(id => String(id || '').trim()).filter(Boolean)))
+    .filter(id => !backgroundRefreshingIds.has(id))
+  if (targetIds.length === 0) return
+
+  targetIds.forEach(id => backgroundRefreshingIds.add(id))
+  try {
+    const chunks = chunkArray(targetIds, METRICS_CHUNK_SIZE)
+    for (const chunk of chunks) {
+      const stats = await window.electronAPI.chat.getExportSessionStats(chunk, {
+        includeRelations: false,
+        forceRefresh: true
+      })
+
+      const newMetrics: Record<string, SessionContentMetric> = {}
+      if (stats.success && stats.data) {
+        for (const [sessionId, sessionStat] of Object.entries(stats.data)) {
+          newMetrics[sessionId] = {
+            totalMessages: sessionStat.totalMessages,
+            voiceMessages: sessionStat.voiceMessages,
+            imageMessages: sessionStat.imageMessages,
+            videoMessages: sessionStat.videoMessages,
+            emojiMessages: sessionStat.emojiMessages,
+            fileMessages: sessionStat.fileMessages ?? 0
+          }
+        }
+      }
+
+      if (Object.keys(newMetrics).length > 0) {
+        useSessionMetrics.setState(state => ({
+          metricsMap: { ...state.metricsMap, ...newMetrics }
+        }))
+      }
+    }
+  } catch (error) {
+    console.error('Failed to refresh session metrics in background:', error)
+  } finally {
+    targetIds.forEach(id => backgroundRefreshingIds.delete(id))
+  }
 }
 
 export const useSessionMetrics = create<SessionMetricsState>((set, get) => ({
@@ -74,10 +116,12 @@ export const useSessionMetrics = create<SessionMetricsState>((set, get) => ({
     try {
       // 将会话分批顺序请求，每批返回后立即更新 UI，实现「扫出一个放一个」的渐进式效果。
       const chunks = chunkArray(targetIds, METRICS_CHUNK_SIZE)
+      const staleIds = new Set<string>()
       for (const chunk of chunks) {
         const stats = await window.electronAPI.chat.getExportSessionStats(chunk, {
           includeRelations: false,
-          forceRefresh
+          forceRefresh,
+          allowStaleCache: !forceRefresh
         })
 
         const newMetrics: Record<string, SessionContentMetric> = {}
@@ -97,6 +141,14 @@ export const useSessionMetrics = create<SessionMetricsState>((set, get) => ({
         set(state => ({
           metricsMap: { ...state.metricsMap, ...newMetrics }
         }))
+
+        if (!forceRefresh && Array.isArray(stats.needsRefresh)) {
+          stats.needsRefresh.forEach(id => staleIds.add(id))
+        }
+      }
+
+      if (!forceRefresh && staleIds.size > 0) {
+        void refreshMetricsInBackground(Array.from(staleIds))
       }
     } catch (err) {
       console.error('Failed to fetch session metrics:', err)

@@ -328,7 +328,8 @@ class GroupSummaryService {
       return { success: false, message: '手动总结时段不能超过 48 小时' }
     }
 
-    const displayName = String(params?.displayName || sessionId).trim() || sessionId
+    const rawDisplayName = typeof params?.displayName === 'string' ? params.displayName : ''
+    const displayName = rawDisplayName.length > 0 ? (rawDisplayName.trim() || rawDisplayName) : sessionId
     const avatarUrl = String(params?.avatarUrl || '').trim() || undefined
     return this.generateSummaryForPeriod({
       sessionId,
@@ -369,7 +370,8 @@ class GroupSummaryService {
       return { success: true, message: '当前日期暂无已完成的总结时段', generated: 0, skipped: 0, records: [] }
     }
 
-    const displayName = String(params?.displayName || sessionId).trim() || sessionId
+    const rawDisplayName = typeof params?.displayName === 'string' ? params.displayName : ''
+    const displayName = rawDisplayName.length > 0 ? (rawDisplayName.trim() || rawDisplayName) : sessionId
     const avatarUrl = String(params?.avatarUrl || '').trim() || undefined
     return this.generateSummariesForPeriods({
       sessionId,

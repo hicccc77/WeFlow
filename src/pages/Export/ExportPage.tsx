@@ -13,7 +13,6 @@ import ExportDialog from './components/ExportDialog'
 import TaskCenter from './components/TaskCenter'
 import { ExportDefaultsSettingsForm, type ExportDefaultsSettingsPatch } from '../../components/Export/ExportDefaultsSettingsForm'
 import { X } from 'lucide-react'
-import SessionDetail from './components/SessionDetail'
 
 import { useContactsLoader } from './hooks/useContactsLoader'
 import { useExportSessions } from './hooks/useExportSessions'
@@ -26,8 +25,10 @@ import { useAutomationRunner, useAutomationStore } from './hooks/useAutomation'
 import { AutomationModal } from './components/Automation/AutomationModal'
 import { AutomationTaskForm } from './components/Automation/AutomationTaskForm'
 
-import type { SessionRow, TextExportFormat } from './types'
+import type { TextExportFormat } from './types'
 import { getSelectionScopeFromRows, resolveScopeDisplayNames } from './utils/session'
+import { serializeExportDateRangeConfig } from '../../utils/exportDateRange'
+import { displayNameOrFallback, pickDisplayName } from '../../utils/displayName'
 import {
   emitSingleExportDialogStatus,
   onOpenSingleExport,
@@ -45,6 +46,7 @@ function ExportPage() {
   const [isAutomationModalOpen, setIsAutomationModalOpen] = useState(false)
   const [draftAutomationPayload, setDraftAutomationPayload] = useState<any>(null)
   const [pendingSingleExportRequest, setPendingSingleExportRequest] = useState<OpenSingleExportPayload | null>(null)
+  const [metricsMapForSort, setMetricsMapForSort] = useState<Record<string, any>>({})
 
   const { 
     isLoaded: isConfigLoaded,
@@ -61,7 +63,6 @@ function ExportPage() {
   // ── 2. Load contacts and sessions ──
   const {
     contactMap,
-    avatarEntries,
     isLoading: isContactsLoading,
     loadContacts,
     abort: abortContacts
@@ -74,6 +75,7 @@ function ExportPage() {
     sessions,
     filteredSessions,
     isLoading: isSessionsLoading,
+    error: sessionsError,
     activeTab,
     setActiveTab,
     searchQuery,
@@ -81,7 +83,7 @@ function ExportPage() {
     loadSessions,
     sortConfig,
     setSortConfig
-  } = useExportSessions(contactMap, 'private', metricsMap)
+  } = useExportSessions(contactMap, 'private', loadingRefs.size > 0 ? metricsMapForSort : metricsMap)
 
   // Initial load
   useEffect(() => {
@@ -94,7 +96,20 @@ function ExportPage() {
   // Use filteredSessions directly (hook already handles tab + search filtering)
   const displayedSessions = filteredSessions
 
+  useEffect(() => {
+    if (loadingRefs.size === 0) {
+      setMetricsMapForSort(metricsMap)
+    }
+  }, [loadingRefs.size, metricsMap])
 
+  useEffect(() => {
+    if (selectedSessionIds.size === 0) return
+    const visibleIds = new Set(displayedSessions.map(session => session.username))
+    const nextSelectedIds = new Set(Array.from(selectedSessionIds).filter(id => visibleIds.has(id)))
+    if (nextSelectedIds.size !== selectedSessionIds.size) {
+      setSelectedSessionIds(nextSelectedIds)
+    }
+  }, [displayedSessions, selectedSessionIds])
 
   useEffect(() => {
     if (displayedSessions.length > 0) {
@@ -104,9 +119,9 @@ function ExportPage() {
   }, [displayedSessions, fetchMetrics])
 
   const handleRefreshStats = useCallback(() => {
-    if (sessions.length === 0 || loadingRefs.size > 0) return
-    void fetchMetrics(sessions.map(s => s.username), { forceRefresh: true })
-  }, [fetchMetrics, loadingRefs.size, sessions])
+    if (displayedSessions.length === 0 || loadingRefs.size > 0) return
+    void fetchMetrics(displayedSessions.map(s => s.username), { forceRefresh: true })
+  }, [displayedSessions, fetchMetrics, loadingRefs.size])
 
   // ── 4. Manage Tasks ──
   const {
@@ -137,9 +152,9 @@ function ExportPage() {
 
   const resolveSingleExportName = useCallback((payload: OpenSingleExportPayload) => {
     const sessionId = String(payload.sessionId || '').trim()
-    const payloadName = typeof payload.sessionName === 'string' ? payload.sessionName.trim() : ''
+    const payloadName = pickDisplayName(payload.sessionName)
     const sessionRow = sessions.find(s => s.username === sessionId)
-    return payloadName || sessionRow?.displayName || sessionRow?.remark || sessionRow?.nickname || sessionId
+    return displayNameOrFallback(sessionId, payloadName, sessionRow?.displayName, sessionRow?.remark, sessionRow?.nickname)
   }, [sessions])
 
   const handleExportDefaultsChanged = useCallback((patch: ExportDefaultsSettingsPatch) => {
@@ -147,8 +162,23 @@ function ExportPage() {
       ...(patch.format ? { format: patch.format as TextExportFormat } : {}),
       ...(patch.avatars !== undefined ? { exportAvatars: patch.avatars } : {}),
       ...(patch.fileNamingMode !== undefined ? { fileNamingMode: patch.fileNamingMode } : {}),
+      ...(patch.media ? {
+        exportImages: patch.media.images,
+        exportVideos: patch.media.videos,
+        exportVoices: patch.media.voices,
+        exportEmojis: patch.media.emojis,
+        exportFiles: patch.media.files,
+        maxFileSizeMb: patch.media.maxFileSizeMb
+      } : {}),
+      ...(patch.voiceAsText !== undefined ? { exportVoiceAsText: patch.voiceAsText } : {}),
+      ...(patch.excelCompactColumns !== undefined ? { excelCompactColumns: patch.excelCompactColumns } : {}),
+      ...(patch.concurrency !== undefined ? { exportConcurrency: patch.concurrency } : {}),
     })
-  }, [updateOptions])
+
+    if (patch.dateRange) {
+      setRawDateRangeConfig(serializeExportDateRangeConfig(patch.dateRange))
+    }
+  }, [setRawDateRangeConfig, updateOptions])
 
   const handleExportSelected = useCallback(() => {
     const selectedRows = displayedSessions.filter(s => selectedSessionIds.has(s.username))
@@ -256,12 +286,24 @@ function ExportPage() {
       sessionIds: dialogState.sessionIds,
       sessionNames: dialogState.sessionNames,
       scope: dialogState.scope,
-      source: dialogState.intent === 'automation-create' ? 'automation' : 'manual',
+      source: 'manual',
       outputDir: exportPath,
       options: finalOptions
     })
     closeDialog()
   }, [dialogState, exportPath, startTask, closeDialog])
+
+  const handleAutomationCreateFromDialog = useCallback((finalOptions: any) => {
+    setDraftAutomationPayload({
+      sessionIds: dialogState.sessionIds,
+      sessionNames: dialogState.sessionNames,
+      scope: dialogState.scope,
+      contentType: dialogState.contentType,
+      outputDir: exportPath,
+      options: finalOptions
+    })
+    closeDialog()
+  }, [closeDialog, dialogState, exportPath])
 
   const handleAutomationSave = useCallback((task: any) => {
     void addTask(task)
@@ -291,6 +333,7 @@ function ExportPage() {
             onSearchChange={setSearchQuery}
             sortConfig={sortConfig}
             onSortChange={setSortConfig}
+            error={sessionsError}
             metricsMap={metricsMap}
             loadingRefs={loadingRefs}
             metricsLoadingCount={loadingRefs.size}
@@ -322,13 +365,11 @@ function ExportPage() {
         dialogState={dialogState}
         onClose={closeDialog}
         options={options}
-        onOptionsChange={updateOptions}
         exportPath={exportPath}
         onSelectPath={() => void window.electronAPI.dialog.openFile({ properties: ['openDirectory'] }).then(res => !res.canceled && res.filePaths[0] && setExportPath(res.filePaths[0]))}
         rawDateRangeConfig={rawDateRangeConfig}
-        onDateRangeConfigChange={setRawDateRangeConfig}
         onConfirm={handleConfirmExport}
-        onAutomationCreate={handleConfirmExport}
+        onAutomationCreate={handleAutomationCreateFromDialog}
       />
 
       {isSettingsModalOpen && (

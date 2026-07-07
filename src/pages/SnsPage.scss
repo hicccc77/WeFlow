@@ -939,7 +939,8 @@
         aspect-ratio: auto;
         border-radius: var(--sns-border-radius-md);
 
-        &.deleted-media {
+        &.deleted-media,
+        &.failed-media {
             width: 200px;
             aspect-ratio: 1;
         }
@@ -1078,6 +1079,26 @@
                 gap: 6px;
                 color: var(--text-tertiary);
                 font-size: 12px;
+            }
+        }
+
+        &.failed-media {
+            cursor: pointer;
+
+            .failed-placeholder {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                gap: 6px;
+                color: var(--text-tertiary);
+                font-size: 12px;
+                transition: color 0.2s ease;
+            }
+
+            &:hover .failed-placeholder {
+                color: var(--text-secondary);
             }
         }
     }

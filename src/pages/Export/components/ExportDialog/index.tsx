@@ -29,11 +29,9 @@ interface ExportDialogProps {
   dialogState: ExportDialogState
   onClose: () => void
   options: ExportOptions
-  onOptionsChange: (patch: Partial<ExportOptions>) => void
   exportPath: string
   onSelectPath: () => void
   rawDateRangeConfig: ExportDefaultDateRangeConfig | string | null
-  onDateRangeConfigChange: (config: ExportDefaultDateRangeConfig | string | null) => void
   onConfirm: (finalOptions: ExportOptions) => void
   onAutomationCreate: (finalOptions: ExportOptions) => void
 }
@@ -42,19 +40,26 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
   dialogState,
   onClose,
   options,
-  onOptionsChange,
   exportPath,
   onSelectPath,
   rawDateRangeConfig,
-  onDateRangeConfigChange,
   onConfirm,
   onAutomationCreate
 }) => {
   const [isDateRangeOpen, setIsDateRangeOpen] = useState(false)
+  const [draftOptions, setDraftOptions] = useState<ExportOptions>(options)
+  const [draftDateRangeConfig, setDraftDateRangeConfig] = useState<ExportDefaultDateRangeConfig | string | null>(rawDateRangeConfig)
+
+  useEffect(() => {
+    if (!dialogState.open) return
+    setDraftOptions(options)
+    setDraftDateRangeConfig(rawDateRangeConfig)
+    setIsDateRangeOpen(false)
+  }, [dialogState.open, options, rawDateRangeConfig])
 
   const currentSelection = React.useMemo(() => {
-    return resolveExportDateRangeConfig(rawDateRangeConfig)
-  }, [rawDateRangeConfig])
+    return resolveExportDateRangeConfig(draftDateRangeConfig)
+  }, [draftDateRangeConfig])
 
   const dateRangeLabel = React.useMemo(() => {
     return getExportDateRangeLabel(currentSelection)
@@ -62,20 +67,32 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
 
   if (!dialogState.open) return null
 
-  // Local state for UI toggles that might not strictly map 1:1 to config immediately
-  // But we'll just use the global options for now
   const { intent, scope, sessionNames, title } = dialogState
   const isAutomation = intent === 'automation-create'
 
+  const updateDraftOptions = (patch: Partial<ExportOptions>) => {
+    setDraftOptions(prev => {
+      const next = { ...prev, ...patch }
+      next.exportMedia = (
+        next.exportImages ||
+        next.exportVideos ||
+        next.exportVoices ||
+        next.exportEmojis ||
+        next.exportFiles
+      )
+      return next
+    })
+  }
+
   const handleFormatSelect = (format: TextExportFormat) => {
-    onOptionsChange({ format })
+    updateDraftOptions({ format })
   }
 
   const handleConfirm = () => {
     if (isAutomation) {
-      onAutomationCreate(options)
+      onAutomationCreate(draftOptions)
     } else {
-      onConfirm(options)
+      onConfirm(draftOptions)
     }
   }
 
@@ -162,7 +179,7 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               {formatOptions.map(fmt => (
                 <button
                   key={fmt.value}
-                  className={`format-card ${options.format === fmt.value ? 'active' : ''}`}
+                  className={`format-card ${draftOptions.format === fmt.value ? 'active' : ''}`}
                   onClick={() => handleFormatSelect(fmt.value)}
                 >
                   <div className="format-name">{fmt.label}</div>
@@ -181,8 +198,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportImages}
-                  onChange={e => onOptionsChange({ exportImages: e.target.checked })}
+                  checked={draftOptions.exportImages}
+                  onChange={e => updateDraftOptions({ exportImages: e.target.checked })}
                 />
                 <ImageIcon size={16} /> 导出图片
               </label>
@@ -190,8 +207,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportVideos}
-                  onChange={e => onOptionsChange({ exportVideos: e.target.checked })}
+                  checked={draftOptions.exportVideos}
+                  onChange={e => updateDraftOptions({ exportVideos: e.target.checked })}
                 />
                 <Video size={16} /> 导出视频
               </label>
@@ -199,8 +216,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportVoices}
-                  onChange={e => onOptionsChange({ exportVoices: e.target.checked })}
+                  checked={draftOptions.exportVoices}
+                  onChange={e => updateDraftOptions({ exportVoices: e.target.checked })}
                 />
                 <Mic size={16} /> 导出语音
               </label>
@@ -208,8 +225,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportFiles}
-                  onChange={e => onOptionsChange({ exportFiles: e.target.checked })}
+                  checked={draftOptions.exportFiles}
+                  onChange={e => updateDraftOptions({ exportFiles: e.target.checked })}
                 />
                 <FileBox size={16} /> 导出文件
               </label>
@@ -217,22 +234,24 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportEmojis}
-                  onChange={e => onOptionsChange({ exportEmojis: e.target.checked })}
+                  checked={draftOptions.exportEmojis}
+                  onChange={e => updateDraftOptions({ exportEmojis: e.target.checked })}
                 />
                 <Smile size={16} /> 导出表情包
               </label>
             </div>
 
-            {(options.exportVideos || options.exportFiles) && (
+            {(draftOptions.exportVideos || draftOptions.exportFiles) && (
               <div className="file-size-limit">
                 <span>最大文件限制 (MB):</span>
                 <input
                   type="number"
                   min={1}
                   max={MAX_EXPORT_FILE_SIZE_MB_LIMIT}
-                  value={options.maxFileSizeMb}
-                  onChange={e => onOptionsChange({ maxFileSizeMb: Number(e.target.value) })}
+                  value={draftOptions.maxFileSizeMb}
+                  onChange={e => updateDraftOptions({
+                    maxFileSizeMb: Math.max(1, Math.min(MAX_EXPORT_FILE_SIZE_MB_LIMIT, Math.floor(Number(e.target.value) || 1)))
+                  })}
                 />
               </div>
             )}
@@ -247,8 +266,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportAvatars}
-                  onChange={e => onOptionsChange({ exportAvatars: e.target.checked })}
+                  checked={draftOptions.exportAvatars}
+                  onChange={e => updateDraftOptions({ exportAvatars: e.target.checked })}
                 />
                 包含联系人头像
               </label>
@@ -256,8 +275,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={options.exportVoiceAsText}
-                  onChange={e => onOptionsChange({ exportVoiceAsText: e.target.checked })}
+                  checked={draftOptions.exportVoiceAsText}
+                  onChange={e => updateDraftOptions({ exportVoiceAsText: e.target.checked })}
                 />
                 语音转文字 (若已转换)
               </label>
@@ -273,8 +292,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                     <button
                       key={item.value}
                       type="button"
-                      className={options.exportPathStyle === item.value ? 'active' : ''}
-                      onClick={() => onOptionsChange({ exportPathStyle: item.value as ExportOptions['exportPathStyle'] })}
+                      className={draftOptions.exportPathStyle === item.value ? 'active' : ''}
+                      onClick={() => updateDraftOptions({ exportPathStyle: item.value as ExportOptions['exportPathStyle'] })}
                     >
                       {item.label}
                     </button>
@@ -289,9 +308,9 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                     <button
                       key={item.value}
                       type="button"
-                      className={options.exportConflictStrategy === item.value ? 'active' : ''}
+                      className={draftOptions.exportConflictStrategy === item.value ? 'active' : ''}
                       title={item.desc}
-                      onClick={() => onOptionsChange({ exportConflictStrategy: item.value })}
+                      onClick={() => updateDraftOptions({ exportConflictStrategy: item.value })}
                     >
                       {item.label}
                     </button>
@@ -302,8 +321,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
               <div className="concurrency-control">
                 <span>导出并发数:</span>
                 <select
-                  value={options.exportConcurrency}
-                  onChange={e => onOptionsChange({ exportConcurrency: Number(e.target.value) })}
+                  value={draftOptions.exportConcurrency}
+                  onChange={e => updateDraftOptions({ exportConcurrency: Number(e.target.value) })}
                 >
                   <option value={1}>1 (最稳定)</option>
                   <option value={3}>3 (推荐)</option>
@@ -333,7 +352,12 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
         value={currentSelection}
         onClose={() => setIsDateRangeOpen(false)}
         onConfirm={(nextSelection) => {
-          onDateRangeConfigChange(serializeExportDateRangeConfig(nextSelection))
+          const nextConfig = serializeExportDateRangeConfig(nextSelection)
+          setDraftDateRangeConfig(nextConfig)
+          updateDraftOptions({
+            useAllTime: nextSelection.useAllTime,
+            dateRange: nextSelection.dateRange
+          })
           setIsDateRangeOpen(false)
         }}
       />

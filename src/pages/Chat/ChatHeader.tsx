@@ -17,6 +17,7 @@ import {
 import { Avatar } from '../../components/Avatar'
 import type { ChatSession } from '../../types/models'
 import type { BatchVoiceTaskType } from '../../stores/batchTranscribeStore'
+import { displayNameOrFallback } from '../../utils/displayName'
 
 export interface ChatHeaderProps {
   session: ChatSession
@@ -95,7 +96,7 @@ function ChatHeader({
   onRefreshMessages,
   onToggleDetailPanel
 }: ChatHeaderProps) {
-  const sessionName = session.displayName || session.username
+  const sessionName = displayNameOrFallback(session.username, session.displayName)
   const exportTitle = isCurrentSessionExporting
     ? '导出中'
     : isPreparingExportDialog

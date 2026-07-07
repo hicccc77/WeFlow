@@ -7,7 +7,7 @@ import { homedir, tmpdir } from 'os'
 import crypto from 'crypto'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
-import { decryptDatViaNative, nativeAddonLocation } from './nativeImageDecrypt'
+import { decryptDatViaNativeAsync, nativeAddonLocation } from './nativeImageDecrypt'
 
 // 获取 ffmpeg-static 的路径
 function getStaticFfmpegPath(): string | null {
@@ -1949,7 +1949,8 @@ export class ImageDecryptService {
     xorKey: number,
     aesKey?: string
   ): Promise<{ data: Buffer; ext: string; isWxgf: boolean } | null> {
-    const result = decryptDatViaNative(datPath, xorKey, aesKey)
+    // worker 线程内执行原生解密，避免滚动预载时批量同步调用阻塞主线程
+    const result = await decryptDatViaNativeAsync(datPath, xorKey, aesKey)
     if (!this.nativeLogged) {
       this.nativeLogged = true
       if (result) {

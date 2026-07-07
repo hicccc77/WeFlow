@@ -105,6 +105,9 @@ export function useExportConfig(): ExportConfigResult {
           newOptions.exportVoices = media.voices !== false
           newOptions.exportEmojis = media.emojis !== false
           newOptions.exportFiles = media.files !== false
+          if (typeof media.maxFileSizeMb === 'number' && media.maxFileSizeMb > 0) {
+            newOptions.maxFileSizeMb = media.maxFileSizeMb
+          }
           // The old page had `exportMedia: true` derived from whether any media was checked
           newOptions.exportMedia = (
             newOptions.exportImages || 
@@ -177,7 +180,8 @@ export function useExportConfig(): ExportConfigResult {
           videos: next.exportVideos,
           voices: next.exportVoices,
           emojis: next.exportEmojis,
-          files: next.exportFiles
+          files: next.exportFiles,
+          maxFileSizeMb: next.maxFileSizeMb
         })
       }
       if (patch.exportVoiceAsText !== undefined) {

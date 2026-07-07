@@ -45,9 +45,15 @@ const exportWorkerElectronShimPlugin = () => {
           getPath,
           getAppPath: () => process.cwd(),
           getName: () => 'WeFlow',
-          getVersion: () => process.env.npm_package_version || '0.0.0'
+          getVersion: () => process.env.npm_package_version || '0.0.0',
+          // Worker 中不存在 app 生命周期事件（如 will-quit），no-op 兼容注册退出钩子的服务
+          on: () => app,
+          once: () => app,
+          off: () => app,
+          removeListener: () => app,
+          removeAllListeners: () => app
         }
-        export const BrowserWindow = { getAllWindows: () => [] }
+        export const BrowserWindow = { getAllWindows: () => [], getFocusedWindow: () => null }
         export const dialog = { showMessageBox: async () => ({ response: 0, checkboxChecked: false }) }
         export const shell = { openExternal: async () => false, showItemInFolder: () => {} }
         export const ipcMain = { on: () => {}, handle: () => {}, removeHandler: () => {} }
@@ -167,6 +173,21 @@ export default defineConfig({
             rollupOptions: {
               output: {
                 entryFileNames: 'imageSearchWorker.js',
+                codeSplitting: false
+              }
+            }
+          }
+        }
+      },
+      {
+        entry: 'electron/imageDecryptWorker.ts',
+        onstart: handleElectronOnStart,
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              output: {
+                entryFileNames: 'imageDecryptWorker.js',
                 codeSplitting: false
               }
             }

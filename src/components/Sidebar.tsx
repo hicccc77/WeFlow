@@ -309,6 +309,7 @@ function Sidebar({ collapsed }: SidebarProps) {
     return location.pathname === path || location.pathname.startsWith(`${path}/`)
   }
   const exportTaskBadge = activeExportTaskCount > 99 ? '99+' : `${activeExportTaskCount}`
+  const lockActionLabel = authEnabled ? '锁定应用' : '开启应用锁'
 
   return (
     <>
@@ -437,7 +438,7 @@ function Sidebar({ collapsed }: SidebarProps) {
 
         <div className="sidebar-footer">
           <button
-            className="nav-item"
+            className="nav-item sidebar-lock-action"
             onClick={() => {
               if (authEnabled) {
                 setLocked(true)
@@ -450,10 +451,11 @@ function Sidebar({ collapsed }: SidebarProps) {
                 }
               })
             }}
-            title={collapsed ? (authEnabled ? '锁定' : '未锁定') : undefined}
+            title={collapsed ? lockActionLabel : undefined}
+            aria-label={lockActionLabel}
           >
             <span className="nav-icon">{authEnabled ? <Lock size={20} /> : <LockOpen size={20} />}</span>
-            <span className="nav-label">{authEnabled ? '锁定' : '未锁定'}</span>
+            <span className="nav-label">{lockActionLabel}</span>
           </button>
 
           <div className="sidebar-user-card-wrap" ref={accountCardWrapRef}>

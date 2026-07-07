@@ -59,6 +59,8 @@ export class WcdbCore {
   private wcdbInitProtection: any = null
   private wcdbInit: any = null
   private wcdbShutdown: any = null
+  private wcdbPurgeMemory: any = null
+  private purgeTimer: ReturnType<typeof setInterval> | null = null
   private wcdbOpenAccount: any = null
   private wcdbCloseAccount: any = null
   private wcdbSetMyWxid: any = null
@@ -680,6 +682,21 @@ export class WcdbCore {
     return ''
   }
 
+  private pickFirstDisplayNameField(row: Record<string, any>, candidates: string[]): string {
+    for (const key of candidates) {
+      const value = row[key]
+      if (typeof value === 'string') {
+        if (value.length > 0) return value.trim() || value
+        continue
+      }
+      if (value !== null && value !== undefined) {
+        const converted = String(value)
+        if (converted.length > 0) return converted.trim() || converted
+      }
+    }
+    return ''
+  }
+
   private escapeSqlString(value: string): string {
     return String(value || '').replace(/'/g, "''")
   }
@@ -853,6 +870,13 @@ export class WcdbCore {
 
       // wcdb_status wcdb_shutdown()
       this.wcdbShutdown = this.lib.func('int32 wcdb_shutdown()')
+
+      // wcdb_status wcdb_purge_memory()（旧版 DLL 无此导出，容错处理）
+      try {
+        this.wcdbPurgeMemory = this.lib.func('int32 wcdb_purge_memory()')
+      } catch {
+        this.wcdbPurgeMemory = null
+      }
 
       // wcdb_status wcdb_open_account(const char* session_db_path, const char* hex_key, wcdb_handle* out_handle)
       // wcdb_handle 是 int64_t
@@ -1616,7 +1640,8 @@ export class WcdbCore {
 
   private writeDisplayNameCache(username: string, displayName: string, now = Date.now()): void {
     const normalizedUsername = String(username || '').trim()
-    const normalizedDisplayName = String(displayName || '').trim()
+    const rawDisplayName = typeof displayName === 'string' ? displayName : String(displayName || '')
+    const normalizedDisplayName = rawDisplayName.trim() || rawDisplayName
     if (!normalizedUsername || !normalizedDisplayName) return
     this.displayNameCache.set(normalizedUsername, {
       displayName: normalizedDisplayName,
@@ -1865,6 +1890,7 @@ export class WcdbCore {
       if (this.isLogEnabled()) {
         this.startLogPolling()
       }
+      this.startPeriodicPurge()
       this.writeLog(`open ok handle=${handle}`, true)
       await this.dumpDbStatus('open')
       await this.runPostOpenDiagnostics(accountDir, dbStoragePath, sessionDbPath, wxid)
@@ -1881,11 +1907,36 @@ export class WcdbCore {
    * 关闭数据库
    * 注意：wcdb_close_account 可能导致崩溃，使用 shutdown 代替
    */
+  /**
+   * 周期性回收 WCDB 空闲连接与页缓存：批量查询（会话统计/分析）会让多库多连接
+   * 的页缓存驻留，purgeAll 只关闭空闲连接，热连接不受影响，代价可忽略
+   */
+  private startPeriodicPurge(): void {
+    if (this.purgeTimer || !this.wcdbPurgeMemory) return
+    this.purgeTimer = setInterval(() => {
+      if (!this.initialized) return
+      try {
+        this.wcdbPurgeMemory()
+      } catch {
+        // 忽略：purge 失败不影响功能
+      }
+    }, 60 * 1000)
+    this.purgeTimer.unref?.()
+  }
+
+  private stopPeriodicPurge(): void {
+    if (this.purgeTimer) {
+      clearInterval(this.purgeTimer)
+      this.purgeTimer = null
+    }
+  }
+
   close(): void {
     if (this.handle !== null || this.initialized) {
       // 先停止监控与云控回调，避免 shutdown 后仍有 native 回调访问已释放资源。
       try { this.stopMonitor() } catch {}
       try { this.cloudStop() } catch {}
+      this.stopPeriodicPurge()
       try {
         // 不调用 closeAccount，直接 shutdown
         this.wcdbShutdown()
@@ -2696,7 +2747,7 @@ export class WcdbCore {
               row.talker ||
               ''
             ).trim(),
-            displayName: String(row.displayName || row.display_name || row.remark || '').trim(),
+            displayName: this.pickFirstDisplayNameField(row, ['displayName', 'display_name', 'remark']),
             sortTimestamp: toInt(
               row.sort_timestamp ||
               row.sortTimestamp ||
@@ -2876,7 +2927,10 @@ export class WcdbCore {
         const displayNameRes = await this.getDisplayNames(unresolvedSessionIds)
         if (displayNameRes.success && displayNameRes.map) {
           unresolvedSessionIds.forEach((sessionId) => {
-            const display = String(displayNameRes.map?.[sessionId] || '').trim()
+            const rawDisplay = displayNameRes.map?.[sessionId]
+            const display = typeof rawDisplay === 'string'
+              ? (rawDisplay.trim() || rawDisplay)
+              : ''
             if (display) sessionNameMap.set(sessionId, display)
           })
           items = items.map((item) => ({
@@ -2949,7 +3003,7 @@ export class WcdbCore {
         for (const row of (q.rows || []) as Array<Record<string, any>>) {
           const username = this.pickFirstStringField(row, ['username', 'user_name', 'userName'])
           if (!username) continue
-          const display = this.pickFirstStringField(row, [
+          const display = this.pickFirstDisplayNameField(row, [
             'remark', 'Remark',
             'nick_name', 'nickName', 'nickname', 'NickName',
             'alias', 'Alias'
@@ -2992,7 +3046,12 @@ export class WcdbCore {
       const map = JSON.parse(jsonStr)
       if (map && typeof map === 'object') {
         for (const username of toFetch) {
-          const display = String((map as Record<string, unknown>)[username] || '').trim()
+          const rawDisplay = (map as Record<string, unknown>)[username]
+          const display = typeof rawDisplay === 'string'
+            ? rawDisplay
+            : rawDisplay === null || rawDisplay === undefined
+              ? ''
+              : String(rawDisplay).trim()
           if (!display) continue
           resultMap[username] = display
           this.writeDisplayNameCache(username, display, now)

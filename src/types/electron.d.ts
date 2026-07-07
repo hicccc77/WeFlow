@@ -1580,7 +1580,7 @@ export interface ElectronAPI {
       error?: string
     }>
     debugResource: (url: string) => Promise<{ success: boolean; status?: number; headers?: any; error?: string }>
-    proxyImage: (payload: { url: string; key?: string | number }) => Promise<{ success: boolean; dataUrl?: string; videoPath?: string; error?: string }>
+    proxyImage: (payload: { url: string; key?: string | number }) => Promise<{ success: boolean; dataUrl?: string; videoPath?: string; status?: number; error?: string }>
     downloadImage: (payload: { url: string; key?: string | number }) => Promise<{ success: boolean; data?: any; contentType?: string; error?: string }>
     exportTimeline: (options: {
       outputDir: string

@@ -1,5 +1,6 @@
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { app } from 'electron'
 import { ConfigService } from './config'
 
@@ -12,6 +13,9 @@ export interface ContactCacheEntry {
 export class ContactCacheService {
   private readonly cacheFilePath: string
   private cache: Record<string, ContactCacheEntry> = {}
+  private persistTimer: NodeJS.Timeout | null = null
+  private persistInFlight = false
+  private persistDirty = false
 
   constructor(cacheBasePath?: string) {
     const basePath = cacheBasePath && cacheBasePath.trim().length > 0
@@ -20,6 +24,7 @@ export class ContactCacheService {
     this.cacheFilePath = join(basePath, 'contacts.json')
     this.ensureCacheDir()
     this.loadCache()
+    app?.once('will-quit', () => this.flushSync())
   }
 
   private ensureCacheDir() {
@@ -74,7 +79,40 @@ export class ContactCacheService {
     }
   }
 
+  /** 防抖异步落盘：启动阶段批量补全联系人时避免连续同步写盘阻塞主线程 */
   private persist() {
+    if (this.persistTimer) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      void this.persistNow()
+    }, 1000)
+    this.persistTimer.unref?.()
+  }
+
+  private async persistNow(): Promise<void> {
+    if (this.persistInFlight) {
+      this.persistDirty = true
+      return
+    }
+    this.persistInFlight = true
+    try {
+      await writeFile(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
+    } catch (error) {
+      console.error('ContactCacheService: 保存缓存失败', error)
+    } finally {
+      this.persistInFlight = false
+      if (this.persistDirty) {
+        this.persistDirty = false
+        void this.persistNow()
+      }
+    }
+  }
+
+  /** 退出前把尚未落盘的改动同步写入 */
+  private flushSync(): void {
+    if (!this.persistTimer) return
+    clearTimeout(this.persistTimer)
+    this.persistTimer = null
     try {
       writeFileSync(this.cacheFilePath, JSON.stringify(this.cache), 'utf8')
     } catch (error) {
@@ -84,6 +122,10 @@ export class ContactCacheService {
 
   clear(): void {
     this.cache = {}
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
     try {
       rmSync(this.cacheFilePath, { force: true })
     } catch (error) {

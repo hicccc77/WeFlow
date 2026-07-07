@@ -1095,8 +1095,7 @@ function createWindow(options: { autoShow?: boolean } = {}) {
       nodeIntegration: false,
       webSecurity: false // Allow loading local files (video playback)
     },
-    titleBarStyle: 'hidden',
-    titleBarOverlay: false,
+    frame: false,
     show: false
   })
   setupCustomTitleBarWindow(win)
@@ -1574,8 +1573,7 @@ function createChatHistoryRouteWindow(route: string) {
       contextIsolation: true,
       nodeIntegration: false
     },
-    titleBarStyle: 'hidden',
-    titleBarOverlay: false,
+    frame: false,
     show: false,
     backgroundColor: '#FFFFFF',
     autoHideMenuBar: true
@@ -4690,7 +4688,9 @@ app.whenReady().then(async () => {
       }
 
       updateSplashProgress(75, '正在缓存联系人头像...')
-      const avatarWarmupUsernames = Array.from(preloadUsernames).slice(0, 2000)
+      // 只预热前 600 个会话的头像：覆盖首屏与常用会话，其余由 ChatPage
+      // 的渐进式补齐队列按需加载，降低启动耗时与常驻内存
+      const avatarWarmupUsernames = Array.from(preloadUsernames).slice(0, 600)
       if (avatarWarmupUsernames.length > 0) {
         await withTimeout(() => chatService.enrichSessionsContactInfo(avatarWarmupUsernames), 15000)
       }

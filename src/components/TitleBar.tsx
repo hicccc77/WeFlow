@@ -50,7 +50,12 @@ function TitleBar({
           </button>
         ) : null}
       </div>
-      {customControls}
+      {customControls ? (
+        <div className="title-custom-controls">
+          {customControls}
+        </div>
+      ) : null}
+      <div className="title-drag-spacer" aria-hidden="true" />
       {showWindowControls ? (
         <div className="title-window-controls">
           <button

@@ -2,7 +2,7 @@ import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
 import { ContactCacheService } from './contactCacheService'
 import { app } from 'electron'
-import { existsSync, mkdirSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, unlinkSync, renameSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { basename, join } from 'path'
 import crypto from 'crypto'
@@ -908,10 +908,51 @@ class SnsService {
         return emojiDir
     }
 
+    /**
+     * 计算稳定的缓存标识：剥离 token、idx 等会随微信重新同步而变化的鉴权参数，
+     * 仅保留 host + path + 稳定查询参数。避免 token 变化后缓存无法命中，
+     * 导致对方删除朋友圈时回源 404 而误判为"已删除"。
+     */
+    private normalizeCacheUrl(url: string): string {
+        if (!url) return url
+        try {
+            const u = new URL(url)
+            u.searchParams.delete('token')
+            u.searchParams.delete('idx')
+            const query = u.searchParams.toString()
+            return `${u.host}${u.pathname}${query ? `?${query}` : ''}`
+        } catch {
+            return url
+                .replace(/([?&])(?:token|idx)=[^&]*/gi, '$1')
+                .replace(/[?&]+$/g, '')
+                .replace(/&&+/g, '&')
+                .replace(/\?&/g, '?')
+        }
+    }
+
     private getCacheFilePath(url: string): string {
-        const hash = crypto.createHash('md5').update(url).digest('hex')
+        const hash = crypto.createHash('md5').update(this.normalizeCacheUrl(url)).digest('hex')
         const ext = isVideoUrl(url) ? '.mp4' : '.jpg'
         return join(this.getSnsCacheDir(), `${hash}${ext}`)
+    }
+
+    /**
+     * 历史缓存一次性迁移：旧版本用完整 URL（含 token）的 md5 命名缓存文件，
+     * 改为规范化 URL 命名后会全部失配。这里按需将当前 URL 对应的旧命名文件
+     * 重命名为新命名，仅针对单个 URL、不遍历目录，迁移一次后不再触发，避免反复扫描。
+     */
+    private migrateLegacyCacheFile(url: string, newPath: string): void {
+        try {
+            if (existsSync(newPath)) return
+            const legacyHash = crypto.createHash('md5').update(url).digest('hex')
+            const ext = isVideoUrl(url) ? '.mp4' : '.jpg'
+            const legacyPath = join(this.getSnsCacheDir(), `${legacyHash}${ext}`)
+            if (legacyPath !== newPath && existsSync(legacyPath)) {
+                renameSync(legacyPath, newPath)
+            }
+        } catch (e) {
+            console.warn('[SnsService] 迁移历史缓存失败:', e)
+        }
     }
 
     async getSnsUsernames(): Promise<{ success: boolean; usernames?: string[]; error?: string }> {
@@ -1325,9 +1366,9 @@ class SnsService {
 
 
 
-    async proxyImage(url: string, key?: string | number): Promise<{ success: boolean; dataUrl?: string; videoPath?: string; error?: string }> {
+    async proxyImage(url: string, key?: string | number): Promise<{ success: boolean; dataUrl?: string; videoPath?: string; status?: number; error?: string }> {
         if (!url) return { success: false, error: 'url 不能为空' }
-        const cacheKey = `${url}|${key ?? ''}`
+        const cacheKey = `${this.normalizeCacheUrl(url)}|${key ?? ''}`
 
         const cachedDataUrl = this.imageCache.get(cacheKey) || ''
         if (cachedDataUrl) {
@@ -1370,7 +1411,7 @@ class SnsService {
                 return { success: true, dataUrl }
             }
         }
-        return { success: false, error: result.error }
+        return { success: false, status: result.status, error: result.error }
     }
 
     async downloadImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; error?: string }> {
@@ -2052,11 +2093,12 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
 </html>`
     }
 
-    private async fetchAndDecryptImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; error?: string }> {
+    private async fetchAndDecryptImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; status?: number; error?: string }> {
         if (!url) return { success: false, error: 'url 不能为空' }
 
         const isVideo = isVideoUrl(url)
         const cachePath = this.getCacheFilePath(url)
+        this.migrateLegacyCacheFile(url, cachePath)
 
         // 1. 优先尝试从当前缓存目录读取
         if (existsSync(cachePath)) {
@@ -2107,7 +2149,7 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
                         if (res.statusCode !== 200 && res.statusCode !== 206) {
                             fileStream.close()
                             fs.unlink(tmpPath, () => { }) // 删除临时文件
-                            resolve({ success: false, error: `HTTP ${res.statusCode}` })
+                            resolve({ success: false, status: res.statusCode, error: `HTTP ${res.statusCode}` })
                             return
                         }
 
@@ -2208,7 +2250,7 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
                 const req = https.request(options, (res: any) => {
                     if (res.statusCode !== 200 && res.statusCode !== 206) {
                         console.error(`[SnsService] CDN 请求失败: HTTP ${res.statusCode}`)
-                        resolve({ success: false, error: `HTTP ${res.statusCode}` })
+                        resolve({ success: false, status: res.statusCode, error: `HTTP ${res.statusCode}` })
                         return
                     }
 

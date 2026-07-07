@@ -18,6 +18,7 @@ import {
   Sparkles, Loader2, CheckCircle2, XCircle
 } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
+import { displayNameOrFallback } from '../utils/displayName'
 import './SettingsPage.scss'
 
 type SettingsTab =
@@ -53,6 +54,9 @@ const tabs: { id: Exclude<SettingsTab, 'insight' | 'aiFootprint' | 'aiMessageIns
   { id: 'updates', label: '版本更新', icon: RefreshCw },
   { id: 'about', label: '关于', icon: Info }
 ]
+
+const getSessionDisplayName = (session: Pick<ChatSession, 'username' | 'displayName'>): string =>
+  displayNameOrFallback(session.username, session.displayName)
 
 const filteredTabs = tabs.filter(tab => {
   if (tab.id === 'autoDownload') {
@@ -2097,22 +2101,25 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                 </div>
                 <div className="filter-panel-list">
                   {notificationAvailableSessions.length > 0 ? (
-                    notificationAvailableSessions.map(session => (
-                      <div
-                        key={session.username}
-                        className="filter-panel-item"
-                        onClick={() => handleAddToFilterList(session.username)}
-                      >
-                        <Avatar
-                          src={session.avatarUrl}
-                          name={session.displayName || session.username}
-                          size={28}
-                        />
-                        <span className="filter-item-name">{session.displayName || session.username}</span>
-                        <span className="filter-item-type">{getSessionFilterTypeLabel(session.type)}</span>
-                        <span className="filter-item-action">+</span>
-                      </div>
-                    ))
+                    notificationAvailableSessions.map(session => {
+                      const displayName = getSessionDisplayName(session)
+                      return (
+                        <div
+                          key={session.username}
+                          className="filter-panel-item"
+                          onClick={() => handleAddToFilterList(session.username)}
+                        >
+                          <Avatar
+                            src={session.avatarUrl}
+                            name={displayName}
+                            size={28}
+                          />
+                          <span className="filter-item-name">{displayName}</span>
+                          <span className="filter-item-type">{getSessionFilterTypeLabel(session.type)}</span>
+                          <span className="filter-item-action">+</span>
+                        </div>
+                      )
+                    })
                   ) : (
                     <div className="filter-panel-empty">
                       {filterSearchKeyword || notificationTypeFilter !== 'all' ? '没有匹配的会话' : '暂无可添加的会话'}
@@ -2345,11 +2352,11 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                       </span>
                       <Avatar
                         src={session.avatarUrl}
-                        name={session.displayName || session.username}
+                        name={getSessionDisplayName(session)}
                         size={30}
                       />
                       <div className="anti-revoke-row-text">
-                        <span className="name">{session.displayName || session.username}</span>
+                        <span className="name">{getSessionDisplayName(session)}</span>
                       </div>
                     </label>
                     <div className="anti-revoke-row-status">
@@ -2531,7 +2538,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
             scheduleConfigSave('keys', () => syncCurrentKeys({ imageAesKey: value, wxid }))
           }}
         />
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <div className="image-key-actions">
           <button className="btn btn-primary btn-sm" onClick={handleAutoGetImageKey} disabled={isFetchingImageKey} title="从本地缓存快速计算">
             <Plug size={14} /> {isFetchingImageKey ? '获取中...' : '缓存计算（推荐）'}
           </button>
@@ -2872,7 +2879,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       if (session.username.toLowerCase().includes('placeholder_foldgroup')) continue
       optionMap.set(session.username, {
         username: session.username,
-        displayName: session.displayName || session.username,
+        displayName: getSessionDisplayName(session),
         avatarUrl: session.avatarUrl,
         type: getSessionFilterType(session)
       })
@@ -2884,7 +2891,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       const existing = optionMap.get(contact.username)
       optionMap.set(contact.username, {
         username: contact.username,
-        displayName: existing?.displayName || contact.displayName || contact.remark || contact.nickname || contact.username,
+        displayName: displayNameOrFallback(contact.username, existing?.displayName, contact.displayName, contact.remark, contact.nickname),
         avatarUrl: existing?.avatarUrl || contact.avatarUrl,
         type: getSessionFilterType(contact)
       })
@@ -3328,7 +3335,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
     try {
       const result = await window.electronAPI.insight.generateProfile({
         sessionId,
-        displayName: session.displayName || session.username,
+        displayName: getSessionDisplayName(session),
         avatarUrl: session.avatarUrl
       })
       showMessage(result.message || (result.success ? '画像完成' : '画像失败'), result.success)
@@ -4003,11 +4010,11 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                           </span>
                           <Avatar
                             src={session.avatarUrl}
-                            name={session.displayName || session.username}
+                            name={getSessionDisplayName(session)}
                             size={30}
                           />
                           <div className="anti-revoke-row-text">
-                            <span className="name">{session.displayName || session.username}</span>
+                            <span className="name">{getSessionDisplayName(session)}</span>
                             <span className="desc">{getSessionFilterTypeLabel(session.type)}</span>
                           </div>
                         </label>
@@ -4062,7 +4069,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                                   <button
                                     type="button"
                                     className="btn btn-secondary btn-sm"
-                                    onClick={() => void handleSaveWeiboBinding(session.username, session.displayName || session.username)}
+                                    onClick={() => void handleSaveWeiboBinding(session.username, getSessionDisplayName(session))}
                                     disabled={isBindingLoading || !weiboDraftValue.trim()}
                                   >
                                     {isBindingLoading ? '绑定中...' : (weiboBinding ? '更新' : '绑定')}
@@ -4354,18 +4361,21 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               </div>
               <div className="filter-panel-list">
                 {groupSummaryAvailableSessions.length > 0 ? (
-                  groupSummaryAvailableSessions.map(session => (
-                    <div
-                      key={session.username}
-                      className="filter-panel-item"
-                      onClick={() => { void addToFilterList(session.username) }}
-                    >
-                      <Avatar src={session.avatarUrl} name={session.displayName || session.username} size={28} />
-                      <span className="filter-item-name">{session.displayName || session.username}</span>
-                      <span className="filter-item-type">群聊</span>
-                      <span className="filter-item-action">+</span>
-                    </div>
-                  ))
+                  groupSummaryAvailableSessions.map(session => {
+                    const displayName = getSessionDisplayName(session)
+                    return (
+                      <div
+                        key={session.username}
+                        className="filter-panel-item"
+                        onClick={() => { void addToFilterList(session.username) }}
+                      >
+                        <Avatar src={session.avatarUrl} name={displayName} size={28} />
+                        <span className="filter-item-name">{displayName}</span>
+                        <span className="filter-item-type">群聊</span>
+                        <span className="filter-item-action">+</span>
+                      </div>
+                    )
+                  })
                 ) : (
                   <div className="filter-panel-empty">
                     {aiGroupSummaryFilterSearchKeyword ? '没有匹配的群聊' : '暂无可添加的群聊'}
@@ -4733,22 +4743,25 @@ JSON 输出格式：
               </div>
               <div className="filter-panel-list">
                 {messagePushAvailableSessions.length > 0 ? (
-                  messagePushAvailableSessions.map(session => (
-                    <div
-                      key={session.username}
-                      className="filter-panel-item"
-                      onClick={() => { void handleAddMessagePushFilterSession(session.username) }}
-                    >
-                      <Avatar
-                        src={session.avatarUrl}
-                        name={session.displayName || session.username}
-                        size={28}
-                      />
-                      <span className="filter-item-name">{session.displayName || session.username}</span>
-                      <span className="filter-item-type">{getSessionFilterTypeLabel(session.type)}</span>
-                      <span className="filter-item-action">+</span>
-                    </div>
-                  ))
+                  messagePushAvailableSessions.map(session => {
+                    const displayName = getSessionDisplayName(session)
+                    return (
+                      <div
+                        key={session.username}
+                        className="filter-panel-item"
+                        onClick={() => { void handleAddMessagePushFilterSession(session.username) }}
+                      >
+                        <Avatar
+                          src={session.avatarUrl}
+                          name={displayName}
+                          size={28}
+                        />
+                        <span className="filter-item-name">{displayName}</span>
+                        <span className="filter-item-type">{getSessionFilterTypeLabel(session.type)}</span>
+                        <span className="filter-item-action">+</span>
+                      </div>
+                    )
+                  })
                 ) : (
                   <div className="filter-panel-empty">
                     {messagePushFilterSearchKeyword || messagePushTypeFilter !== 'all' ? '没有匹配的会话' : '暂无可添加的会话'}
@@ -4777,6 +4790,7 @@ JSON 输出格式：
                 {messagePushFilterList.length > 0 ? (
                   messagePushFilterList.map(username => {
                     const session = getSessionFilterOptionInfo(username)
+                    const displayName = displayNameOrFallback(username, session.displayName)
                     return (
                       <div
                         key={username}
@@ -4785,10 +4799,10 @@ JSON 输出格式：
                       >
                         <Avatar
                           src={session.avatarUrl}
-                          name={session.displayName || username}
+                          name={displayName}
                           size={28}
                         />
-                        <span className="filter-item-name">{session.displayName || username}</span>
+                        <span className="filter-item-name">{displayName}</span>
                         <span className="filter-item-type">{getSessionFilterTypeLabel(session.type)}</span>
                         <span className="filter-item-action">×</span>
                       </div>
@@ -5331,9 +5345,9 @@ JSON 输出格式：
                       <Check size={12} />
                     </span>
                   </span>
-                          <Avatar src={session.avatarUrl} name={session.displayName} size={30} />
+                          <Avatar src={session.avatarUrl} name={getSessionDisplayName(session)} size={30} />
                           <div className="anti-revoke-row-text">
-                            <span className="name">{session.displayName || session.username}</span>
+                            <span className="name">{getSessionDisplayName(session)}</span>
                           </div>
                         </label>
                         <div className="anti-revoke-row-status">

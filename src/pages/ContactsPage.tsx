@@ -7,6 +7,7 @@ import * as configService from '../services/config'
 import type { ContactInfo } from '../types/models'
 import { ContactSnsTimelineDialog } from '../components/Sns/ContactSnsTimelineDialog'
 import { type ContactSnsTimelineTarget, isSingleContactSession } from '../components/Sns/contactSnsTimeline'
+import { displayNameOrFallback } from '../utils/displayName'
 import './ContactsPage.scss'
 
 interface ContactEnrichInfo {
@@ -220,7 +221,7 @@ function ContactsPage() {
             const next = prev.map(contact => {
                 const enriched = enrichedMap[contact.username]
                 if (!enriched) return contact
-                const displayName = enriched.displayName || contact.displayName
+                const displayName = displayNameOrFallback(contact.displayName, enriched.displayName)
                 const avatarUrl = enriched.avatarUrl || contact.avatarUrl
                 if (displayName === contact.displayName && avatarUrl === contact.avatarUrl) {
                     return contact
@@ -239,7 +240,7 @@ function ContactsPage() {
             if (!prev) return prev
             const enriched = enrichedMap[prev.username]
             if (!enriched) return prev
-            const displayName = enriched.displayName || prev.displayName
+            const displayName = displayNameOrFallback(prev.displayName, enriched.displayName)
             const avatarUrl = enriched.avatarUrl || prev.avatarUrl
             if (displayName === prev.displayName && avatarUrl === prev.avatarUrl) {
                 return prev
@@ -303,7 +304,7 @@ function ContactsPage() {
                         if (!prev) continue
                         sourceByUsername.set(username, {
                             ...prev,
-                            displayName: enriched.displayName || prev.displayName,
+                            displayName: displayNameOrFallback(prev.displayName, enriched.displayName),
                             avatarUrl: enriched.avatarUrl || prev.avatarUrl
                         })
                     }
@@ -647,7 +648,12 @@ function ContactsPage() {
 
     const selectedContactTitle = useMemo(() => {
         if (!selectedContact) return ''
-        return selectedContact.displayName || selectedContact.remark || selectedContact.nickname || selectedContact.username
+        return displayNameOrFallback(
+            selectedContact.username,
+            selectedContact.displayName,
+            selectedContact.remark,
+            selectedContact.nickname
+        )
     }, [selectedContact])
 
     const selectedContactSubtitle = useMemo(() => {
@@ -688,7 +694,12 @@ function ContactsPage() {
         }
         setSnsTimelineTarget({
             username: selectedContact.username,
-            displayName: selectedContact.displayName || selectedContact.remark || selectedContact.nickname || selectedContact.username,
+            displayName: displayNameOrFallback(
+                selectedContact.username,
+                selectedContact.displayName,
+                selectedContact.remark,
+                selectedContact.nickname
+            ),
             avatarUrl: selectedContact.avatarUrl
         })
     }, [loadSnsUserPostCounts, selectedContact, selectedContactSupportsSns, snsUserPostCountsStatus])

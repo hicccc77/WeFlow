@@ -1,18 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
-import { useNavigate } from 'react-router-dom'
-import { useSessionMetrics } from '../pages/Export/hooks/useSessionMetrics'
 import { buildNewMessagesCursor } from '../pages/Chat/messageCursor'
+import { displayNameOrFallback, pickDisplayName } from '../utils/displayName'
 
 export function GlobalSessionMonitor() {
-    const navigate = useNavigate()
     const {
         sessions,
         setSessions,
-        currentSessionId,
-        appendMessages,
-        messages
+        appendMessages
     } = useChatStore()
 
     const sessionsRef = useRef(sessions)
@@ -27,8 +23,30 @@ export function GlobalSessionMonitor() {
         return `fallback:${msg._db_path || ''}:${msg.serverId || 0}:${msg.createTime}:${msg.sortSeq || 0}:${msg.localId || 0}:${msg.senderUsername || ''}:${msg.localType || 0}`
     }
 
-    // 处理数据库变更
+    // 处理数据库变更（防抖 + 串行：微信同步期间 Session 表变更事件会连续触发，
+    // 每次全量 getSessions + 富化的 IPC 成本高，合并突发事件只刷新一次）
     useEffect(() => {
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null
+        let refreshing = false
+        let pendingRefresh = false
+
+        const runRefresh = async () => {
+            if (refreshing) {
+                pendingRefresh = true
+                return
+            }
+            refreshing = true
+            try {
+                await refreshSessions()
+            } finally {
+                refreshing = false
+                if (pendingRefresh) {
+                    pendingRefresh = false
+                    void runRefresh()
+                }
+            }
+        }
+
         const handleDbChange = (_event: any, data: { type: string; json: string }) => {
             try {
                 const payload = JSON.parse(data.json)
@@ -36,7 +54,11 @@ export function GlobalSessionMonitor() {
 
                 // 只关注 Session 表
                 if (tableName === 'Session' || tableName === 'session') {
-                    refreshSessions()
+                    if (debounceTimer) clearTimeout(debounceTimer)
+                    debounceTimer = setTimeout(() => {
+                        debounceTimer = null
+                        void runRefresh()
+                    }, 400)
                 }
             } catch (e) {
                 console.error('解析数据库变更失败:', e)
@@ -46,6 +68,7 @@ export function GlobalSessionMonitor() {
         if (window.electronAPI.chat.onWcdbChange) {
             const removeListener = window.electronAPI.chat.onWcdbChange(handleDbChange)
             return () => {
+                if (debounceTimer) clearTimeout(debounceTimer)
                 removeListener()
             }
         }
@@ -70,9 +93,9 @@ export function GlobalSessionMonitor() {
                 // 2. 更新 store
                 setSessions(newSessions)
 
-                // 2.5 预加载导出相关的会话消息数量统计 (避免进入导出页面时显示为 0)
-                const sessionIds = newSessions.map(s => s.username)
-                useSessionMetrics.getState().fetchMetrics(sessionIds).catch(console.error)
+                // 注意：不再在每次 Session 变更时全量预载导出统计
+                // （2000+ 会话 × 多库统计查询的 IPC 风暴是卡顿主因之一；
+                // 导出页会按需拉取可见行的统计，主进程有磁盘缓存兜底）
 
                 // 3. 如果在活跃会话中，增量刷新消息
                 const currentId = useChatStore.getState().currentSessionId
@@ -167,7 +190,7 @@ export function GlobalSessionMonitor() {
                     continue
                 }
 
-                let title = newSession.displayName || newSession.username
+                let title = displayNameOrFallback(newSession.username, newSession.displayName)
                 let avatarUrl = newSession.avatarUrl
                 let content = newSession.summary || '[新消息]'
 
@@ -194,22 +217,24 @@ export function GlobalSessionMonitor() {
 
                     // 2. 群聊显示发送者名字 (放在内容中: "Name: Message")
                     // 标题保持为群聊名称 (title 变量)
-                    if (newSession.lastSenderDisplayName) {
-                        content = `${newSession.lastSenderDisplayName}: ${content}`
+                    const lastSenderDisplayName = pickDisplayName(newSession.lastSenderDisplayName)
+                    if (lastSenderDisplayName) {
+                        content = `${lastSenderDisplayName}: ${content}`
                     }
                 }
 
                 // 修复 "Random User" 的逻辑 (缺少具体信息)
                 // 如果标题看起来像 wxid 或没有头像，尝试获取信息
-                const needsEnrichment = !newSession.displayName || !newSession.avatarUrl || newSession.displayName === newSession.username
+                const needsEnrichment = !pickDisplayName(newSession.displayName) || !newSession.avatarUrl || newSession.displayName === newSession.username
 
                 if (needsEnrichment && newSession.username) {
                     try {
                         // 尝试丰富或获取联系人详情
                         const contact = await window.electronAPI.chat.getContact(newSession.username)
                         if (contact) {
-                            if (contact.remark || contact.nickName) {
-                                title = contact.remark || contact.nickName
+                            const contactDisplayName = pickDisplayName(contact.remark, contact.nickName)
+                            if (contactDisplayName) {
+                                title = contactDisplayName
                             }
                             const avatarResult = await window.electronAPI.chat.getContactAvatar(newSession.username)
                             if (avatarResult?.avatarUrl) {
@@ -221,8 +246,9 @@ export function GlobalSessionMonitor() {
                             if (enrichResult.success && enrichResult.contacts) {
                                 const enrichedContact = enrichResult.contacts[newSession.username]
                                 if (enrichedContact) {
-                                    if (enrichedContact.displayName) {
-                                        title = enrichedContact.displayName
+                                    const enrichedDisplayName = pickDisplayName(enrichedContact.displayName)
+                                    if (enrichedDisplayName) {
+                                        title = enrichedDisplayName
                                     }
                                     if (enrichedContact.avatarUrl) {
                                         avatarUrl = enrichedContact.avatarUrl
@@ -233,7 +259,7 @@ export function GlobalSessionMonitor() {
                             if (title === newSession.username || title.startsWith('wxid_')) {
                                 const retried = await window.electronAPI.chat.getContact(newSession.username)
                                 if (retried) {
-                                    title = retried.remark || retried.nickName || title
+                                    title = displayNameOrFallback(title, retried.remark, retried.nickName)
                                     const retriedAvatar = await window.electronAPI.chat.getContactAvatar(newSession.username)
                                     if (retriedAvatar?.avatarUrl) {
                                         avatarUrl = retriedAvatar.avatarUrl

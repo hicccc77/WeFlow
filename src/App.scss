@@ -20,8 +20,9 @@
   position: fixed;
   top: 0;
   left: 0;
-  right: 150px;
-  height: 40px;
+  right: 0;
+  height: 48px;
+  app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;
   z-index: 2000;

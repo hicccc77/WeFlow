@@ -100,8 +100,9 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
     // type 7 的朋友圈媒体不需要解密，直接使用原始 URL
     const skipDecrypt = postType === 7
 
-    // 视频重试：失败时重试最多2次，耗尽才标记删除
-    const videoRetryOrDelete = () => {
+    // 视频重试：服务器明确不存在(404/410)判定已删除；其余失败重试最多2次，耗尽才标记删除
+    const videoRetryOrDelete = (status?: number) => {
+        if (status === 404 || status === 410) { markDeleted(); return }
         if (retryCount.current < 2) {
             retryCount.current++
             setRetryKey(k => k + 1)
@@ -110,11 +111,30 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
         }
     }
 
-    // Simple effect to load image/decrypt
+    // 图片失败处理：服务器明确不存在(404/410)判定已删除；其余视为临时失败，
+    // 有限重试后显示可重试的加载失败态，避免把网络波动误判为"已删除"。
+    const imageRetryOrFail = (status?: number) => {
+        if (status === 404 || status === 410) { markDeleted(); return }
+        if (retryCount.current < 2) {
+            retryCount.current++
+            setRetryKey(k => k + 1)
+        } else {
+            setError(true)
+        }
+    }
+
+    const handleRetry = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        retryCount.current = 0
+        setError(false)
+        setRetryKey(k => k + 1)
+    }
+
     // Simple effect to load image/decrypt
     React.useEffect(() => {
         let cancelled = false
         setLoading(true)
+        setError(false)
 
         const load = async () => {
             try {
@@ -130,7 +150,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                         if (result.dataUrl) setThumbSrc(result.dataUrl)
                         else if (result.videoPath) setThumbSrc(`file://${result.videoPath.replace(/\\/g, '/')}`)
                     } else {
-                        markDeleted()
+                        imageRetryOrFail(result.status)
                     }
 
                     // Pre-load live photo video if needed
@@ -171,7 +191,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                             if (!cancelled) setThumbSrc(localPath)
                         }
                     } else {
-                        videoRetryOrDelete()
+                        videoRetryOrDelete(result.status)
                     }
 
                     setIsGeneratingCover(false)
@@ -183,7 +203,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     if (isVideo) {
                         videoRetryOrDelete()
                     } else {
-                        markDeleted()
+                        imageRetryOrFail()
                     }
                     setLoading(false)
                     setIsGeneratingCover(false)
@@ -281,6 +301,17 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
         )
     }
 
+    if (error) {
+        return (
+            <div className="sns-media-item failed-media" onClick={handleRetry} title="点击重试">
+                <div className="failed-placeholder">
+                    <RefreshCw size={24} />
+                    <span>加载失败，点击重试</span>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div
             className={`sns-media-item ${isDecrypting ? 'decrypting' : ''}`}
@@ -305,7 +336,7 @@ const MediaItem = ({ media, postType, onPreview, onMediaDeleted }: { media: SnsM
                     src={thumbSrc}
                     className="media-image"
                     loading="lazy"
-                    onError={() => { if (!loading && !isVideo) markDeleted() }}
+                    onError={() => { if (!loading && !isVideo) imageRetryOrFail() }}
                     alt=""
                 />
             ) : null}

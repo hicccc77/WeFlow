@@ -125,7 +125,8 @@ export function ExportDefaultsSettingsForm({
     videos: true,
     voices: true,
     emojis: true,
-    files: true
+    files: true,
+    maxFileSizeMb: 200
   })
   const [exportDefaultVoiceAsText, setExportDefaultVoiceAsText] = useState(false)
   const [exportDefaultExcelCompactColumns, setExportDefaultExcelCompactColumns] = useState(true)
@@ -156,7 +157,8 @@ export function ExportDefaultsSettingsForm({
         videos: true,
         voices: true,
         emojis: true,
-        files: true
+        files: true,
+        maxFileSizeMb: 200
       })
       setExportDefaultVoiceAsText(savedVoiceAsText ?? false)
       setExportDefaultExcelCompactColumns(savedExcelCompactColumns ?? true)
@@ -547,6 +549,24 @@ export function ExportDefaultsSettingsForm({
               <span className="media-default-check" aria-hidden="true" />
               <span>文件</span>
             </label>
+          </div>
+          <div className="media-size-limit-control">
+            <span>视频/文件最大体积</span>
+            <input
+              type="number"
+              min={1}
+              max={4096}
+              value={exportDefaultMedia.maxFileSizeMb}
+              onChange={async (e) => {
+                const maxFileSizeMb = Math.max(1, Math.min(4096, Math.floor(Number(e.target.value) || 1)))
+                const next = { ...exportDefaultMedia, maxFileSizeMb }
+                setExportDefaultMedia(next)
+                await configService.setExportDefaultMedia(next)
+                onDefaultsChanged?.({ media: next })
+                notify(`已将最大文件限制设为 ${maxFileSizeMb} MB`, true)
+              }}
+            />
+            <span>MB</span>
           </div>
         </div>
       </div>

@@ -63,16 +63,20 @@ const DARK_VEIL: RGB = [22, 20, 18]
 const WHITE_VEIL_ALPHA: readonly [number, number] = [0.1, 0.38]
 const DARK_VEIL_ALPHA: readonly [number, number] = [0.35, 0.6]
 
+/**
+ * 标题与正文共用同一组主文字锚点：灰色正文在蓝色等彩色背景上即使对比度达标，
+ * 主观上也显得发虚，层级改由字重区分（标题 600 / 正文 400）。
+ * 分区采样仍使两者随各自区域背景独立求解
+ */
+const PRIMARY_TEXT: { dark: TextAnchor; light: TextAnchor } = {
+    dark: { relaxed: [44, 44, 44], strong: [10, 10, 10] },
+    light: { relaxed: [240, 238, 233], strong: [255, 255, 255] }
+}
+
 /** 文字锚点：dark = 深色文字（浅背景用），light = 浅色文字（深背景用） */
 const ANCHORS: Record<'title' | 'body' | 'tertiary', { dark: TextAnchor; light: TextAnchor }> = {
-    title: {
-        dark: { relaxed: [44, 44, 44], strong: [10, 10, 10] },
-        light: { relaxed: [240, 238, 233], strong: [255, 255, 255] }
-    },
-    body: {
-        dark: { relaxed: [77, 77, 77], strong: [17, 17, 17] },
-        light: { relaxed: [217, 214, 208], strong: [255, 255, 255] }
-    },
+    title: PRIMARY_TEXT,
+    body: PRIMARY_TEXT,
     tertiary: {
         dark: { relaxed: [122, 122, 122], strong: [61, 61, 61] },
         light: { relaxed: [176, 172, 166], strong: [216, 213, 207] }

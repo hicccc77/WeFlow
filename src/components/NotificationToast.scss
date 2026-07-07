@@ -73,7 +73,8 @@
 
         .notification-body {
             font-size: 13px;
-            color: var(--noti-body-color, #4d4d4d);
+            // 与标题同色（近黑），层级靠字重区分：标题 600、正文默认 400
+            color: var(--noti-body-color, #2c2c2c);
             text-shadow: var(--noti-body-halo, none);
             transition: color 0.08s linear, text-shadow 0.08s linear;
             line-height: 1.4;

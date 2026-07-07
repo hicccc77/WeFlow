@@ -10,6 +10,7 @@ import { useBatchImageDecryptStore } from '../stores/batchImageDecryptStore'
 import type { ChatRecordItem, ChatSession, Message } from '../types/models'
 import type { GroupSummaryRecord, GroupSummaryRecordSummary } from '../types/electron'
 import { renderTextWithEmoji } from '../utils/renderTextWithEmoji'
+import { displayNameOrFallback, pickDisplayName } from '../utils/displayName'
 import { VoiceTranscribeDialog } from '../components/VoiceTranscribeDialog'
 import { LivePhotoIcon } from '../components/LivePhotoIcon'
 import { AnimatedStreamingText } from '../components/AnimatedStreamingText'
@@ -105,12 +106,13 @@ const MESSAGE_VIRTUAL_OVERSCAN_PX = 140
 const QUOTED_MESSAGE_PROBE_LIMIT = 180
 const QUOTED_MESSAGE_MISSING_TIP = '引用消息不存在'
 const BYTES_PER_MEGABYTE = 1024 * 1024
+// 图片/表情缓存值现在几乎都是文件路径（小字符串），字节上限只防御 base64 兜底路径
 const EMOJI_CACHE_MAX_ENTRIES = 260
-const EMOJI_CACHE_MAX_BYTES = 32 * BYTES_PER_MEGABYTE
+const EMOJI_CACHE_MAX_BYTES = 16 * BYTES_PER_MEGABYTE
 const IMAGE_CACHE_MAX_ENTRIES = 360
-const IMAGE_CACHE_MAX_BYTES = 64 * BYTES_PER_MEGABYTE
+const IMAGE_CACHE_MAX_BYTES = 32 * BYTES_PER_MEGABYTE
 const VOICE_CACHE_MAX_ENTRIES = 120
-const VOICE_CACHE_MAX_BYTES = 24 * BYTES_PER_MEGABYTE
+const VOICE_CACHE_MAX_BYTES = 16 * BYTES_PER_MEGABYTE
 const VOICE_TRANSCRIPT_CACHE_MAX_ENTRIES = 1800
 const VOICE_TRANSCRIPT_CACHE_MAX_BYTES = 2 * BYTES_PER_MEGABYTE
 const SENDER_AVATAR_CACHE_MAX_ENTRIES = 2000
@@ -478,6 +480,10 @@ function normalizeSearchIdentityText(value?: string | null): string | undefined 
   return normalized
 }
 
+function normalizeDisplayIdentityText(value?: string | null): string | undefined {
+  return pickDisplayName(value)
+}
+
 function normalizeSearchAvatarUrl(value?: string | null): string | undefined {
   const normalized = String(value || '').trim()
   if (!normalized) return undefined
@@ -493,7 +499,7 @@ function resolveSessionDisplayName(
   sessionId?: string | null
 ): string | undefined {
   const normalizedSessionId = String(sessionId || '').trim()
-  const normalizedDisplayName = normalizeSearchIdentityText(displayName)
+  const normalizedDisplayName = normalizeDisplayIdentityText(displayName)
   if (!normalizedDisplayName) return undefined
   if (normalizedSessionId && normalizedDisplayName === normalizedSessionId) return undefined
   return normalizedDisplayName
@@ -516,7 +522,7 @@ function resolveSearchSenderDisplayName(
   senderUsername?: string | null,
   sessionId?: string | null
 ): string | undefined {
-  const normalizedDisplayName = normalizeSearchIdentityText(displayName)
+  const normalizedDisplayName = normalizeDisplayIdentityText(displayName)
   if (!normalizedDisplayName) return undefined
 
   const normalizedSenderUsername = normalizeSearchIdentityText(senderUsername)
@@ -1053,15 +1059,15 @@ function normalizeQuotedGroupMember(member: Partial<GroupPanelMember> | null | u
   const username = String(member?.username || '').trim()
   if (!username) return null
 
-  const displayName = String(member?.displayName || '').trim()
-  const nickname = String(member?.nickname || '').trim()
-  const remark = String(member?.remark || '').trim()
-  const alias = String(member?.alias || '').trim()
-  const groupNickname = String(member?.groupNickname || '').trim()
+  const displayName = pickDisplayName(member?.displayName) || ''
+  const nickname = pickDisplayName(member?.nickname) || ''
+  const remark = pickDisplayName(member?.remark) || ''
+  const alias = pickDisplayName(member?.alias) || ''
+  const groupNickname = pickDisplayName(member?.groupNickname) || ''
 
   return {
     username,
-    displayName: displayName || groupNickname || remark || nickname || alias || username,
+    displayName: displayNameOrFallback(username, displayName, groupNickname, remark, nickname, alias),
     avatarUrl: member?.avatarUrl,
     nickname,
     alias,
@@ -1103,34 +1109,34 @@ function resolveQuotedSenderUsername(
 }
 
 function resolveQuotedGroupMemberDisplayName(member: GroupPanelMember): string | undefined {
-  const groupNickname = normalizeSearchIdentityText(member.groupNickname)
+  const groupNickname = normalizeDisplayIdentityText(member.groupNickname)
   if (groupNickname) return groupNickname
 
-  const remark = normalizeSearchIdentityText(member.remark)
+  const remark = normalizeDisplayIdentityText(member.remark)
   if (remark) return remark
 
-  const nickname = normalizeSearchIdentityText(member.nickname)
+  const nickname = normalizeDisplayIdentityText(member.nickname)
   if (nickname) return nickname
 
   const displayName = resolveSearchSenderDisplayName(member.displayName, member.username)
   if (displayName) return displayName
 
-  const alias = normalizeSearchIdentityText(member.alias)
+  const alias = normalizeDisplayIdentityText(member.alias)
   if (alias) return alias
 
   return resolveSearchSenderUsernameFallback(member.username)
 }
 
 function resolveQuotedPrivateDisplayName(contact: any): string | undefined {
-  const remark = normalizeSearchIdentityText(contact?.remark)
+  const remark = normalizeDisplayIdentityText(contact?.remark)
   if (remark) return remark
 
-  const nickname = normalizeSearchIdentityText(
+  const nickname = normalizeDisplayIdentityText(
     contact?.nickName || contact?.nick_name || contact?.nickname
   )
   if (nickname) return nickname
 
-  const alias = normalizeSearchIdentityText(contact?.alias)
+  const alias = normalizeDisplayIdentityText(contact?.alias)
   if (alias) return alias
 
   return undefined
@@ -1490,6 +1496,7 @@ const SessionItem = React.memo(function SessionItem({
     }
     return <span className="session-summary">{session.summary || '暂无消息'}</span>
   }, [session.matchedField, session.username, session.alias, session.summary, searchKeyword])
+  const sessionDisplayName = displayNameOrFallback(session.username, session.displayName)
 
   return (
     <div
@@ -1498,7 +1505,7 @@ const SessionItem = React.memo(function SessionItem({
     >
       <Avatar
         src={session.avatarUrl}
-        name={session.displayName || session.username}
+        name={sessionDisplayName}
         size={48}
         className={session.username.includes('@chatroom') ? 'group' : ''}
       />
@@ -1508,9 +1515,9 @@ const SessionItem = React.memo(function SessionItem({
             {(() => {
               const shouldHighlight = (session.matchedField as any) === 'name' && searchKeyword
               return shouldHighlight ? (
-                <HighlightText text={session.displayName || session.username} keyword={searchKeyword} />
+                <HighlightText text={sessionDisplayName} keyword={searchKeyword} />
               ) : (
-                session.displayName || session.username
+                sessionDisplayName
               )
             })()}
           </span>
@@ -1914,7 +1921,13 @@ function ChatPage(props: ChatPageProps) {
     const sessionDisplayName = resolveSessionDisplayName(session.displayName, username)
     const previousDisplayName = resolveSessionDisplayName(previousSession?.displayName, username)
     const profileDisplayName = resolveSessionDisplayName(profile?.displayName, username)
-    const resolvedDisplayName = sessionDisplayName || previousDisplayName || profileDisplayName || session.displayName || username
+    const resolvedDisplayName = displayNameOrFallback(
+      username,
+      sessionDisplayName,
+      previousDisplayName,
+      profileDisplayName,
+      session.displayName
+    )
 
     const sessionAvatarUrl = normalizeSearchAvatarUrl(session.avatarUrl)
     const previousAvatarUrl = normalizeSearchAvatarUrl(previousSession?.avatarUrl)
@@ -2131,7 +2144,7 @@ function ChatPage(props: ChatPageProps) {
         }
         const result = await window.electronAPI.groupSummary.triggerManual({
           sessionId,
-          displayName: sessionInfo?.displayName || sessionId,
+          displayName: displayNameOrFallback(sessionId, sessionInfo?.displayName),
           avatarUrl: sessionInfo?.avatarUrl,
           startTime,
           endTime
@@ -2147,7 +2160,7 @@ function ChatPage(props: ChatPageProps) {
       } else {
         const result = await window.electronAPI.groupSummary.triggerDay({
           sessionId,
-          displayName: sessionInfo?.displayName || sessionId,
+          displayName: displayNameOrFallback(sessionId, sessionInfo?.displayName),
           avatarUrl: sessionInfo?.avatarUrl,
           date: selectedDate
         })
@@ -2541,7 +2554,7 @@ function ChatPage(props: ChatPageProps) {
     const taskId = registerBackgroundTask({
       sourcePage: 'chat',
       title: '聊天页会话详情统计',
-      detail: `准备读取 ${sessionMapRef.current.get(normalizedSessionId)?.displayName || normalizedSessionId} 的详情`,
+      detail: `准备读取 ${displayNameOrFallback(normalizedSessionId, sessionMapRef.current.get(normalizedSessionId)?.displayName)} 的详情`,
       progressText: '基础信息',
       cancelable: true
     })
@@ -2558,7 +2571,7 @@ function ChatPage(props: ChatPageProps) {
       const sameSession = prev?.wxid === normalizedSessionId
       return {
         wxid: normalizedSessionId,
-        displayName: mappedSession?.displayName || prev?.displayName || normalizedSessionId,
+        displayName: displayNameOrFallback(normalizedSessionId, mappedSession?.displayName, prev?.displayName),
         remark: sameSession ? prev?.remark : undefined,
         nickName: sameSession ? prev?.nickName : undefined,
         alias: sameSession ? prev?.alias : undefined,
@@ -2628,7 +2641,7 @@ function ChatPage(props: ChatPageProps) {
       if (result.success && result.detail) {
         setSessionDetail((prev) => ({
           wxid: normalizedSessionId,
-          displayName: result.detail!.displayName || prev?.displayName || normalizedSessionId,
+          displayName: displayNameOrFallback(normalizedSessionId, result.detail!.displayName, prev?.displayName),
           remark: result.detail!.remark,
           nickName: result.detail!.nickName,
           alias: result.detail!.alias,
@@ -2895,12 +2908,12 @@ function ChatPage(props: ChatPageProps) {
       .map((member: GroupPanelMember): GroupPanelMember | null => {
         const username = String(member.username || '').trim()
         if (!username) return null
-        const preferredName = String(
-          member.groupNickname ||
-          member.remark ||
-          member.displayName ||
-          member.nickname ||
-          username
+        const preferredName = displayNameOrFallback(
+          username,
+          member.groupNickname,
+          member.remark,
+          member.displayName,
+          member.nickname
         )
         const rawStatus = member.messageCountStatus
         const normalizedStatus: GroupMessageCountStatus = options?.messageCountStatus
@@ -3763,7 +3776,7 @@ function ChatPage(props: ChatPageProps) {
       const updatedSessions = currentSessions.map(session => {
         const update = updates.get(session.username)
         if (update) {
-          const newDisplayName = update.displayName || session.displayName || session.username
+          const newDisplayName = displayNameOrFallback(session.username, update.displayName, session.displayName)
           const newAvatarUrl = update.avatarUrl || session.avatarUrl
           const newAlias = update.alias || session.alias
           if (newDisplayName !== session.displayName || newAvatarUrl !== session.avatarUrl || newAlias !== session.alias) {
@@ -4312,7 +4325,7 @@ function ChatPage(props: ChatPageProps) {
           currentSearchSession.username === normalizedInitialSessionId
             ? {
                 ...currentSearchSession,
-                displayName: currentSearchSession.displayName || fallbackDisplayName || currentSearchSession.username,
+                displayName: displayNameOrFallback(currentSearchSession.username, currentSearchSession.displayName, fallbackDisplayName),
                 avatarUrl: currentSearchSession.avatarUrl || fallbackAvatarUrl || undefined
               }
             : currentSearchSession
@@ -4321,7 +4334,7 @@ function ChatPage(props: ChatPageProps) {
           normalizedSessionId
             ? {
                 username: normalizedSessionId,
-                displayName: fallbackDisplayName || normalizedSessionId,
+                displayName: displayNameOrFallback(normalizedSessionId, fallbackDisplayName),
                 avatarUrl: fallbackAvatarUrl || undefined
               } as ChatSession
             : undefined
@@ -6087,7 +6100,7 @@ function ChatPage(props: ChatPageProps) {
       username: OFFICIAL_ACCOUNTS_VIRTUAL_ID,
       displayName: '公众号',
       summary: latestOfficial
-        ? `${latestOfficial.displayName || latestOfficial.username}: ${latestOfficial.summary || '查看公众号历史消息'}`
+        ? `${displayNameOrFallback(latestOfficial.username, latestOfficial.displayName)}: ${latestOfficial.summary || '查看公众号历史消息'}`
         : '查看公众号历史消息',
       type: 0,
       sortTimestamp: officialLatestTime,
@@ -6113,7 +6126,7 @@ function ChatPage(props: ChatPageProps) {
       const foldEntry: ChatSession = {
         username: 'placeholder_foldgroup',
         displayName: '折叠的聊天',
-        summary: `${latestFolded.displayName || latestFolded.username}: ${latestFolded.summary}`,
+        summary: `${displayNameOrFallback(latestFolded.username, latestFolded.displayName)}: ${latestFolded.summary}`,
         type: 0,
         sortTimestamp: latestFolded.sortTimestamp || latestFolded.lastTimestamp,
         lastTimestamp: latestFolded.lastTimestamp || latestFolded.sortTimestamp,
@@ -6253,7 +6266,7 @@ function ChatPage(props: ChatPageProps) {
       ) {
         return {
           ...found,
-          displayName: found.displayName || fallbackDisplayName || found.username,
+          displayName: displayNameOrFallback(found.username, found.displayName, fallbackDisplayName),
           avatarUrl: found.avatarUrl || fallbackAvatarUrl || undefined
         }
       }
@@ -6268,7 +6281,7 @@ function ChatPage(props: ChatPageProps) {
       sortTimestamp: 0,
       lastTimestamp: 0,
       lastMsgType: 0,
-      displayName: fallbackDisplayName || currentSessionId,
+      displayName: displayNameOrFallback(currentSessionId, fallbackDisplayName),
       avatarUrl: fallbackAvatarUrl || undefined,
     } as ChatSession
   })()
@@ -6309,7 +6322,7 @@ function ChatPage(props: ChatPageProps) {
     if (!currentSession || !isCurrentSessionPrivateSnsSupported) return
     setChatSnsTimelineTarget({
       username: currentSession.username,
-      displayName: currentSession.displayName || currentSession.username,
+      displayName: displayNameOrFallback(currentSession.username, currentSession.displayName),
       avatarUrl: currentSession.avatarUrl
     })
   }, [currentSession, isCurrentSessionPrivateSnsSupported])
@@ -6684,7 +6697,7 @@ function ChatPage(props: ChatPageProps) {
     if (inProgressExportSessionIds.has(currentSessionId) || isPreparingExportDialog) return
 
     const requestId = `chat-export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const sessionName = currentSession?.displayName || currentSession?.username || currentSessionId
+    const sessionName = displayNameOrFallback(currentSessionId, currentSession?.displayName, currentSession?.username)
     pendingExportRequestIdRef.current = requestId
     setIsPreparingExportDialog(true)
     setExportPrepareHint('')
@@ -6713,7 +6726,7 @@ function ChatPage(props: ChatPageProps) {
     try {
       const result = await window.electronAPI.insight.triggerSessionInsight({
         sessionId,
-        displayName: session?.displayName || sessionId,
+        displayName: displayNameOrFallback(sessionId, session?.displayName),
         avatarUrl: session?.avatarUrl
       })
       if (currentSessionRef.current !== sessionId) return
@@ -6817,7 +6830,7 @@ function ChatPage(props: ChatPageProps) {
       }
     }
 
-    startTranscribe(totalVoices, session.displayName || session.username, taskType, 'chat', {
+    startTranscribe(totalVoices, displayNameOrFallback(session.username, session.displayName), taskType, 'chat', {
       cancelable: true,
       resumable: true,
       onPause: () => {
@@ -7038,7 +7051,7 @@ function ChatPage(props: ChatPageProps) {
       }
     }
 
-    startDecrypt(totalImages, session.displayName || session.username, 'chat', {
+    startDecrypt(totalImages, displayNameOrFallback(session.username, session.displayName), 'chat', {
       cancelable: true,
       resumable: true,
       onPause: () => {
@@ -7328,7 +7341,7 @@ function ChatPage(props: ChatPageProps) {
       const nextDetail = detailResult.value.detail
       detail = {
         wxid: nextDetail.wxid || username,
-        displayName: nextDetail.displayName || target.displayName || username,
+        displayName: displayNameOrFallback(username, nextDetail.displayName, target.displayName),
         remark: nextDetail.remark,
         nickName: nextDetail.nickName,
         alias: nextDetail.alias,
@@ -7397,14 +7410,14 @@ function ChatPage(props: ChatPageProps) {
       ? cachedSelfProfile!.alias
       : undefined
     const displayName = profile.isSelf
-      ? (selfDisplayName || selfAlias || profile.displayName || username || '微信用户')
-      : (normalizeSearchIdentityText(profile.displayName) || profile.displayName || username || '微信用户')
+      ? displayNameOrFallback('微信用户', selfDisplayName, selfAlias, profile.displayName, username)
+      : displayNameOrFallback('微信用户', normalizeDisplayIdentityText(profile.displayName), profile.displayName, username)
     const avatarUrl = normalizeSearchAvatarUrl(profile.avatarUrl) ||
       (profile.isSelf ? normalizeSearchAvatarUrl(cachedSelfProfile?.avatarUrl) || myAvatarUrl : undefined)
     const sourceLabel = profile.isSelf
       ? '我发送的消息'
       : profile.isGroupMember
-        ? (currentSession?.displayName || currentSessionId || '群聊')
+        ? displayNameOrFallback('群聊', currentSession?.displayName, currentSessionId)
         : '当前聊天'
     const target: AvatarProfileTarget = {
       ...profile,
@@ -7457,7 +7470,13 @@ function ChatPage(props: ChatPageProps) {
     const detail = avatarProfileCard.detail
     setChatSnsTimelineTarget({
       username: avatarProfileCard.target.username,
-      displayName: detail?.remark || detail?.nickName || detail?.displayName || avatarProfileCard.target.displayName || avatarProfileCard.target.username,
+      displayName: displayNameOrFallback(
+        avatarProfileCard.target.username,
+        detail?.remark,
+        detail?.nickName,
+        detail?.displayName,
+        avatarProfileCard.target.displayName
+      ),
       avatarUrl: detail?.avatarUrl || avatarProfileCard.target.avatarUrl
     })
     closeAvatarProfileCard()
@@ -7699,6 +7718,11 @@ function ChatPage(props: ChatPageProps) {
     const groupSenderDisplayName = matchedGroupMember
       ? resolveQuotedGroupMemberDisplayName(matchedGroupMember)
       : undefined
+    const groupSenderNickname = pickDisplayName(
+      matchedGroupMember?.groupNickname,
+      groupSenderDisplayName,
+      isCurrentSessionGroup ? msg.senderDisplayName : undefined
+    )
 
     return (
       <div className={`message-wrapper ${wrapperClass} ${highlightedMessageSet.has(messageKey) ? 'new-message' : ''}`}>
@@ -7715,6 +7739,7 @@ function ChatPage(props: ChatPageProps) {
           myWxid={myWxid}
           isGroupChat={isCurrentSessionGroup}
           groupSenderDisplayName={groupSenderDisplayName}
+          groupSenderNickname={groupSenderNickname}
           quoteLayout={quoteLayout}
           autoTranscribeVoiceEnabled={autoTranscribeVoiceEnabled}
           onRequireModelDownload={handleRequireModelDownload}
@@ -7942,12 +7967,12 @@ function ChatPage(props: ChatPageProps) {
                       >
                         <Avatar
                           src={session?.avatarUrl}
-                          name={session?.displayName || sessionId}
+                          name={displayNameOrFallback(sessionId, session?.displayName)}
                           size={48}
                         />
                         <div className="session-content">
                           <div className="session-top">
-                            <span className="session-name">{session?.displayName || sessionId}</span>
+                            <span className="session-name">{displayNameOrFallback(sessionId, session?.displayName)}</span>
                           </div>
                           <div className="session-preview">
                             <HighlightTextNoTruncate text={firstMsg.parsedContent || firstMsg.content || ''} keyword={globalMsgQuery} />
@@ -8218,10 +8243,10 @@ function ChatPage(props: ChatPageProps) {
                       )
                       const resolvedSenderUsername = resolveSearchSenderUsernameFallback(msg.senderUsername)
                       const resolvedSenderAvatarUrl = normalizeSearchAvatarUrl(msg.senderAvatarUrl)
-                      const resolvedCurrentSessionName = normalizeSearchIdentityText(currentSession?.displayName) ||
+                      const resolvedCurrentSessionName = normalizeDisplayIdentityText(currentSession?.displayName) ||
                         resolveSearchSenderUsernameFallback(currentSession?.username) ||
                         resolveSearchSenderUsernameFallback(currentSessionId)
-                      const senderName = resolvedSenderDisplayName || (
+                      const senderName = pickDisplayName(resolvedSenderDisplayName) || (
                         msg.isSend === 1
                           ? '我'
                           : (isCurrentSessionPrivateSnsSupported
@@ -8364,47 +8389,50 @@ function ChatPage(props: ChatPageProps) {
                     <div className="detail-empty">{groupMemberSearchKeyword.trim() ? '暂无匹配成员' : '暂无群成员数据'}</div>
                   ) : (
                     <div className="group-members-list">
-                      {filteredGroupPanelMembers.map((member) => (
-                        <div key={member.username} className="group-member-item">
-                          <div className="group-member-main">
-                            <Avatar
-                              src={member.avatarUrl}
-                              name={member.displayName || member.username}
-                              size={34}
-                              className="group-member-avatar"
-                            />
-                            <div className="group-member-meta">
-                              <div className="group-member-name-row">
-                                <span className="group-member-name" title={member.displayName || member.username}>
-                                  {member.displayName || member.username}
-                                </span>
-                                <div className="group-member-badges">
-                                  {member.isOwner && (
-                                    <span className="member-flag owner" title="群主">
-                                      群主
-                                    </span>
-                                  )}
-                                  {member.isFriend && (
-                                    <span className="member-flag friend" title="好友">
-                                      好友
-                                    </span>
-                                  )}
+                      {filteredGroupPanelMembers.map((member) => {
+                        const memberDisplayName = displayNameOrFallback(member.username, member.displayName)
+                        return (
+                          <div key={member.username} className="group-member-item">
+                            <div className="group-member-main">
+                              <Avatar
+                                src={member.avatarUrl}
+                                name={memberDisplayName}
+                                size={34}
+                                className="group-member-avatar"
+                              />
+                              <div className="group-member-meta">
+                                <div className="group-member-name-row">
+                                  <span className="group-member-name" title={memberDisplayName}>
+                                    {memberDisplayName}
+                                  </span>
+                                  <div className="group-member-badges">
+                                    {member.isOwner && (
+                                      <span className="member-flag owner" title="群主">
+                                        群主
+                                      </span>
+                                    )}
+                                    {member.isFriend && (
+                                      <span className="member-flag friend" title="好友">
+                                        好友
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+                                <span className="group-member-id" title={member.alias || member.username}>
+                                  {member.alias || member.username}
+                                </span>
                               </div>
-                              <span className="group-member-id" title={member.alias || member.username}>
-                                {member.alias || member.username}
-                              </span>
                             </div>
+                            <span className={`group-member-count ${member.messageCountStatus}`}>
+                              {member.messageCountStatus === 'loading'
+                                ? '统计中'
+                                : member.messageCountStatus === 'failed'
+                                  ? '统计失败'
+                                  : `${member.messageCount.toLocaleString()} 条`}
+                            </span>
                           </div>
-                          <span className={`group-member-count ${member.messageCountStatus}`}>
-                            {member.messageCountStatus === 'loading'
-                              ? '统计中'
-                              : member.messageCountStatus === 'failed'
-                                ? '统计失败'
-                                : `${member.messageCount.toLocaleString()} 条`}
-                          </span>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -8415,7 +8443,7 @@ function ChatPage(props: ChatPageProps) {
                   <div className="detail-header">
                     <div className="detail-title-wrap">
                       <h4>AI 群聊总结</h4>
-                      <span className="detail-title-sub">{currentSession?.displayName || currentSessionId}</span>
+                      <span className="detail-title-sub">{displayNameOrFallback(currentSessionId || '', currentSession?.displayName)}</span>
                     </div>
                     <button className="close-btn" onClick={() => setShowGroupSummaryPanel(false)}>
                       <X size={16} />
@@ -8555,13 +8583,24 @@ function ChatPage(props: ChatPageProps) {
                       <div className="detail-overview-card">
                         <Avatar
                           src={currentSession?.avatarUrl}
-                          name={sessionDetail.remark || sessionDetail.nickName || currentSession?.displayName || sessionDetail.wxid}
+                          name={displayNameOrFallback(
+                            sessionDetail.wxid,
+                            sessionDetail.remark,
+                            sessionDetail.nickName,
+                            currentSession?.displayName
+                          )}
                           size={42}
                           className="detail-overview-avatar"
                         />
                         <div className="detail-overview-meta">
                           <span className="detail-overview-name">
-                            {sessionDetail.remark || sessionDetail.nickName || currentSession?.displayName || sessionDetail.alias || sessionDetail.wxid}
+                            {displayNameOrFallback(
+                              sessionDetail.wxid,
+                              sessionDetail.remark,
+                              sessionDetail.nickName,
+                              currentSession?.displayName,
+                              sessionDetail.alias
+                            )}
                           </span>
                           <span className="detail-overview-sub">
                             {sessionDetail.alias || sessionDetail.wxid}
@@ -9650,13 +9689,13 @@ function MessageInsightControl({
     try {
       const result = await window.electronAPI.insight.generateMessageInsight({
         sessionId: session.username,
-        displayName: displayName || session.displayName || session.username,
+        displayName: displayNameOrFallback(session.username, displayName, session.displayName),
         avatarUrl: avatarUrl || session.avatarUrl,
         targetLocalId: message.localId,
         targetCreateTime: message.createTime,
         targetMessageKey: messageKey,
         targetText,
-        targetSenderName: senderName || displayName || session.displayName || session.username,
+        targetSenderName: displayNameOrFallback(session.username, senderName, displayName, session.displayName),
         contextCount,
         forceRefresh
       })
@@ -9782,7 +9821,15 @@ function AvatarProfileCard({
 }) {
   const { target, detail } = card
   const username = detail?.wxid || target.username || ''
-  const displayName = detail?.remark || detail?.nickName || detail?.displayName || target.displayName || username || '微信用户'
+  const displayName = displayNameOrFallback(
+    '微信用户',
+    detail?.remark,
+    detail?.nickName,
+    detail?.displayName,
+    target.displayName,
+    username
+  )
+  const groupNickname = target.isGroupMember ? pickDisplayName(target.groupNickname) : ''
   const nickname = detail?.nickName && detail.nickName !== displayName ? detail.nickName : ''
   const alias = detail?.alias || ''
   const avatarUrl = detail?.avatarUrl || target.avatarUrl
@@ -9793,6 +9840,7 @@ function AvatarProfileCard({
       : (target.canOpenMoments ? '暂无可预览媒体' : '不支持朋友圈')
   const messageDate = target.messageTime ? formatYmdHmDateTimeFromSeconds(target.messageTime) : ''
   const profileRows = [
+    groupNickname ? { label: '群昵称', value: groupNickname } : null,
     nickname ? { label: '昵称', value: nickname } : null,
     detail?.remark ? { label: '备注', value: detail.remark } : null,
     alias ? { label: '微信号', value: alias, copyField: 'avatarProfileAlias' } : null,
@@ -9908,6 +9956,7 @@ function MessageBubble({
   myWxid,
   isGroupChat,
   groupSenderDisplayName,
+  groupSenderNickname,
   quoteLayout,
   autoTranscribeVoiceEnabled,
   onRequireModelDownload,
@@ -9928,6 +9977,7 @@ function MessageBubble({
   myWxid?: string;
   isGroupChat?: boolean;
   groupSenderDisplayName?: string;
+  groupSenderNickname?: string;
   quoteLayout: configService.QuoteLayout;
   autoTranscribeVoiceEnabled?: boolean;
   onRequireModelDownload?: (sessionId: string, messageId: string) => void;
@@ -10268,7 +10318,11 @@ function MessageBubble({
       (!isGroupChat || Date.now() - (cached.updatedAt || 0) < SENDER_AVATAR_CACHE_TTL_MS)
     )
     setSenderAvatarUrl((cachedFresh ? cached?.avatarUrl : undefined) || message.senderAvatarUrl || undefined)
-    setSenderName(groupSenderDisplayName || (cachedFresh ? cached?.displayName : undefined) || message.senderDisplayName || undefined)
+    setSenderName(pickDisplayName(
+      groupSenderDisplayName,
+      cachedFresh ? cached?.displayName : undefined,
+      message.senderDisplayName
+    ))
 
     if (!sender || !(isGroupChat || (isSent && !myAvatarUrl))) return
 
@@ -11145,8 +11199,8 @@ function MessageBubble({
   // - 自己发的：优先使用 myAvatarUrl，缺失则用 senderAvatarUrl (补救)
   // - 群聊中对方发的：使用发送者头像
   // - 私聊中对方发的：使用会话头像
-  const fallbackSenderName = String(message.senderDisplayName || message.senderUsername || '').trim() || undefined
-  const resolvedSenderName = groupSenderDisplayName || senderName || fallbackSenderName
+  const fallbackSenderName = pickDisplayName(message.senderDisplayName, message.senderUsername)
+  const resolvedSenderName = pickDisplayName(groupSenderDisplayName, senderName, fallbackSenderName)
   const resolvedSenderAvatarUrl = senderAvatarUrl || message.senderAvatarUrl
   const avatarUrl = isSent
     ? (myAvatarUrl || resolvedSenderAvatarUrl)
@@ -11160,8 +11214,11 @@ function MessageBubble({
       displayName: isSent
         ? '我'
         : (isGroupChat
-            ? (resolvedSenderName || message.senderDisplayName || message.senderUsername || '群成员')
-            : (session.displayName || session.username || '微信用户')),
+            ? displayNameOrFallback('群成员', resolvedSenderName, message.senderDisplayName, message.senderUsername)
+            : displayNameOrFallback('微信用户', session.displayName, session.username)),
+      groupNickname: isGroupChat && !isSent
+        ? pickDisplayName(groupSenderNickname, groupSenderDisplayName)
+        : undefined,
       avatarUrl,
       isSelf: isSent,
       isGroupMember: Boolean(isGroupChat && !isSent)
@@ -11170,6 +11227,8 @@ function MessageBubble({
     avatarUrl,
     isGroupChat,
     isSent,
+    groupSenderDisplayName,
+    groupSenderNickname,
     message.senderDisplayName,
     message.senderUsername,
     myWxid,
@@ -11197,9 +11256,9 @@ function MessageBubble({
       message={message}
       messageKey={messageKey}
       session={session}
-      displayName={session.displayName || session.username}
+      displayName={displayNameOrFallback(session.username, session.displayName)}
       avatarUrl={avatarUrl}
-      senderName={resolvedSenderName || session.displayName || session.username}
+      senderName={displayNameOrFallback(session.username, resolvedSenderName, session.displayName)}
       targetText={cleanedParsedContent}
       contextCount={aiMessageInsightContextCount || 50}
       compact={!isGroupChat}
@@ -11208,7 +11267,7 @@ function MessageBubble({
 
   // 是否有引用消息
   const hasQuote = quotedContent.length > 0
-  const displayQuotedSenderName = quotedSenderName || quotedSenderFallbackName
+  const displayQuotedSenderName = pickDisplayName(quotedSenderName, quotedSenderFallbackName)
   const quotedJumpTarget = useMemo<QuotedMessageJumpTarget | null>(() => {
     if (!hasQuote) return null
 
@@ -12572,6 +12631,7 @@ const MemoMessageBubble = React.memo(MessageBubble, (prevProps, nextProps) => {
   if (prevProps.myWxid !== nextProps.myWxid) return false
   if (prevProps.isGroupChat !== nextProps.isGroupChat) return false
   if (prevProps.groupSenderDisplayName !== nextProps.groupSenderDisplayName) return false
+  if (prevProps.groupSenderNickname !== nextProps.groupSenderNickname) return false
   if (prevProps.quoteLayout !== nextProps.quoteLayout) return false
   if (prevProps.autoTranscribeVoiceEnabled !== nextProps.autoTranscribeVoiceEnabled) return false
   if (prevProps.isSelectionMode !== nextProps.isSelectionMode) return false

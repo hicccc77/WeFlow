@@ -21,6 +21,7 @@ import {
     getExportDateRangeLabel,
     type ExportDateRangeSelection
 } from '../utils/exportDateRange'
+import { displayNameForCompare, displayNameOrFallback } from '../utils/displayName'
 
 const SNS_PAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const SNS_PAGE_CACHE_POST_LIMIT = 200
@@ -135,7 +136,7 @@ const readSidebarUserProfileCache = (): SidebarUserProfile | null => {
         if (!parsed || typeof parsed !== 'object') return null
         return {
             wxid: String(parsed.wxid || '').trim(),
-            displayName: String(parsed.displayName || '').trim(),
+            displayName: typeof parsed.displayName === 'string' ? parsed.displayName : '',
             alias: parsed.alias ? String(parsed.alias).trim() : undefined,
             avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl).trim() : undefined
         }
@@ -155,7 +156,7 @@ const normalizeAccountId = (value?: string | null): string => {
     return (suffixMatch ? suffixMatch[1] : trimmed).toLowerCase()
 }
 
-const normalizeNameForCompare = (value?: string | null): string => String(value || '').trim().toLowerCase()
+const normalizeNameForCompare = (value?: string | null): string => displayNameForCompare(value)
 
 export default function SnsPage() {
     const [posts, setPosts] = useState<SnsPost[]>([])
@@ -431,7 +432,7 @@ export default function SnsPage() {
 
         const tsDiff = Number(b.lastSessionTimestamp || 0) - Number(a.lastSessionTimestamp || 0)
         if (tsDiff !== 0) return tsDiff
-        return (a.displayName || a.username).localeCompare((b.displayName || b.username), 'zh-Hans-CN')
+        return displayNameOrFallback(a.username, a.displayName).localeCompare(displayNameOrFallback(b.username, b.displayName), 'zh-Hans-CN')
     }, [normalizePostCount])
 
     const sortContactsForRanking = useCallback((input: Contact[]): Contact[] => {
@@ -472,7 +473,7 @@ export default function SnsPage() {
     const exportSelectedContactsSummary = useMemo(() => {
         if (exportScope.kind !== 'selected' || exportScope.usernames.length === 0) return ''
         const contactMap = new Map(contacts.map((contact) => [contact.username, contact]))
-        const names = exportScope.usernames.map((username) => contactMap.get(username)?.displayName || username)
+        const names = exportScope.usernames.map((username) => displayNameOrFallback(username, contactMap.get(username)?.displayName))
         if (names.length <= 2) return names.join('、')
         return `${names.slice(0, 2).join('、')} 等 ${names.length} 位联系人`
     }, [contacts, exportScope])
@@ -480,7 +481,7 @@ export default function SnsPage() {
     const selectedFeedContactsSummary = useMemo(() => {
         if (selectedContactUsernames.length === 0) return ''
         const contactMap = new Map(contacts.map((contact) => [contact.username, contact]))
-        const names = selectedContactUsernames.map((username) => contactMap.get(username)?.displayName || username)
+        const names = selectedContactUsernames.map((username) => displayNameOrFallback(username, contactMap.get(username)?.displayName))
         if (names.length <= 2) return names.join('、')
         return `${names.slice(0, 2).join('、')} 等 ${names.length} 人`
     }, [contacts, selectedContactUsernames])
@@ -538,7 +539,7 @@ export default function SnsPage() {
         if (!resolvedCurrentUserContact) return
         setAuthorTimelineTarget({
             username: resolvedCurrentUserContact.username,
-            displayName: resolvedCurrentUserContact.displayName || currentUserProfile.displayName || resolvedCurrentUserContact.username,
+            displayName: displayNameOrFallback(resolvedCurrentUserContact.username, resolvedCurrentUserContact.displayName, currentUserProfile.displayName),
             avatarUrl: resolvedCurrentUserContact.avatarUrl || currentUserProfile.avatarUrl
         })
     }, [currentUserProfile.avatarUrl, currentUserProfile.displayName, resolvedCurrentUserContact])
@@ -599,19 +600,21 @@ export default function SnsPage() {
         }
     }, [ensureSnsCacheScopeKey, isDefaultViewNow])
 
-    const hydrateSnsPageCache = useCallback(async () => {
+    const hydrateSnsPageCache = useCallback(async (): Promise<boolean> => {
         try {
             const scopeKey = await ensureSnsCacheScopeKey()
             const cached = await configService.getSnsPageCache(scopeKey)
-            if (!cached) return
-            if (Date.now() - cached.updatedAt > SNS_PAGE_CACHE_TTL_MS) return
+            if (!cached) return false
+            if (Date.now() - cached.updatedAt > SNS_PAGE_CACHE_TTL_MS) return false
 
             const cachedOverview = cached.overviewStats
+            let hasReadyOverviewCache = false
             if (cachedOverview) {
                 const cachedTotalPosts = Math.max(0, Number(cachedOverview.totalPosts || 0))
                 const cachedTotalFriends = Math.max(0, Number(cachedOverview.totalFriends || 0))
                 const hasCachedPosts = Array.isArray(cached.posts) && cached.posts.length > 0
                 const hasOverviewData = cachedTotalPosts > 0 || cachedTotalFriends > 0
+                hasReadyOverviewCache = hasOverviewData || !hasCachedPosts
                 setOverviewStats({
                     totalPosts: cachedTotalPosts,
                     totalFriends: cachedTotalFriends,
@@ -622,7 +625,7 @@ export default function SnsPage() {
                     latestTime: cachedOverview.latestTime ?? null
                 })
                 // 只有明确有统计值（或确实无帖子）时才把缓存视为 ready，避免历史异常 0 卡住显示。
-                setOverviewStatsStatus(hasOverviewData || !hasCachedPosts ? 'ready' : 'loading')
+                setOverviewStatsStatus(hasReadyOverviewCache ? 'ready' : 'loading')
             }
 
             if (Array.isArray(cached.posts) && cached.posts.length > 0) {
@@ -641,16 +644,21 @@ export default function SnsPage() {
                     setHasNewer(false)
                 }
             }
+            return hasReadyOverviewCache
         } catch (error) {
             console.error('Failed to hydrate SNS page cache:', error)
+            return false
         }
     }, [ensureSnsCacheScopeKey])
 
-    const loadOverviewStats = useCallback(async (options?: { force?: boolean }) => {
-        setOverviewStatsStatus('loading')
+    const loadOverviewStats = useCallback(async (options?: { force?: boolean; background?: boolean }) => {
+        const background = options?.background === true
+        if (!background) {
+            setOverviewStatsStatus('loading')
+        }
         try {
             const statsResult = await window.electronAPI.sns.getExportStats(
-                options?.force ? { forceRefresh: true } : undefined
+                options?.force ? { forceRefresh: true } : { preferCache: true }
             )
             if (!statsResult.success || !statsResult.data) {
                 throw new Error(statsResult.error || '获取朋友圈统计失败')
@@ -692,7 +700,9 @@ export default function SnsPage() {
             void persistSnsPageCache({ overviewStats: nextOverviewStats })
         } catch (error) {
             console.error('Failed to load SNS overview stats:', error)
-            setOverviewStatsStatus('error')
+            if (!background) {
+                setOverviewStatsStatus('error')
+            }
         }
     }, [persistSnsPageCache])
 
@@ -1452,7 +1462,7 @@ export default function SnsPage() {
                     const hasCachedCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount)
                     return {
                         username: contact.username,
-                        displayName: contact.displayName || contact.username,
+                        displayName: displayNameOrFallback(contact.username, contact.displayName),
                         avatarUrl: cachedAvatarMap[contact.username]?.avatarUrl,
                         remark: contact.remark,
                         nickname: contact.nickname,
@@ -1588,7 +1598,7 @@ export default function SnsPage() {
                         if (!extra) return contact
                         return {
                             ...contact,
-                            displayName: extra.displayName || contact.displayName,
+                            displayName: displayNameOrFallback(contact.displayName, extra.displayName),
                             avatarUrl: extra.avatarUrl || contact.avatarUrl
                         }
                     })
@@ -1666,7 +1676,7 @@ export default function SnsPage() {
     const openContactTimeline = useCallback((contact: Contact) => {
         setAuthorTimelineTarget({
             username: contact.username,
-            displayName: contact.displayName || contact.username,
+            displayName: displayNameOrFallback(contact.username, contact.displayName),
             avatarUrl: contact.avatarUrl
         })
     }, [])
@@ -1744,9 +1754,11 @@ export default function SnsPage() {
 
     // Initial Load & Listeners
     useEffect(() => {
-        void hydrateSnsPageCache()
-        loadContacts()
-        loadOverviewStats()
+        void (async () => {
+            const hasOverviewCache = await hydrateSnsPageCache()
+            loadContacts()
+            loadOverviewStats(hasOverviewCache ? { background: true } : undefined)
+        })()
         void checkCacheMigrationStatus()
     }, [checkCacheMigrationStatus, hydrateSnsPageCache, loadContacts, loadOverviewStats])
 
@@ -1756,7 +1768,7 @@ export default function SnsPage() {
             if (cachedProfile) {
                 setCurrentUserProfile((prev) => ({
                     wxid: cachedProfile.wxid || prev.wxid,
-                    displayName: cachedProfile.displayName || prev.displayName,
+                    displayName: displayNameOrFallback(prev.displayName, cachedProfile.displayName),
                     alias: cachedProfile.alias || prev.alias,
                     avatarUrl: cachedProfile.avatarUrl || prev.avatarUrl
                 }))
@@ -1768,7 +1780,7 @@ export default function SnsPage() {
                 if (!resolvedWxid && !cachedProfile) return
                 setCurrentUserProfile((prev) => ({
                     wxid: resolvedWxid || prev.wxid,
-                    displayName: prev.displayName || cachedProfile?.displayName || resolvedWxid || '未识别用户',
+                    displayName: displayNameOrFallback('未识别用户', prev.displayName, cachedProfile?.displayName, resolvedWxid),
                     alias: prev.alias || cachedProfile?.alias,
                     avatarUrl: prev.avatarUrl || cachedProfile?.avatarUrl
                 }))
@@ -1815,10 +1827,12 @@ export default function SnsPage() {
             setPosts([]); setHasMore(true); setHasNewer(false);
             setSelectedContactUsernames([])
             setSearchKeyword(''); setJumpTargetDate(undefined);
-            void hydrateSnsPageCache()
-            loadContacts();
-            loadOverviewStats();
-            loadPosts({ reset: true });
+            void (async () => {
+                const hasOverviewCache = await hydrateSnsPageCache()
+                loadContacts();
+                loadOverviewStats(hasOverviewCache ? { background: true } : undefined);
+                loadPosts({ reset: true });
+            })()
         }
         window.addEventListener('wxid-changed', handleChange as EventListener)
         return () => window.removeEventListener('wxid-changed', handleChange as EventListener)
@@ -1922,7 +1936,7 @@ export default function SnsPage() {
                                     onClick={openCurrentUserTimeline}
                                     disabled={!resolvedCurrentUserContact}
                                     title={resolvedCurrentUserContact
-                                        ? `打开${resolvedCurrentUserContact.displayName || '我'}的朋友圈详情`
+                                        ? `打开${displayNameOrFallback('我', resolvedCurrentUserContact.displayName)}的朋友圈详情`
                                         : '未在右侧联系人列表中匹配到当前账号'}
                                 >
                                     <span className="feed-my-timeline-label">我的朋友圈</span>

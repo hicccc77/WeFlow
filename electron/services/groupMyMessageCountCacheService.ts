@@ -1,5 +1,7 @@
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { writeFile } from 'fs/promises'
+import { app } from 'electron'
 import { ConfigService } from './config'
 
 const CACHE_VERSION = 1
@@ -39,6 +41,9 @@ function normalizeEntry(raw: unknown): GroupMyMessageCountCacheEntry | null {
 
 export class GroupMyMessageCountCacheService {
   private readonly cacheFilePath: string
+  private persistTimer: NodeJS.Timeout | null = null
+  private persistInFlight = false
+  private persistDirty = false
   private store: GroupMyMessageCountCacheStore = {
     version: CACHE_VERSION,
     scopes: {}
@@ -51,6 +56,7 @@ export class GroupMyMessageCountCacheService {
     this.cacheFilePath = join(basePath, 'group-my-message-counts.json')
     this.ensureCacheDir()
     this.load()
+    app?.once('will-quit', () => this.flushSync())
   }
 
   private ensureCacheDir(): void {
@@ -158,6 +164,10 @@ export class GroupMyMessageCountCacheService {
 
   clearAll(): void {
     this.store = { version: CACHE_VERSION, scopes: {} }
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
     try {
       rmSync(this.cacheFilePath, { force: true })
     } catch (error) {
@@ -194,7 +204,40 @@ export class GroupMyMessageCountCacheService {
     this.store.scopes = trimmedScopes
   }
 
+  /** 防抖异步落盘：批量刷新群统计时避免连续同步写盘阻塞主线程 */
   private persist(): void {
+    if (this.persistTimer) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      void this.persistNow()
+    }, 1000)
+    this.persistTimer.unref?.()
+  }
+
+  private async persistNow(): Promise<void> {
+    if (this.persistInFlight) {
+      this.persistDirty = true
+      return
+    }
+    this.persistInFlight = true
+    try {
+      await writeFile(this.cacheFilePath, JSON.stringify(this.store), 'utf8')
+    } catch (error) {
+      console.error('GroupMyMessageCountCacheService: 保存缓存失败', error)
+    } finally {
+      this.persistInFlight = false
+      if (this.persistDirty) {
+        this.persistDirty = false
+        void this.persistNow()
+      }
+    }
+  }
+
+  /** 退出前把尚未落盘的改动同步写入 */
+  private flushSync(): void {
+    if (!this.persistTimer) return
+    clearTimeout(this.persistTimer)
+    this.persistTimer = null
     try {
       writeFileSync(this.cacheFilePath, JSON.stringify(this.store), 'utf8')
     } catch (error) {

@@ -38,6 +38,32 @@ export function setNotificationNavigateHandler(
 let notificationWindow: BrowserWindow | null = null;
 let closeTimer: NodeJS.Timeout | null = null;
 
+// 空闲销毁：隐藏的通知窗口（含渲染进程）常驻占用 ~120MB 工作集，
+// 通知稀少时不值得养着。隐藏后闲置超时即销毁，下一条通知重新冷启动
+const IDLE_DESTROY_DELAY_MS = 3 * 60 * 1000;
+let idleDestroyTimer: NodeJS.Timeout | null = null;
+
+function cancelIdleDestroy() {
+  if (idleDestroyTimer) {
+    clearTimeout(idleDestroyTimer);
+    idleDestroyTimer = null;
+  }
+}
+
+function scheduleIdleDestroy() {
+  cancelIdleDestroy();
+  idleDestroyTimer = setTimeout(() => {
+    idleDestroyTimer = null;
+    // 可见期间不销毁（cancel/schedule 时序兜底）
+    if (notificationWindow && !notificationWindow.isDestroyed() && notificationWindow.isVisible()) {
+      scheduleIdleDestroy();
+      return;
+    }
+    destroyNotificationWindow();
+  }, IDLE_DESTROY_DELAY_MS);
+  idleDestroyTimer.unref?.();
+}
+
 // 原生玻璃面板：与通知窗口一样常驻复用（创建后隐藏待命），
 // 展示期跟随渲染层上报的卡片实测矩形（notification:glassRect）
 let glassPanel: import("@hicccc77/electron-liquid-glass").GlassPanel | null = null;
@@ -138,6 +164,7 @@ function refreshDesktopSourceId(): Promise<void> {
 }
 
 export function destroyNotificationWindow() {
+  cancelIdleDestroy();
   if (closeTimer) {
     clearTimeout(closeTimer);
     closeTimer = null;
@@ -290,6 +317,7 @@ export async function showNotification(data: any) {
     return;
   }
 
+  cancelIdleDestroy();
   let win = notificationWindow;
   if (!win || win.isDestroyed()) {
     win = createNotificationWindow();
@@ -469,6 +497,7 @@ export async function registerNotificationHandlers() {
       notificationWindow.hide();
       notificationWindow.setIgnoreMouseEvents(true, { forward: true });
     }
+    scheduleIdleDestroy();
   });
 
   // —— 原生玻璃面板生命周期（仅 nativeGlass 可用时渲染层才会发这些消息）——
@@ -555,6 +584,8 @@ export async function registerNotificationHandlers() {
           [],
         );
       }
+      // 预热窗口若迟迟没有通知到来，按空闲策略回收
+      scheduleIdleDestroy();
     }, 3000);
     if (!nativeGlass) {
       // 显示器增删后源 ID 可能失效，重新预热

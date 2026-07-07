@@ -1,10 +1,13 @@
 .session-table-container {
+  --session-table-min-width: 980px;
+
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg-surface, var(--bg-primary)); // Fallback
   border-radius: 16px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: 0 4px 20px color-mix(in srgb, var(--shadow-color) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
 
@@ -21,6 +24,7 @@
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
     gap: 24px;
     -webkit-app-region: no-drag;
+    min-width: var(--session-table-min-width);
 
     .st-tabs {
       display: flex;
@@ -104,6 +108,73 @@
       }
     }
 
+    .st-selection-actions {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+
+      .st-selection-count {
+        font-size: 13px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+
+      .st-selection-btn {
+        height: 28px;
+        padding: 0 16px;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background 0.16s ease,
+          border-color 0.16s ease,
+          color 0.16s ease,
+          box-shadow 0.16s ease,
+          transform 0.16s ease;
+
+        &:hover {
+          transform: translateY(-1px);
+        }
+
+        &:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+        }
+
+        &.primary {
+          border: 1px solid var(--primary);
+          background: var(--primary);
+          color: var(--on-primary, #fff);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 14%, transparent);
+
+          &:hover {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+          }
+        }
+
+        &.secondary {
+          border: 1px solid color-mix(in srgb, var(--primary) 62%, transparent);
+          background: color-mix(in srgb, var(--primary) 7%, var(--bg-surface, var(--bg-primary)));
+          color: var(--primary);
+
+          &:hover {
+            border-color: var(--primary);
+            background: color-mix(in srgb, var(--primary) 12%, var(--bg-surface, var(--bg-primary)));
+          }
+        }
+      }
+    }
+
     .st-refresh-stats-btn {
       width: 34px;
       height: 34px;
@@ -148,6 +219,7 @@
     align-items: center;
     gap: 8px;
     padding: 0 24px;
+    min-width: var(--session-table-min-width);
   }
 
   // ── Header Row ──────────────────────────────────────────────────────────
@@ -191,6 +263,32 @@
       height: 100px;
       color: var(--text-tertiary);
       font-size: 14px;
+    }
+
+    .error-state {
+      height: 100%;
+      min-width: var(--session-table-min-width);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 32px;
+      text-align: center;
+      color: var(--text-secondary);
+
+      .error-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #ef4444;
+      }
+
+      .error-message {
+        max-width: 520px;
+        font-size: 13px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
     }
 
     .st-metrics-status {

@@ -145,15 +145,9 @@ if (config.userDataPath) {
 }
 process.env.WEFLOW_PROJECT_NAME = process.env.WEFLOW_PROJECT_NAME || 'WeFlow'
 
-const shouldUseWeliveEngine = () => {
-  if (config.mode === 'contacts') return false
-  const explicit = String(config.options?.exportEngine || config.options?.engine || '').trim().toLowerCase()
-  if (explicit === 'welive') return true
-  if (explicit === 'legacy') return false
-  const env = String(process.env.WEFLOW_EXPORT_ENGINE || '').trim().toLowerCase()
-  if (env === 'legacy') return false
-  return true
-}
+// 消息导出强制走 WeLive 引擎（不提供 legacy 回退开关）；
+// 仅联系人导出仍由 worker 内置流程处理。
+const shouldUseWeliveEngine = () => config.mode !== 'contacts'
 
 const normalizeImageXorKey = (value: unknown): string | number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) return value

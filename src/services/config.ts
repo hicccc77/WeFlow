@@ -158,6 +158,7 @@ export interface ExportDefaultMediaConfig {
   voices: boolean
   emojis: boolean
   files: boolean
+  maxFileSizeMb: number
 }
 
 export type ExportFileNamingMode = 'classic' | 'date-range'
@@ -172,7 +173,8 @@ const DEFAULT_EXPORT_MEDIA_CONFIG: ExportDefaultMediaConfig = {
   videos: true,
   voices: true,
   emojis: true,
-  files: true
+  files: true,
+  maxFileSizeMb: 200
 }
 
 // 获取解密密钥
@@ -544,17 +546,22 @@ export async function getExportDefaultMedia(): Promise<ExportDefaultMediaConfig 
       videos: value,
       voices: value,
       emojis: value,
-      files: value
+      files: value,
+      maxFileSizeMb: DEFAULT_EXPORT_MEDIA_CONFIG.maxFileSizeMb
     }
   }
   if (value && typeof value === 'object') {
     const raw = value as Partial<Record<keyof ExportDefaultMediaConfig, unknown>>
+    const rawMaxFileSizeMb = Number(raw.maxFileSizeMb)
     return {
       images: typeof raw.images === 'boolean' ? raw.images : DEFAULT_EXPORT_MEDIA_CONFIG.images,
       videos: typeof raw.videos === 'boolean' ? raw.videos : DEFAULT_EXPORT_MEDIA_CONFIG.videos,
       voices: typeof raw.voices === 'boolean' ? raw.voices : DEFAULT_EXPORT_MEDIA_CONFIG.voices,
       emojis: typeof raw.emojis === 'boolean' ? raw.emojis : DEFAULT_EXPORT_MEDIA_CONFIG.emojis,
-      files: typeof raw.files === 'boolean' ? raw.files : DEFAULT_EXPORT_MEDIA_CONFIG.files
+      files: typeof raw.files === 'boolean' ? raw.files : DEFAULT_EXPORT_MEDIA_CONFIG.files,
+      maxFileSizeMb: Number.isFinite(rawMaxFileSizeMb) && rawMaxFileSizeMb > 0
+        ? Math.max(1, Math.min(4096, Math.floor(rawMaxFileSizeMb)))
+        : DEFAULT_EXPORT_MEDIA_CONFIG.maxFileSizeMb
     }
   }
   return null
@@ -567,7 +574,10 @@ export async function setExportDefaultMedia(media: ExportDefaultMediaConfig): Pr
     videos: media.videos,
     voices: media.voices,
     emojis: media.emojis,
-    files: media.files
+    files: media.files,
+    maxFileSizeMb: Number.isFinite(media.maxFileSizeMb)
+      ? Math.max(1, Math.min(4096, Math.floor(media.maxFileSizeMb)))
+      : DEFAULT_EXPORT_MEDIA_CONFIG.maxFileSizeMb
   })
 }
 

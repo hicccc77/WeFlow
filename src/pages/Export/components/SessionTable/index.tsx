@@ -6,6 +6,7 @@ import type { SessionContentMetric } from '../../hooks/useSessionMetrics'
 import { conversationTabLabels, exportKindPriority } from '../../constants'
 import { getAvatarLetter } from '../../utils/format'
 import { formatLatestMessageTimeFromSeconds } from '../../utils/format'
+import { displayNameOrFallback } from '../../../../utils/displayName'
 import './SessionTable.scss'
 
 interface SessionTableProps {
@@ -22,6 +23,7 @@ interface SessionTableProps {
   onBatchExport?: () => void
   onAutomationExport?: () => void
   isLoading?: boolean
+  error?: string | null
   metricsMap?: Record<string, SessionContentMetric>
   loadingRefs?: Set<string>
   metricsLoadingCount?: number
@@ -43,6 +45,7 @@ const SessionTable: React.FC<SessionTableProps> = ({
   onBatchExport,
   onAutomationExport,
   isLoading,
+  error,
   metricsMap,
   loadingRefs,
   metricsLoadingCount = 0,
@@ -123,15 +126,15 @@ const SessionTable: React.FC<SessionTableProps> = ({
         </div>
 
         {selectedSessionIds.size > 0 && (
-          <div className="st-selection-actions" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>已选 {selectedSessionIds.size} 项</span>
+          <div className="st-selection-actions">
+            <span className="st-selection-count">已选 {selectedSessionIds.size} 项</span>
             {onBatchExport && (
-              <button className="primary-btn" onClick={onBatchExport} style={{ height: '28px', padding: '0 16px', borderRadius: '14px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>
+              <button className="st-selection-btn primary" onClick={onBatchExport}>
                 批量导出
               </button>
             )}
             {onAutomationExport && (
-              <button className="secondary-btn" onClick={onAutomationExport} style={{ height: '28px', padding: '0 16px', borderRadius: '14px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>
+              <button className="st-selection-btn secondary" onClick={onAutomationExport}>
                 创建自动化
               </button>
             )}
@@ -159,8 +162,8 @@ const SessionTable: React.FC<SessionTableProps> = ({
             className={`st-refresh-stats-btn ${isRefreshingStats ? 'refreshing' : ''}`}
             onClick={onRefreshStats}
             disabled={isRefreshingStats || isLoading || sessions.length === 0}
-            title="重建导出统计缓存"
-            aria-label="重建导出统计缓存"
+            title="重新统计当前列表"
+            aria-label="重新统计当前列表"
           >
             <RefreshCw size={16} />
           </button>
@@ -201,7 +204,12 @@ const SessionTable: React.FC<SessionTableProps> = ({
 
       {/* ─── Virtualized List ─────────────────────────────────────────── */}
       <div className="table-body">
-        {isLoading && sessions.length === 0 ? (
+        {error ? (
+          <div className="error-state" role="alert">
+            <div className="error-title">会话加载失败</div>
+            <div className="error-message">{error}</div>
+          </div>
+        ) : isLoading && sessions.length === 0 ? (
           // 初始加载骨架屏，风格与「我的足迹」保持一致
           <div className="st-skeleton-body" aria-busy="true" aria-live="polite">
             <div className="st-skeleton-header">
@@ -241,6 +249,7 @@ const SessionTable: React.FC<SessionTableProps> = ({
               const metrics = metricsMap?.[session.username]
               const isMetricsLoading = !metrics && loadingRefs?.has(session.username)
               const totalCount = metrics?.totalMessages ?? session.messageCountHint ?? 0
+              const sessionDisplayName = displayNameOrFallback(session.username, session.displayName)
 
               return (
                 <div className="st-row" key={session.username}>
@@ -258,11 +267,11 @@ const SessionTable: React.FC<SessionTableProps> = ({
                       {session.avatarUrl ? (
                         <img src={session.avatarUrl} alt="avatar" />
                       ) : (
-                        <span className="avatar-letter">{getAvatarLetter(session.displayName || session.username)}</span>
+                        <span className="avatar-letter">{getAvatarLetter(sessionDisplayName)}</span>
                       )}
                     </div>
                     <div className="st-text">
-                      <span className="st-name" title={session.displayName || session.username}>{session.displayName || session.username}</span>
+                      <span className="st-name" title={sessionDisplayName}>{sessionDisplayName}</span>
                       <span className="st-id" title={session.username}>{session.username}</span>
                     </div>
                   </div>

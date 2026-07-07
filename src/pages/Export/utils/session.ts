@@ -5,6 +5,7 @@
 
 import type { ChatSession as AppChatSession, ContactInfo } from '../../../types/models'
 import type { ConversationTab, SessionRow } from '../types'
+import { displayNameOrFallback, pickDisplayName } from '../../../utils/displayName'
 
 // ─── Session type classification ─────────────────────────────
 
@@ -83,7 +84,7 @@ export const toSessionRowsWithContacts = (
           username: contact.username,
           kind: toKindByContact(contact),
           wechatId: contact.username,
-          displayName: contact.displayName || session?.displayName || contact.username,
+          displayName: displayNameOrFallback(contact.username, contact.displayName, session?.displayName),
           avatarUrl: session?.avatarUrl || contact.avatarUrl,
           remark: contact.remark,
           nickname: contact.nickname,
@@ -94,7 +95,7 @@ export const toSessionRowsWithContacts = (
         const latestA = a.sortTimestamp || a.lastTimestamp || 0
         const latestB = b.sortTimestamp || b.lastTimestamp || 0
         if (latestA !== latestB) return latestB - latestA
-        return (a.displayName || a.username).localeCompare(b.displayName || b.username, 'zh-Hans-CN')
+        return displayNameOrFallback(a.username, a.displayName).localeCompare(displayNameOrFallback(b.username, b.displayName), 'zh-Hans-CN')
       })
   }
 
@@ -105,7 +106,7 @@ export const toSessionRowsWithContacts = (
         ...session,
         kind: toKindByContactType(session, contact),
         wechatId: contact?.username || session.username,
-        displayName: contact?.displayName || session.displayName || session.username,
+        displayName: displayNameOrFallback(session.username, contact?.displayName, session.displayName),
         avatarUrl: session.avatarUrl || contact?.avatarUrl,
         remark: contact?.remark,
         nickname: contact?.nickname,
@@ -136,7 +137,7 @@ export const resolveScopeDisplayNames = (
   rows: SessionRow[], 
   pref: import('../types').DisplayNamePreference
 ): string[] => {
-  return rows.map(r => r.remark || r.nickname || r.displayName || r.username)
+  return rows.map(r => displayNameOrFallback(r.username, r.remark, r.nickname, r.displayName))
 }
 
 // ─── Name comparison helper ──────────────────────────────────
@@ -144,7 +145,7 @@ export const resolveScopeDisplayNames = (
 export const toComparableNameSet = (values: Array<string | undefined | null>): Set<string> => {
   const set = new Set<string>()
   for (const value of values) {
-    const normalized = String(value || '').trim()
+    const normalized = pickDisplayName(value)?.trim() || ''
     if (!normalized) continue
     set.add(normalized)
   }

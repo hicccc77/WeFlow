@@ -1396,7 +1396,8 @@ class MessagePushService {
     const buckets = new Map<string, Set<string>>()
     for (const [memberIdRaw, nicknameRaw] of Object.entries(nicknames || {})) {
       const memberId = String(memberIdRaw || '').trim().toLowerCase()
-      const nickname = String(nicknameRaw || '').trim()
+      const rawNickname = typeof nicknameRaw === 'string' ? nicknameRaw : String(nicknameRaw || '')
+      const nickname = rawNickname.trim() || rawNickname
       if (!memberId || !nickname) continue
       const slot = buckets.get(memberId)
       if (slot) {

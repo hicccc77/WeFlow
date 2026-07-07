@@ -2,6 +2,7 @@ import React from 'react'
 import { Check } from 'lucide-react'
 import { Avatar } from '../../components/Avatar'
 import type { ChatSession, Message } from '../../types/models'
+import { displayNameOrFallback } from '../../utils/displayName'
 
 export interface ChatMessageBubbleProps {
   message: Message
@@ -34,6 +35,7 @@ export interface ChatMessageBubbleProps {
 export interface MessageAvatarProfile {
   username?: string
   displayName: string
+  groupNickname?: string
   avatarUrl?: string
   isSelf?: boolean
   isGroupMember?: boolean
@@ -76,7 +78,7 @@ function ChatMessageBubble({
 }: ChatMessageBubbleProps) {
   const bubbleClass = isSystem ? 'system' : (isSent ? 'sent' : 'received')
   const avatarName = !isSent
-    ? (isGroupChat ? (resolvedSenderName || '?') : (session.displayName || session.username))
+    ? (isGroupChat ? displayNameOrFallback('?', resolvedSenderName) : displayNameOrFallback(session.username, session.displayName))
     : '我'
 
   return (
@@ -116,7 +118,7 @@ function ChatMessageBubble({
             {isGroupChat && !isSent && (
               <div className="sender-line">
                 <div className="sender-name">
-                  {resolvedSenderName || '群成员'}
+                  {displayNameOrFallback('群成员', resolvedSenderName)}
                 </div>
                 {actionNode}
               </div>

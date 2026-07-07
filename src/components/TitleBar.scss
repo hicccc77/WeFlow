@@ -6,6 +6,7 @@
   justify-content: space-between;
   padding-left: 16px;
   padding-right: 8px;
+  app-region: drag;
   -webkit-app-region: drag;
   flex-shrink: 0;
   gap: 8px;
@@ -17,6 +18,23 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+}
+
+.title-custom-controls {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.title-drag-spacer {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 12px;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 .title-logo {
@@ -45,6 +63,7 @@
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+  app-region: no-drag;
   -webkit-app-region: no-drag;
 
   &:hover {
@@ -57,7 +76,9 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 .title-window-control-btn {
@@ -73,6 +94,8 @@
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 
   &:hover {
     background: var(--bg-hover);
@@ -89,8 +112,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-right: auto;
   padding-left: 16px;
+  app-region: no-drag;
   -webkit-app-region: no-drag;
 
   button {

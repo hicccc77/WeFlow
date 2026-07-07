@@ -681,7 +681,8 @@ class InsightService {
       }
       this.dbConnected = true
 
-      const displayName = String(params?.displayName || sessionId).trim() || sessionId
+      const rawDisplayName = typeof params?.displayName === 'string' ? params.displayName : ''
+      const displayName = rawDisplayName.length > 0 ? (rawDisplayName.trim() || rawDisplayName) : sessionId
       insightLog('INFO', `手动触发当前会话见解：${displayName} (${sessionId})`)
       return await this.generateInsightForSession({
         sessionId,
@@ -739,7 +740,10 @@ class InsightService {
     const topPrivateText = privateSegments.length > 0
       ? privateSegments
         .map((item, idx) => {
-          const name = String(item.displayName || item.session_id || `联系人${idx + 1}`).trim()
+          const rawName = typeof item.displayName === 'string' && item.displayName.length > 0
+            ? item.displayName
+            : String(item.session_id || `联系人${idx + 1}`)
+          const name = rawName.trim() || rawName
           const inbound = Number(item.incoming_count) || 0
           const outbound = Number(item.outgoing_count) || 0
           const total = Math.max(Number(item.message_count) || 0, inbound + outbound)
@@ -751,7 +755,10 @@ class InsightService {
     const topMentionText = mentionGroups.length > 0
       ? mentionGroups
         .map((item, idx) => {
-          const name = String(item.displayName || item.session_id || `群聊${idx + 1}`).trim()
+          const rawName = typeof item.displayName === 'string' && item.displayName.length > 0
+            ? item.displayName
+            : String(item.session_id || `群聊${idx + 1}`)
+          const name = rawName.trim() || rawName
           const count = Number(item.count) || 0
           return `${idx + 1}. ${name}（@我 ${count} 次）`
         })
@@ -1080,7 +1087,8 @@ ${afterText}
   }
 
   private async resolveInsightSessionDisplayName(sessionId: string, fallbackDisplayName: string): Promise<string> {
-    const fallback = String(fallbackDisplayName || '').trim()
+    const rawFallback = typeof fallbackDisplayName === 'string' ? fallbackDisplayName : ''
+    const fallback = rawFallback.trim() || rawFallback
     if (fallback && !this.looksLikeWxid(fallback)) {
       return fallback
     }
@@ -1088,7 +1096,8 @@ ${afterText}
     try {
       const sessions = await this.getSessionsCached()
       const matched = sessions.find((session) => String(session.username || '').trim() === sessionId)
-      const cachedDisplayName = String(matched?.displayName || '').trim()
+      const rawCachedDisplayName = typeof matched?.displayName === 'string' ? matched.displayName : ''
+      const cachedDisplayName = rawCachedDisplayName.trim() || rawCachedDisplayName
       if (cachedDisplayName && !this.looksLikeWxid(cachedDisplayName)) {
         return cachedDisplayName
       }
@@ -1098,7 +1107,8 @@ ${afterText}
 
     try {
       const contact = await chatService.getContactAvatar(sessionId)
-      const contactDisplayName = String(contact?.displayName || '').trim()
+      const rawContactDisplayName = typeof contact?.displayName === 'string' ? contact.displayName : ''
+      const contactDisplayName = rawContactDisplayName.trim() || rawContactDisplayName
       if (contactDisplayName && !this.looksLikeWxid(contactDisplayName)) {
         return contactDisplayName
       }
@@ -1387,11 +1397,14 @@ ${afterText}
 
         silentCount++
         const silentDays = Math.floor(silentMs / (24 * 60 * 60 * 1000))
-        insightLog('INFO', `发现沉默联系人：${session.displayName || sessionId}，已沉默 ${silentDays} 天`)
+        const displayName = typeof session.displayName === 'string' && session.displayName.length > 0
+          ? (session.displayName.trim() || session.displayName)
+          : sessionId
+        insightLog('INFO', `发现沉默联系人：${displayName}，已沉默 ${silentDays} 天`)
 
         await this.generateInsightForSession({
           sessionId,
-          displayName: session.displayName || session.username,
+          displayName,
           triggerReason: 'silence',
           silentDays
         })
@@ -1504,12 +1517,15 @@ ${afterText}
           if (cooldownMs - (now - lastAnalysis) > 0) continue
         }
 
-        insightLog('INFO', `${session.displayName || sessionId} 有新消息，准备生成见解...`)
+        const displayName = typeof session.displayName === 'string' && session.displayName.length > 0
+          ? (session.displayName.trim() || session.displayName)
+          : sessionId
+        insightLog('INFO', `${displayName} 有新消息，准备生成见解...`)
         this.lastActivityAnalysis.set(sessionId, now)
 
         await this.generateInsightForSession({
           sessionId,
-          displayName: session.displayName || session.username,
+          displayName,
           triggerReason: 'activity'
         })
         break

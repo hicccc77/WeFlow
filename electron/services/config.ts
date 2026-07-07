@@ -3,6 +3,7 @@ import { existsSync, readdirSync, statSync } from 'fs'
 import crypto from 'crypto'
 import Store from 'electron-store'
 import { expandHomePath } from '../utils/pathUtils'
+import { CacheMapStore } from './cacheMapStore'
 
 // 条件导入 electron（Worker 环境中不可用）
 let app: any = null
@@ -161,9 +162,18 @@ const ENCRYPTED_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 const LOCKABLE_STRING_KEYS: Set<string> = new Set(['decryptKey', 'imageAesKey'])
 const LOCKABLE_NUMBER_KEYS: Set<string> = new Set(['imageXorKey'])
 
+/**
+ * 大体积 UI 缓存键（以 CacheMap 结尾），存入独立的 CacheMapStore。
+ * conf 库对主配置文件的每次 get/set 都是全量同步读写，
+ * 这些缓存曾把配置文件撑到 3.2MB，导致高频主线程阻塞。
+ */
+const isCacheMapKey = (key: string): boolean => key.endsWith('CacheMap')
+
 export class ConfigService {
   private static instance: ConfigService
   private store!: Store<ConfigSchema>
+  // Worker 环境不创建（CacheMap 键仅主进程访问，避免多进程并发写同一文件）
+  private cacheMapStore: CacheMapStore | null = null
 
   // 锁定模式运行时状态
   private unlockedKeys: Map<string, any> = new Map()
@@ -305,6 +315,29 @@ export class ConfigService {
     }
     this.migrateAuthFields()
     this.migrateAiConfig()
+    if (!runningInWorker) {
+      this.cacheMapStore = new CacheMapStore(this.getUserDataPath())
+      this.migrateCacheMapKeys()
+    }
+  }
+
+  /** 一次性迁移：把主配置中的 *CacheMap 大键搬到旁路存储，缩小配置文件 */
+  private migrateCacheMapKeys(): void {
+    if (!this.cacheMapStore) return
+    try {
+      const all = this.store.store as unknown as Record<string, unknown>
+      const cacheKeys = Object.keys(all).filter(isCacheMapKey)
+      if (cacheKeys.length === 0) return
+      for (const key of cacheKeys) {
+        this.cacheMapStore.set(key, all[key])
+        delete all[key]
+      }
+      // 先落盘旁路存储，再整体重写主配置（各一次全量写）
+      this.cacheMapStore.flushSync()
+      ;(this.store as any).store = all
+    } catch (error) {
+      console.error('ConfigService: 迁移 CacheMap 键失败', error)
+    }
   }
 
   // === 状态查询 ===
@@ -321,6 +354,9 @@ export class ConfigService {
   // === get / set ===
 
   get<K extends keyof ConfigSchema>(key: K): ConfigSchema[K] {
+    if (this.cacheMapStore && isCacheMapKey(key as string)) {
+      return this.cacheMapStore.get(key as string) as ConfigSchema[K]
+    }
     const raw = this.store.get(key)
 
     if (ENCRYPTED_BOOL_KEYS.has(key)) {
@@ -362,6 +398,10 @@ export class ConfigService {
   }
 
   set<K extends keyof ConfigSchema>(key: K, value: ConfigSchema[K]): void {
+    if (this.cacheMapStore && isCacheMapKey(key as string)) {
+      this.cacheMapStore.set(key as string, value)
+      return
+    }
     let toStore = value
     const inLockMode = this.isLockMode() && this.unlockPassword
 
@@ -1076,11 +1116,16 @@ export class ConfigService {
   }
 
   getAll(): Partial<ConfigSchema> {
-    return this.store.store
+    const all = { ...this.store.store } as Record<string, unknown>
+    if (this.cacheMapStore) {
+      Object.assign(all, this.cacheMapStore.entries())
+    }
+    return all as Partial<ConfigSchema>
   }
 
   clear(): void {
     this.store.clear()
+    this.cacheMapStore?.clear()
     this.unlockedKeys.clear()
     this.unlockPassword = null
   }
