@@ -14,7 +14,7 @@
   <a href="https://github.com/hicccc77/WeFlow/network/members"><img src="https://img.shields.io/github/forks/hicccc77/WeFlow?style=flat&label=Forks&labelColor=2A3B4C&color=60A5FA" alt="Forks"></a>
   <a href="https://github.com/hicccc77/WeFlow/releases"><img src="https://img.shields.io/github/downloads/hicccc77/WeFlow/total?style=flat&label=Downloads&labelColor=2A3B4C&color=60A5FA" alt="Downloads"></a>
   <br><br>
-  <a href="https://t.me/+AlZ3lfVus8pjMzM1"><img src="https://img.shields.io/badge/Telegram-频道-60A5FA?style=flat&logo=telegram&logoColor=white&labelColor=2A3B4C&color=60A5FA" alt="Telegram Channel" style="height: 24px; vertical-align: middle;"></a>
+  <a href="https://telegram.me/+AlZ3lfVus8pjMzM1"><img src="https://img.shields.io/badge/Telegram-频道-60A5FA?style=flat&logo=telegram&logoColor=white&labelColor=2A3B4C&color=60A5FA" alt="Telegram Channel" style="height: 24px; vertical-align: middle;"></a>
   <a href="https://star-history.com/#hicccc77/WeFlow"><img src="https://api.star-history.com/badge?repo=hicccc77/WeFlow&theme=dark" alt="Star History Rank" style="height: 30px; vertical-align: middle;"></a>
 </p>
 
@@ -28,7 +28,7 @@
 如需沟通技术，或和我们聊聊，请通过以下方式联系：
 
 <a href="mailto:yccccccy@proton.me"><img src="https://img.shields.io/badge/Email-yccccccy%40proton.me-60A5FA?style=flat-square&logo=proton&logoColor=white&labelColor=2A3B4C" alt="Protonmail" height="24px"></a>
-<a href="https://t.me/+AlZ3lfVus8pjMzM1"><img src="https://img.shields.io/badge/Telegram-频道-2CA5E0?style=flat-square&logo=telegram&logoColor=white&labelColor=2A3B4C" alt="Telegram" height="24px"></a>
+<a href="https://telegram.me/+AlZ3lfVus8pjMzM1"><img src="https://img.shields.io/badge/Telegram-频道-2CA5E0?style=flat-square&logo=telegram&logoColor=white&labelColor=2A3B4C" alt="Telegram" height="24px"></a>
 
 
 
