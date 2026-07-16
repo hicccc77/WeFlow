@@ -21,6 +21,8 @@
 >  **Achievement Unlocked:** 本项目已荣获跨国巨头 T 公司及其御用国际律所 MSK 联合颁发的【DMCA 1201 官方认证】。 
 > 官方评价我们的代码使用了 **“Sophisticated techniques (复杂/高级的技术)”**，感谢官方对本人技术水平的高度认可！🎉
 
+---
+
 ## 和我们聊聊
 
 “我们还在，欢迎回来。”
@@ -29,7 +31,6 @@
 
 <a href="mailto:yccccccy@proton.me"><img src="https://img.shields.io/badge/Email-yccccccy%40proton.me-60A5FA?style=flat-square&logo=proton&logoColor=white&labelColor=2A3B4C" alt="Protonmail" height="24px"></a>
 <a href="https://telegram.me/+AlZ3lfVus8pjMzM1"><img src="https://img.shields.io/badge/Telegram-频道-2CA5E0?style=flat-square&logo=telegram&logoColor=white&labelColor=2A3B4C" alt="Telegram" height="24px"></a>
-
 
 
 ##  声明 
@@ -57,6 +58,14 @@
    
 2. **薛定谔的数据浏览器：**
    只要你不去读取它，你的聊天记录就同时处于存在和不存在的叠加态。WeFlow 现在是一个 UI 壳子，只接受用户自行手动破译后输入的 0 和 1。
+
+---
+
+## 🤝 推荐
+
+| Logo | 推荐项目 | 简介 |
+| :--- | :--- | :--- |
+| <a href="https://yujianwudi.top/sign-up?aff=crW7" target="_blank"><img src="https://pub-e262f5d37e5d471eae582fe3611611bc.r2.dev/%E5%A4%A9%E6%9C%BA%E9%98%81logo/retouch_2026060414313519.png" width="50"></a> | **[天机阁 AI](https://yujianwudi.top/sign-up?aff=crW7)** | 开发者与打工人的生产力利器。<br>稳定支持 `GPT`、`Claude`、`Gemini` 等全模型。国内网络极速直连，告别封号与支付烦恼。完全兼容官方接口，按量计费，一分钱都不浪费！ |
 
 ##  致敬
 
