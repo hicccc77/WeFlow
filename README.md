@@ -25,8 +25,6 @@
 
 ## 和我们聊聊
 
-“我们还在，欢迎回来。”
-
 如需沟通技术，或和我们聊聊，请通过以下方式联系：
 
 <a href="mailto:yccccccy@proton.me"><img src="https://img.shields.io/badge/Email-yccccccy%40proton.me-60A5FA?style=flat-square&logo=proton&logoColor=white&labelColor=2A3B4C" alt="Protonmail" height="24px"></a>
