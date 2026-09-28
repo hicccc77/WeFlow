@@ -1,0 +1,145 @@
+.export-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow-color) 40%, transparent);
+  border: 1px solid var(--border-color);
+
+  .top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      margin-right: 10px;
+      white-space: nowrap;
+    }
+
+    .path-selector {
+      display: flex;
+      align-items: center;
+
+      .path-display-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .path-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        padding: 5px 12px;
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        max-width: 240px;
+
+        .path-text {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        &:hover {
+          border-color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 4%, transparent);
+          color: var(--primary);
+        }
+      }
+
+      .open-folder-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+          border-color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 4%, transparent);
+          color: var(--primary);
+        }
+      }
+    }
+
+    .layout-selector {
+      display: flex;
+      align-items: center;
+
+      .layout-pills {
+        display: flex;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        padding: 3px;
+        border: 1px solid var(--border-color);
+
+        .pill-btn {
+          background: transparent;
+          border: none;
+          padding: 5px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+
+          &:hover {
+            color: var(--text-primary);
+            background: color-mix(in srgb, var(--text-tertiary) 15%, transparent);
+          }
+
+          &.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 4px color-mix(in srgb, var(--primary) 40%, transparent);
+          }
+        }
+      }
+    }
+  }
+
+  .top-bar-right {
+    display: flex;
+    align-items: center;
+
+    .global-settings-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border-color));
+      padding: 6px 14px;
+      border-radius: 6px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+
+      &:hover {
+        background: color-mix(in srgb, var(--primary) 8%, transparent);
+        border-color: var(--primary);
+      }
+    }
+  }
+}

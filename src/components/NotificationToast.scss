@@ -1,0 +1,112 @@
+// 通知卡片：玻璃视觉全部由 LiquidGlass 兼容层渲染，
+// 本文件只负责留白、出入场动画与文本排版
+.notification-toast-container {
+    position: relative;
+    width: 100%;
+    // 四周留白：容纳卡片投影，并透出窗口底层的仿桌面背景
+    padding: 12px;
+    opacity: 0;
+    transform: scale(0.96);
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+
+    &.visible {
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+
+    // 玻璃材质与文字颜色均由 useNotificationAdaptiveTheme 按桌面背景的实际对比度
+    // 无级计算后写入 <html> 的 --noti-* 变量（纱层方向/浓度、分区连续文字色、光晕强度）；
+    // 此处仅提供首帧采样前的浅色默认值。投影收敛到留白宽度内，避免被窗口矩形裁剪出脏边
+    --liquid-glass-shadow: var(--noti-shadow, 0 0 0 1px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.22));
+    --liquid-glass-tint: var(--noti-tint, rgba(255, 255, 255, 0.1));
+
+    color: var(--noti-title-color, #2c2c2c);
+
+    .notification-content {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding-right: 14px; // 给右上角关闭按钮留出空间
+    }
+
+    .notification-avatar {
+        flex-shrink: 0;
+    }
+
+    .notification-text {
+        flex: 1;
+        min-width: 0;
+
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+
+            .notification-title {
+                font-weight: 600;
+                font-size: 14px;
+                color: var(--noti-title-color, #2c2c2c);
+                text-shadow: var(--noti-title-halo, none);
+                transition: color 0.08s linear, text-shadow 0.08s linear;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+                flex: 1;
+                min-width: 0; // 关键：允许 flex 子项收缩到内容以下
+                margin-right: 56px; // 给绝对定位的时间 + 关闭按钮留出空间
+            }
+
+            .notification-time {
+                font-size: 12px;
+                color: var(--noti-title-tertiary, #7a7a7a);
+                transition: color 0.08s linear;
+                position: absolute;
+                top: 14px;
+                right: 40px; // 关闭按钮左侧
+                font-variant-numeric: tabular-nums;
+            }
+        }
+
+        .notification-body {
+            font-size: 13px;
+            // 与标题同色（近黑），层级靠字重区分：标题 600、正文默认 400
+            color: var(--noti-body-color, #2c2c2c);
+            text-shadow: var(--noti-body-halo, none);
+            transition: color 0.08s linear, text-shadow 0.08s linear;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-all;
+        }
+    }
+
+    .notification-close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: transparent;
+        color: var(--noti-title-tertiary, #7a7a7a);
+        cursor: pointer;
+        transition: all 0.2s;
+        z-index: 2;
+
+        &:hover {
+            color: var(--noti-title-color, #2c2c2c);
+            background: var(--noti-close-hover-bg, rgba(0, 0, 0, 0.1));
+        }
+    }
+}

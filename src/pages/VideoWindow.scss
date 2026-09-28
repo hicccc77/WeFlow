@@ -1,0 +1,216 @@
+.video-window-container {
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+
+  .title-bar {
+    height: 40px;
+    min-height: 40px;
+    display: flex;
+    background: #1a1a1a;
+    padding-right: 140px;
+    position: relative;
+    z-index: 10;
+
+    .window-drag-area {
+      flex: 1;
+      height: 100%;
+      -webkit-app-region: drag;
+    }
+  }
+
+  .video-viewport {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    background: #000;
+    overflow: hidden;
+    min-height: 0; // 重要：让 flex 子元素可以收缩
+
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .video-loading-overlay,
+    .video-error-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 5;
+    }
+
+    .video-error-overlay {
+      color: #ff6b6b;
+      font-size: 14px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 4;
+
+      svg {
+        filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+      }
+    }
+
+    &:hover .play-overlay {
+      opacity: 1;
+    }
+  }
+
+  .video-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.4) 60%, transparent);
+    padding: 40px 16px 12px;
+    opacity: 0;
+    transition: opacity 0.25s;
+    z-index: 6;
+
+    .progress-bar {
+      height: 16px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      margin-bottom: 8px;
+
+      .progress-track {
+        flex: 1;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        overflow: hidden;
+        transition: height 0.15s;
+
+        .progress-fill {
+          height: 100%;
+          background: var(--primary, #4a9eff);
+          border-radius: 2px;
+        }
+      }
+
+      &:hover .progress-track {
+        height: 5px;
+      }
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .controls-left,
+    .controls-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button {
+      background: transparent;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+    }
+
+    .time-display {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      margin-left: 4px;
+    }
+
+    .volume-control {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      .volume-slider {
+        width: 60px;
+        height: 3px;
+        appearance: none;
+        -webkit-appearance: none;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        cursor: pointer;
+
+        &::-webkit-slider-thumb {
+          appearance: none;
+          -webkit-appearance: none;
+          width: 10px;
+          height: 10px;
+          background: #fff;
+          border-radius: 50%;
+          cursor: pointer;
+        }
+      }
+    }
+  }
+
+  // 鼠标悬停时显示控制栏
+  &:hover .video-controls {
+    opacity: 1;
+  }
+
+  // 播放时如果鼠标不动，隐藏控制栏
+  &.hide-controls .video-controls {
+    opacity: 0;
+  }
+}
+
+.video-window-empty {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+  background-color: #000;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "include": [
+    "vite.config.ts",
+    "electron/**/*.ts",
+    "electron/**/*.d.ts",
+    "src/features/relationship-achievements/**/*.ts",
+    "src/types/electron.d.ts",
+    "src/utils/modelTokenLimits.ts",
+    "src/utils/agentTokenEstimate.ts",
+    "src/utils/agentConversationHistory.ts",
+    "shared/**/*.json"
+  ]
+}

@@ -1,0 +1,340 @@
+// 批量转写 - 共享基础样式（overlay / modal-content / animations）
+// 被 ChatPage.scss 和 BatchTranscribeGlobal.tsx 同时使用
+
+.batch-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: batchFadeIn 0.2s ease-out;
+}
+
+.batch-modal-content {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: batchSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes batchFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes batchSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 批量转写进度浮窗（非阻塞 toast）
+.batch-progress-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border-color);
+  z-index: 10000;
+  animation: batchToastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+
+  .batch-progress-toast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+
+    .batch-progress-toast-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+
+      svg {
+        color: var(--primary);
+      }
+    }
+  }
+
+  .batch-progress-toast-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+  }
+
+  .batch-progress-toast-body {
+    padding: 12px 14px;
+
+    .progress-info-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 8px;
+
+      .progress-text {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: var(--text-secondary);
+
+        .progress-percent {
+          font-weight: 600;
+          color: var(--primary);
+          font-size: 13px;
+        }
+      }
+
+      .progress-eta {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px; // 稍微小一点
+        color: var(--text-tertiary, #999); // 使用更淡的颜色
+
+        svg {
+          width: 12px;
+          height: 12px;
+          opacity: 0.8;
+        }
+      }
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      overflow: hidden;
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary), var(--primary));
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+    }
+  }
+}
+
+@keyframes batchToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.batch-inline-result-toast {
+  .batch-progress-toast-title {
+    svg {
+      color: #22c55e;
+    }
+  }
+
+  .batch-inline-result-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .batch-inline-result-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    font-size: 12px;
+    color: var(--text-secondary);
+
+    svg {
+      flex-shrink: 0;
+    }
+
+    &.success {
+      color: #16a34a;
+      svg { color: #16a34a; }
+    }
+
+    &.fail {
+      color: #dc2626;
+      svg { color: #dc2626; }
+    }
+
+    &.muted {
+      color: var(--text-tertiary, #999);
+      svg { color: var(--text-tertiary, #999); }
+    }
+  }
+}
+
+// 批量转写结果对话框
+.batch-result-modal {
+  width: 420px;
+  max-width: 90vw;
+
+  .batch-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+
+    svg {
+      color: #4caf50;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  }
+
+  .batch-modal-body {
+    padding: 1.5rem;
+
+    .result-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+
+      .result-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1rem;
+        border-radius: 8px;
+        background: var(--bg-tertiary);
+
+        svg {
+          flex-shrink: 0;
+        }
+
+        .label {
+          font-size: 14px;
+          color: var(--text-secondary);
+        }
+
+        .value {
+          margin-left: auto;
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        &.success {
+          svg {
+            color: #4caf50;
+          }
+
+          .value {
+            color: #4caf50;
+          }
+        }
+
+        &.fail {
+          svg {
+            color: #f44336;
+          }
+
+          .value {
+            color: #f44336;
+          }
+        }
+      }
+    }
+
+    .result-tip {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      background: rgba(255, 152, 0, 0.1);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 152, 0, 0.3);
+
+      svg {
+        flex-shrink: 0;
+        margin-top: 2px;
+        color: #ff9800;
+      }
+
+      span {
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 1.5;
+      }
+    }
+  }
+
+  .batch-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+
+    button {
+      padding: 0.5rem 1.5rem;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+
+      &.btn-primary {
+        background: var(--primary);
+        color: white;
+
+        &:hover {
+          opacity: 0.9;
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1270 @@
+.relationship-achievements-page {
+  --journey-ink: color-mix(in srgb, var(--primary) 52%, var(--text-primary));
+  --journey-soft: color-mix(in srgb, var(--primary) 11%, var(--bg-secondary));
+  --journey-card-main: color-mix(in srgb, var(--bg-primary) 97%, var(--journey-soft));
+  --journey-card-branch: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary));
+  --journey-card-border: color-mix(in srgb, var(--border-color) 84%, var(--journey-ink));
+  --journey-inner-highlight: rgba(255, 255, 255, 0.62);
+  --journey-shadow-soft: 0 8px 24px rgba(22, 18, 17, 0.07);
+  --journey-shadow-raised: 0 22px 52px rgba(22, 18, 17, 0.11), 0 3px 10px rgba(22, 18, 17, 0.06);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  color: var(--text-primary);
+
+  &.is-demo {
+    min-height: 100vh;
+    background: var(--bg-primary);
+  }
+}
+
+.relationship-achievements-scroll {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background:
+    radial-gradient(circle at 82% 4%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 28%),
+    radial-gradient(circle at 8% 30%, rgba(189, 143, 162, 0.08), transparent 24%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary)), var(--bg-primary));
+}
+
+.relationship-demo-toolbar {
+  position: fixed;
+  z-index: 1200;
+  top: 14px;
+  right: 18px;
+  min-height: 38px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  box-shadow: var(--journey-shadow-soft);
+  backdrop-filter: blur(18px);
+
+  > span {
+    padding: 0 8px;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  button {
+    min-height: 44px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-secondary);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
+
+    &.active {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+      box-shadow: inset 0 0 0 1px var(--border-color);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.relationship-journey-hero,
+.relationship-journey-main {
+  width: min(1080px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.relationship-journey-hero {
+  padding: 18px 0 14px;
+}
+
+.relationship-journey-topbar {
+  min-height: 44px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.relationship-journey-back,
+.relationship-journey-refresh {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary));
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--primary) 34%, var(--border-color));
+    background: color-mix(in srgb, var(--primary) 7%, var(--bg-primary));
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.54;
+    cursor: not-allowed;
+  }
+}
+
+.relationship-journey-cover {
+  min-height: 242px;
+  padding: 28px clamp(28px, 4vw, 42px);
+  border: 1px solid color-mix(in srgb, var(--border-color) 88%, var(--journey-ink));
+  border-radius: 28px;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 3.5vw, 38px);
+  background:
+    radial-gradient(circle at 8% 16%, color-mix(in srgb, #c67b5c 10%, transparent), transparent 28%),
+    radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 26%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 90%, var(--bg-primary)), var(--bg-primary));
+  box-shadow: var(--journey-shadow-raised), inset 0 1px 0 var(--journey-inner-highlight);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.2;
+    background-image: radial-gradient(color-mix(in srgb, var(--text-primary) 14%, transparent) 0.6px, transparent 0.7px);
+    background-size: 6px 6px;
+    mask-image: linear-gradient(90deg, #000, transparent 48%);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: calc(clamp(28px, 4vw, 42px) + 156px);
+    top: 50%;
+    width: clamp(28px, 3.5vw, 38px);
+    height: 1px;
+    border-radius: 999px;
+    background: linear-gradient(to right, color-mix(in srgb, var(--primary) 48%, transparent), transparent);
+  }
+}
+
+.relationship-journey-portraits {
+  width: 156px;
+  height: 132px;
+  position: relative;
+  z-index: 1;
+
+  .avatar-component {
+    position: absolute;
+    border: 4px solid color-mix(in srgb, var(--bg-primary) 90%, transparent);
+    box-shadow: 0 16px 38px rgba(22, 18, 17, 0.16);
+  }
+}
+
+.relationship-journey-self {
+  left: 4px;
+  top: 62px;
+  opacity: 0.94;
+}
+
+.relationship-journey-friend {
+  right: 4px;
+  top: 12px;
+  z-index: 2;
+}
+
+.relationship-journey-portrait-thread {
+  position: absolute;
+  z-index: 4;
+  left: 72px;
+  top: 69px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--journey-ink);
+  border: 4px solid color-mix(in srgb, var(--bg-primary) 94%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--journey-ink) 28%, transparent);
+}
+
+.relationship-journey-portrait-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
+
+  &.ring-one {
+    inset: 13px 2px 0 4px;
+    transform: rotate(-16deg);
+  }
+
+  &.ring-two {
+    inset: 0 13px 14px 0;
+    border-style: dashed;
+    transform: rotate(17deg);
+  }
+}
+
+.relationship-journey-cover-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+
+  h1 {
+    margin: 8px 0 12px;
+    color: var(--text-primary);
+    font-size: clamp(34px, 4.2vw, 52px);
+    font-weight: 640;
+    line-height: 1.06;
+    letter-spacing: -0.04em;
+  }
+
+  p {
+    max-width: 690px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.78;
+
+    em {
+      color: var(--text-primary);
+      font-style: normal;
+    }
+
+    strong {
+      padding: 0 2px;
+      color: var(--journey-ink);
+      font-size: 1.32em;
+      font-weight: 680;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
+
+.relationship-journey-kicker {
+  color: var(--journey-ink);
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.15em;
+}
+
+.relationship-journey-main {
+  padding: 12px 0 72px;
+}
+
+.relationship-journey-alert {
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--warning, #d09b38) 32%, var(--border-color));
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning, #d09b38) 8%, var(--bg-primary));
+
+  > svg {
+    color: var(--warning, #b57b18);
+    flex: 0 0 auto;
+  }
+
+  > div {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  strong {
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+
+  span {
+    font-size: 12px;
+  }
+
+  button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.relationship-journey-map {
+  position: relative;
+  isolation: isolate;
+  padding: 48px 0 20px;
+  scroll-margin-top: 18px;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 74%, transparent);
+    outline-offset: 6px;
+    border-radius: 24px;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    z-index: 0;
+    inset: 24px 6% 0;
+    pointer-events: none;
+    opacity: 0.28;
+    background: radial-gradient(ellipse at 50% 12%, color-mix(in srgb, var(--journey-soft) 56%, transparent), transparent 56%);
+    mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 88%, transparent);
+  }
+
+  > ol {
+    position: relative;
+    z-index: 2;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+}
+
+.relationship-journey-path {
+  position: absolute;
+  z-index: 1;
+  top: 38px;
+  bottom: 34px;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--journey-ink) 18%, transparent), color-mix(in srgb, var(--journey-ink) 46%, transparent) 72%, transparent);
+}
+
+.relationship-journey-node {
+  min-height: 0;
+  padding-block: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1fr);
+  align-items: center;
+  position: relative;
+
+  &.is-mainline {
+    min-height: 0;
+    padding-block: 34px;
+  }
+
+  &.is-current {
+    min-height: 0;
+    margin-top: 0;
+    padding-block: 38px 42px;
+  }
+}
+
+.relationship-journey-node-axis {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 2;
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.relationship-journey-main-marker {
+  width: 18px;
+  height: 18px;
+  border: 5px solid var(--bg-primary);
+  border-radius: 50%;
+  display: block;
+  background: var(--journey-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--journey-ink) 62%, transparent);
+}
+
+.relationship-journey-node.is-branch {
+  .relationship-journey-node-axis {
+    &::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 28px;
+      border-top: 1px dashed color-mix(in srgb, var(--primary) 34%, var(--border-color));
+    }
+  }
+
+  &.side-start .relationship-journey-node-axis {
+    transform: translateX(-28px);
+
+    &::before {
+      left: 50%;
+    }
+  }
+
+  &.side-end .relationship-journey-node-axis {
+    transform: translateX(28px);
+
+    &::before {
+      right: 50%;
+    }
+  }
+
+  &.side-start .relationship-journey-node-story::before,
+  &.side-end .relationship-journey-node-story::before {
+    width: 20px;
+  }
+
+  &.side-start .relationship-journey-node-story::before {
+    right: -20px;
+  }
+
+  &.side-end .relationship-journey-node-story::before {
+    left: -20px;
+  }
+}
+
+.relationship-journey-node-story {
+  width: min(100%, 348px);
+  padding: 20px 22px 18px;
+  border-radius: 15px;
+  position: relative;
+  background: var(--journey-card-branch);
+  border: 1px solid var(--journey-card-border);
+  box-shadow: var(--journey-shadow-soft), inset 0 1px 0 var(--journey-inner-highlight);
+  transition: border-color 190ms ease, box-shadow 190ms ease, background 190ms ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 48px;
+    height: 1px;
+    background: color-mix(in srgb, var(--primary) 28%, var(--border-color));
+  }
+
+  h3 {
+    margin: 0 0 8px;
+    color: var(--text-primary);
+    font-size: 17px;
+    font-weight: 630;
+    line-height: 1.3;
+    letter-spacing: -0.016em;
+  }
+
+  > p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+
+  .is-mainline & {
+    width: min(100%, 466px);
+    padding: 27px 30px 25px;
+    border-radius: 19px;
+    border-color: color-mix(in srgb, var(--journey-ink) 28%, var(--border-color));
+    background: var(--journey-card-main);
+    box-shadow: var(--journey-shadow-raised), inset 0 1px 0 var(--journey-inner-highlight);
+
+    h3 {
+      max-width: 100%;
+      margin-top: 0;
+      font-size: 23px;
+      font-weight: 660;
+      letter-spacing: -0.025em;
+    }
+
+    > p {
+      max-width: 390px;
+      font-size: 14px;
+      line-height: 1.75;
+    }
+  }
+
+  .is-current & {
+    width: min(100%, 466px);
+    padding: 26px 28px;
+    border-radius: 19px;
+    border-color: color-mix(in srgb, var(--primary) 36%, var(--border-color));
+    background: color-mix(in srgb, var(--primary) 7%, var(--journey-card-main));
+    box-shadow: var(--journey-shadow-raised), inset 0 1px 0 var(--journey-inner-highlight);
+
+    h3 {
+      margin-top: 11px;
+      font-size: 23px;
+    }
+  }
+
+  &:focus-within {
+    border-color: color-mix(in srgb, var(--primary) 56%, var(--border-color));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent), var(--journey-shadow-raised);
+  }
+
+}
+
+.side-start .relationship-journey-node-story {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+
+  &::before {
+    right: -48px;
+  }
+}
+
+.side-end .relationship-journey-node-story {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
+
+  &::before {
+    left: -48px;
+  }
+}
+
+.relationship-journey-node-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: var(--journey-ink);
+    font-weight: 650;
+    letter-spacing: 0.05em;
+  }
+
+  .is-mainline & > span {
+    color: var(--journey-ink);
+    font-size: 10px;
+    font-weight: 680;
+  }
+
+  .is-mainline & {
+    font-size: 12px;
+  }
+
+}
+
+.relationship-journey-achievement-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--journey-ink) 13%, var(--border-color));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+
+  time {
+    white-space: nowrap;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .is-mainline & {
+    margin-top: 18px;
+    font-size: 12px;
+  }
+}
+
+.relationship-journey-achievement-goal {
+  min-width: 0;
+  color: color-mix(in srgb, var(--journey-ink) 78%, var(--text-secondary));
+  font-weight: 580;
+  text-align: left;
+}
+
+.relationship-journey-branch-marker,
+.relationship-journey-current-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  position: relative;
+  border: 4px solid var(--bg-primary);
+  background: color-mix(in srgb, var(--journey-ink) 72%, var(--bg-primary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--journey-ink) 38%, transparent);
+}
+
+.relationship-journey-current-marker {
+  width: 20px;
+  height: 20px;
+  border: 5px solid var(--bg-primary);
+  border-radius: 4px;
+  transform: rotate(45deg);
+  background: var(--journey-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--journey-ink) 62%, transparent);
+}
+
+.relationship-journey-fog-zone {
+  min-height: 650px;
+  margin-top: -28px;
+  position: relative;
+  isolation: isolate;
+}
+
+.relationship-journey-fog-caption {
+  width: min(360px, calc(50% - 76px));
+  padding: 8px 0 10px 18px;
+  border-left: 1px dashed color-mix(in srgb, var(--primary) 32%, var(--border-color));
+  position: absolute;
+  z-index: 5;
+  top: 30px;
+  left: calc(50% + 62px);
+
+  > span {
+    color: var(--journey-ink);
+    font-size: 10px;
+    font-weight: 680;
+    letter-spacing: 0.14em;
+  }
+
+  h3 {
+    margin: 7px 0 8px;
+    color: var(--text-primary);
+    font-size: 18px;
+    font-weight: 620;
+    line-height: 1.35;
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.75;
+  }
+}
+
+.relationship-journey-fog-art {
+  position: absolute;
+  z-index: 1;
+  inset: -18px -4vw 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 8%, #000 91%, transparent 100%);
+}
+
+.relationship-journey-fog-thread {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 4px;
+  left: 50%;
+  width: 4px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  opacity: 0.68;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--primary) 48%, #d2a474) 1px, transparent 1.5px) center / 4px 14px repeat-y,
+    linear-gradient(to bottom, color-mix(in srgb, var(--primary) 42%, transparent), transparent 86%);
+  mask-image: linear-gradient(to bottom, #000, #000 34%, transparent 96%);
+}
+
+.relationship-journey-fog-landmark {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 112px;
+
+  &.depth-1 {
+    top: 118px;
+    opacity: 0.58;
+  }
+
+  &.depth-2 {
+    top: 304px;
+    opacity: 0.38;
+    filter: blur(1.2px);
+  }
+
+  &.depth-3 {
+    top: 492px;
+    opacity: 0.2;
+    filter: blur(2.6px);
+  }
+
+  &.side-start .relationship-journey-fog-silhouette {
+    right: calc(50% + 58px);
+  }
+
+  &.side-end .relationship-journey-fog-silhouette {
+    left: calc(50% + 58px);
+  }
+}
+
+.relationship-journey-fog-checkpoint {
+  width: 26px;
+  height: 26px;
+  border: 2px dashed color-mix(in srgb, var(--text-secondary) 62%, transparent);
+  border-radius: 48% 52% 46% 54%;
+  position: absolute;
+  top: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--bg-primary) 68%, transparent);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--bg-primary) 26%, transparent);
+}
+
+.relationship-journey-fog-silhouette {
+  width: min(36%, 360px);
+  height: 104px;
+  padding: 24px 26px;
+  border: 1px dashed color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-radius: 48% 52% 46% 54% / 18% 22% 20% 24%;
+  position: absolute;
+  top: 0;
+  background: color-mix(in srgb, var(--bg-secondary) 52%, transparent);
+  box-shadow: var(--journey-shadow-soft);
+
+  > span {
+    height: 7px;
+    margin-bottom: 11px;
+    border-radius: 999px;
+    display: block;
+    background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+
+    &:nth-child(1) {
+      width: 36%;
+    }
+
+    &:nth-child(2) {
+      width: 72%;
+    }
+
+    &:nth-child(3) {
+      width: 54%;
+    }
+  }
+}
+
+.relationship-journey-fog-bank {
+  position: absolute;
+  z-index: 3;
+  border-radius: 50%;
+  filter: blur(24px);
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--bg-primary) 94%, transparent) 12%, color-mix(in srgb, var(--bg-secondary) 72%, transparent) 54%, transparent 76%);
+
+  &.bank-one {
+    top: 72px;
+    left: -8%;
+    width: 72%;
+    height: 250px;
+  }
+
+  &.bank-two {
+    top: 248px;
+    right: -12%;
+    width: 78%;
+    height: 280px;
+  }
+
+  &.bank-three {
+    right: 3%;
+    bottom: -36px;
+    left: 3%;
+    height: 260px;
+  }
+}
+
+.relationship-journey-unavailable {
+  max-width: 560px;
+  margin: 72px auto 96px;
+  padding: 40px clamp(24px, 5vw, 48px);
+  border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+  border-radius: 26px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 76%, transparent);
+  text-align: center;
+
+  h3 {
+    margin: 18px 0 8px;
+    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: 640;
+  }
+
+  p {
+    max-width: 430px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+
+  button {
+    min-height: 44px;
+    margin-top: 22px;
+    padding: 0 18px;
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border-color));
+    border-radius: 12px;
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--primary) 9%, var(--bg-primary));
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.relationship-journey-unavailable-mark {
+  width: 54px;
+  height: 54px;
+  border-radius: 48% 52% 46% 54%;
+  display: grid;
+  place-items: center;
+  color: var(--journey-ink);
+  background: color-mix(in srgb, var(--journey-soft) 72%, var(--bg-primary));
+}
+
+.relationship-journey-skeleton {
+  min-height: 780px;
+  position: relative;
+
+  &::before,
+  .relationship-journey-skeleton-line {
+    content: '';
+    position: absolute;
+    top: 40px;
+    bottom: 40px;
+    left: 50%;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+  }
+}
+
+.relationship-journey-skeleton-node {
+  position: absolute;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(100deg, var(--bg-secondary) 25%, var(--bg-hover) 45%, var(--bg-secondary) 65%);
+  background-size: 260% 100%;
+  animation: relationship-journey-shimmer 1.4s ease-in-out infinite;
+
+  @for $index from 1 through 5 {
+    &.node-#{$index} {
+      top: #{70px + (($index - 1) * 150px)};
+    }
+  }
+}
+
+@keyframes relationship-journey-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.relationship-journey-footer {
+  margin-top: 26px;
+  padding: 22px 18px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  color: var(--text-secondary);
+
+  svg {
+    flex: 0 0 auto;
+  }
+
+  p {
+    max-width: 760px;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.7;
+    text-align: center;
+  }
+
+  button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.relationship-journey-refresh .spin {
+  animation: relationship-journey-spin 0.9s linear infinite;
+}
+
+@keyframes relationship-journey-spin {
+  to { transform: rotate(360deg); }
+}
+
+[data-mode='dark'] .relationship-achievements-page {
+  --journey-card-main: color-mix(in srgb, var(--bg-secondary) 92%, #fff 2%);
+  --journey-card-branch: color-mix(in srgb, var(--bg-secondary) 64%, var(--bg-primary));
+  --journey-card-border: color-mix(in srgb, var(--border-color) 78%, var(--journey-ink));
+  --journey-inner-highlight: rgba(255, 255, 255, 0.08);
+  --journey-shadow-soft: 0 9px 25px rgba(0, 0, 0, 0.28);
+  --journey-shadow-raised: 0 24px 54px rgba(0, 0, 0, 0.38), 0 4px 12px rgba(0, 0, 0, 0.24);
+}
+
+@media (hover: hover) {
+  .relationship-journey-node:not(.is-current) .relationship-journey-node-story:hover {
+    border-color: color-mix(in srgb, var(--journey-ink) 36%, var(--border-color));
+    box-shadow: 0 13px 32px rgba(22, 18, 17, 0.1), inset 0 1px 0 var(--journey-inner-highlight);
+  }
+
+  .relationship-journey-node.is-mainline .relationship-journey-node-story:hover {
+    box-shadow: 0 27px 58px rgba(22, 18, 17, 0.14), 0 4px 12px rgba(22, 18, 17, 0.08), inset 0 1px 0 var(--journey-inner-highlight);
+  }
+
+  [data-mode='dark'] .relationship-journey-node:not(.is-current) .relationship-journey-node-story:hover {
+    box-shadow: 0 13px 32px rgba(0, 0, 0, 0.34), inset 0 1px 0 var(--journey-inner-highlight);
+  }
+
+  [data-mode='dark'] .relationship-journey-node.is-mainline .relationship-journey-node-story:hover {
+    box-shadow: 0 27px 58px rgba(0, 0, 0, 0.44), 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 var(--journey-inner-highlight);
+  }
+}
+
+@media (max-width: 960px) {
+  .relationship-journey-hero,
+  .relationship-journey-main {
+    width: min(100% - 28px, 1080px);
+  }
+
+  .relationship-journey-cover {
+    min-height: 0;
+    padding: 24px 22px;
+    grid-template-columns: 1fr;
+    gap: 14px;
+
+    &::after {
+      display: none;
+    }
+  }
+
+  .relationship-journey-portraits {
+    width: 156px;
+    height: 132px;
+  }
+
+  .relationship-journey-cover-copy h1 {
+    font-size: 38px;
+  }
+
+  .relationship-journey-cover-copy p {
+    line-height: 1.75;
+  }
+
+  .relationship-journey-map {
+    padding-top: 36px;
+  }
+
+  .relationship-journey-path {
+    left: 31px;
+    transform: none;
+  }
+
+  .relationship-journey-node {
+    min-height: 0;
+    padding-block: 16px;
+    grid-template-columns: 64px minmax(0, 1fr);
+
+    &.is-mainline,
+    &.is-current {
+      min-height: 0;
+      padding-block: 22px;
+    }
+  }
+
+  .relationship-journey-node-axis {
+    grid-column: 1;
+  }
+
+  .relationship-journey-node.is-branch {
+    &.side-start .relationship-journey-node-axis,
+    &.side-end .relationship-journey-node-axis {
+      transform: translateX(14px);
+
+      &::before {
+        width: 14px;
+        right: 50%;
+        left: auto;
+      }
+    }
+
+    &.side-start .relationship-journey-node-story::before,
+    &.side-end .relationship-journey-node-story::before {
+      left: -36px;
+      right: auto;
+      width: 36px;
+    }
+  }
+
+  .side-start .relationship-journey-node-story,
+  .side-end .relationship-journey-node-story {
+    width: 100%;
+    grid-column: 2;
+    justify-self: stretch;
+
+    &::before {
+      left: -34px;
+      right: auto;
+      width: 34px;
+    }
+  }
+
+  .relationship-journey-node.is-mainline .relationship-journey-node-story,
+  .relationship-journey-node.is-current .relationship-journey-node-story {
+    width: 100%;
+    padding: 22px 21px 20px;
+  }
+
+  .relationship-journey-node.is-branch .relationship-journey-node-story {
+    width: calc(100% - 18px);
+    margin-left: 18px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .relationship-journey-fog-zone {
+    min-height: 700px;
+    margin-top: -18px;
+  }
+
+  .relationship-journey-fog-caption {
+    width: auto;
+    top: 20px;
+    right: 8px;
+    left: 64px;
+  }
+
+  .relationship-journey-fog-art {
+    inset: -8px -14px 0;
+  }
+
+  .relationship-journey-fog-thread,
+  .relationship-journey-fog-checkpoint {
+    left: 45px;
+    transform: translateX(-50%);
+  }
+
+  .relationship-journey-fog-landmark {
+    &.depth-1 { top: 180px; }
+    &.depth-2 { top: 382px; }
+    &.depth-3 { top: 576px; }
+
+    &.side-start .relationship-journey-fog-silhouette,
+    &.side-end .relationship-journey-fog-silhouette {
+      width: calc(100% - 82px);
+      right: auto;
+      left: 78px;
+    }
+  }
+
+  .relationship-journey-skeleton {
+    &::before,
+    .relationship-journey-skeleton-line {
+      left: 31px;
+    }
+  }
+
+  .relationship-journey-skeleton-node {
+    left: 31px;
+  }
+}
+
+@media (max-width: 480px) {
+  .relationship-journey-hero {
+    padding-top: 15px;
+  }
+
+  .relationship-journey-topbar {
+    margin-bottom: 14px;
+  }
+
+  .relationship-journey-back,
+  .relationship-journey-refresh {
+    min-width: 44px;
+    padding: 0 11px;
+
+    span {
+      display: none;
+    }
+  }
+
+  .relationship-journey-cover {
+    border-radius: 24px;
+  }
+
+  .relationship-journey-cover-copy h1 {
+    font-size: 32px;
+  }
+
+  .relationship-journey-node {
+    padding-block: 12px;
+    grid-template-columns: 52px minmax(0, 1fr);
+
+    &.is-mainline,
+    &.is-current {
+      padding-block: 16px;
+    }
+  }
+
+  .relationship-journey-path {
+    left: 25px;
+  }
+
+  .relationship-journey-node.is-branch {
+    &.side-start .relationship-journey-node-axis,
+    &.side-end .relationship-journey-node-axis {
+      transform: translateX(11px);
+    }
+
+    &.side-start .relationship-journey-node-story::before,
+    &.side-end .relationship-journey-node-story::before {
+      left: -33px;
+      width: 33px;
+    }
+  }
+
+  .side-start .relationship-journey-node-story::before,
+  .side-end .relationship-journey-node-story::before {
+    left: -27px;
+    width: 27px;
+  }
+
+  .relationship-journey-node-story {
+    border-radius: 14px;
+
+    h3 {
+      font-size: 17px;
+    }
+  }
+
+  .relationship-journey-node.is-mainline .relationship-journey-node-story h3,
+  .relationship-journey-node.is-current .relationship-journey-node-story h3 {
+    max-width: 100%;
+    font-size: 20px;
+  }
+
+  .relationship-journey-branch-marker {
+    width: 14px;
+    height: 14px;
+  }
+
+  .relationship-journey-current-marker {
+    width: 18px;
+    height: 18px;
+  }
+
+  .relationship-journey-fog-zone {
+    margin-top: 0;
+  }
+
+  .relationship-journey-skeleton {
+    &::before,
+    .relationship-journey-skeleton-line {
+      left: 25px;
+    }
+  }
+
+  .relationship-journey-skeleton-node {
+    left: 25px;
+  }
+
+  .relationship-journey-fog-caption {
+    left: 52px;
+  }
+
+  .relationship-journey-fog-thread,
+  .relationship-journey-fog-checkpoint {
+    left: 39px;
+  }
+
+  .relationship-journey-fog-landmark {
+    &.side-start .relationship-journey-fog-silhouette,
+    &.side-end .relationship-journey-fog-silhouette {
+      width: calc(100% - 68px);
+      left: 64px;
+    }
+  }
+
+  .relationship-demo-toolbar {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relationship-journey-back,
+  .relationship-journey-refresh,
+  .relationship-journey-node-story {
+    transition: none;
+  }
+
+  .relationship-journey-back:hover:not(:disabled),
+  .relationship-journey-refresh:hover:not(:disabled),
+  .relationship-journey-node-story:hover {
+    transform: none;
+  }
+
+  .relationship-journey-skeleton-node,
+  .relationship-journey-refresh .spin {
+    animation: none;
+  }
+}

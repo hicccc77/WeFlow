@@ -1,0 +1,209 @@
+.export-v2-page {
+  min-height: 100%;
+  height: 100%;
+  padding: 0 18px 12px; // Adjusted padding instead of negative margin
+  background: var(--bg-main, var(--bg-primary));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+// ─── Top panel ───────────────────────────────────────────────
+.export-v2-top-panel {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 55;
+}
+
+// ─── Body (session list + bottom task panel) ─────────────────
+.export-v2-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column; // Changed from row to column
+  gap: 16px;
+  overflow: hidden;
+}
+
+.export-v2-session-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.export-v2-task-panel {
+  flex-shrink: 0;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
+  padding-top: 8px;
+}
+
+// ─── Selection Action Bar ────────────────────────────────────
+.selection-action-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  background: color-mix(in srgb, var(--bg-surface, var(--bg-primary)) 90%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--shadow-color) 30%, transparent);
+  border-radius: 999px;
+  padding: 8px 12px 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 100;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+  span {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .primary-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 6px 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary) 90%, black);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent);
+    }
+    
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+// ─── Global Settings Modal ───────────────────────────────────
+.export-defaults-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 7700;
+  background: color-mix(in srgb, black 40%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease;
+}
+
+.export-defaults-modal {
+  width: 100%;
+  max-width: 720px;
+  height: 90vh;
+  background: var(--bg-surface, var(--bg-primary));
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 48px color-mix(in srgb, black 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  animation: modalScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+  .export-defaults-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+
+    h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .close-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+      border-radius: 8px;
+      transition: all 0.2s;
+
+      &:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .export-defaults-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    
+    // Inherit the background logic from ExportDefaultsSettingsForm
+  }
+
+  .export-defaults-modal-actions {
+    padding: 16px 24px;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+    display: flex;
+    justify-content: flex-end;
+    background: var(--bg-main, var(--bg-secondary));
+
+    .secondary-btn {
+      background: var(--bg-hover);
+      border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+      padding: 8px 20px;
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-hover));
+      }
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalScaleUp {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}

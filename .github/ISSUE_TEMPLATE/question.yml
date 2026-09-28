@@ -1,0 +1,77 @@
+name: "使用答疑"
+description: "关于如何配置、如何使用项目的求助"
+title: "[Question]: "
+labels: ["type: question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        在提问之前，请确保你已经仔细阅读过我们的官方文档。
+  - type: input
+    id: confirm-unique
+    attributes:
+      label: 确认唯一性
+      description: 请输入：我已确认没有相同问题出现
+      placeholder: 我已确认没有相同问题出现
+    validations:
+      required: true
+  - type: checkboxes
+    id: pre-check
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已阅读过相关文档
+          required: true
+  - type: dropdown
+    id: question-type
+    attributes:
+      label: 问题类型
+      description: 你的问题属于哪个方面？
+      options:
+        - 安装部署问题
+        - 配置相关问题
+        - 功能使用问题
+        - API 调用问题
+        - 错误排查问题
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: 问题描述
+      description: 清晰描述你遇到的问题或疑问
+      placeholder: 例如：我在 Windows 系统上安装后无法启动应用，双击图标没有任何反应
+    validations:
+      required: true
+  - type: textarea
+    id: attempts
+    attributes:
+      label: 已尝试的方法
+      description: 你已经尝试过哪些解决方法？
+      placeholder: 例如：我尝试过重新安装、以管理员身份运行、关闭防火墙，但问题依然存在
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 提供你的系统环境信息
+      placeholder: |
+        操作系统：Windows 11
+        应用版本：v1.2.3
+        系统架构：x64
+    validations:
+      required: true
+  - type: textarea
+    id: code-snippet
+    attributes:
+      label: 相关配置或代码
+      description: 如果涉及配置或代码问题，请粘贴相关内容
+      placeholder: 粘贴你的配置文件或代码片段
+      render: javascript
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或日志
+      description: 如有必要，请提供截图或错误日志

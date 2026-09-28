@@ -1,0 +1,119 @@
+.home-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  background-color: transparent; /* 改为透明，让外层 main.content 的背景完美透过来 */
+}
+
+[data-mode="light"] .home-page {
+  /* 移除生硬的局部渐变背景，改用全局统一的柔和过渡 */
+  background: none;
+}
+
+[data-mode="dark"] .home-page {
+  /* 移除生硬的局部渐变背景，改用全局统一的柔和过渡 */
+  background: none;
+}
+
+.home-glow {
+  position: absolute;
+  width: 120vw;
+  height: 120vw;
+  max-width: 1000px;
+  max-height: 1000px;
+  background-color: var(--glow-color);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+  transition: background-color 1s ease-in-out;
+}
+
+@keyframes subtle-breath {
+  0%, 100% { opacity: 0.15; filter: blur(40px); }
+  50% { opacity: 0.3; filter: blur(55px); }
+}
+
+.animate-breath {
+  animation: subtle-breath 9s ease-in-out infinite;
+}
+
+.home-content {
+  text-align: center;
+  max-width: 640px;
+  width: 100%;
+  padding: 0 24px;
+  z-index: 1;
+  position: relative;
+}
+
+.brand-letters {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.letter {
+  position: relative;
+  display: inline-block;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+  font-weight: 200;
+  font-size: 72px; /* Slightly larger for home page */
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.letter-bg {
+  opacity: 0.25;
+  color: var(--brand-text);
+  transition: color 0.7s ease;
+}
+
+.letter-fill-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0%;
+  height: 100%;
+  overflow: hidden;
+  transition: width 0.15s linear;
+}
+
+.letter-fill-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  height: 100%;
+  background: linear-gradient(to bottom, var(--gold-start), var(--gold-mid), var(--gold-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.home-subtitle {
+  font-size: 16px;
+  font-weight: 300;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.6;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 480px) {
+  .letter {
+    font-size: 48px;
+  }
+  .brand-letters {
+    gap: 8px;
+  }
+  .home-subtitle {
+    font-size: 14px;
+  }
+}

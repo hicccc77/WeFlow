@@ -1,0 +1,142 @@
+// Shared styles for Report components (Heatmap, WordCloud)
+
+// --- Heatmap ---
+.heatmap-wrapper {
+    margin-top: 24px;
+    width: 100%;
+}
+
+.heatmap-header {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 3px;
+    margin-bottom: 6px;
+    color: var(--ar-text-sub); // Assumes --ar-text-sub is defined in parent context or globally
+    font-size: 10px;
+}
+
+.time-labels {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+
+    span {
+        text-align: center;
+    }
+}
+
+.heatmap {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 3px;
+}
+
+.heatmap-week-col {
+    display: grid;
+    grid-template-rows: repeat(7, 1fr);
+    gap: 3px;
+    font-size: 10px;
+    color: var(--ar-text-sub);
+}
+
+.week-label {
+    display: flex;
+    align-items: center;
+}
+
+.heatmap-grid {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+}
+
+.h-cell {
+    aspect-ratio: 1;
+    border-radius: 2px;
+    min-height: 10px;
+    transition: transform 0.15s;
+
+    &:hover {
+        transform: scale(1.3);
+        z-index: 1;
+    }
+}
+
+
+// --- Word Cloud ---
+.word-cloud-wrapper {
+    margin: 24px auto 0;
+    padding: 0;
+    max-width: 520px;
+    display: flex;
+    justify-content: center;
+    --cloud-scale: clamp(0.72, 80vw / 520, 1);
+}
+
+.word-cloud-inner {
+    position: relative;
+    width: 520px;
+    height: 520px;
+    margin: 0;
+    border-radius: 50%;
+    transform: scale(var(--cloud-scale));
+    transform-origin: center;
+
+    &::before {
+        content: "";
+        position: absolute;
+        inset: -6%;
+        background:
+            radial-gradient(circle at 35% 45%, rgba(var(--ar-primary-rgb, 7, 193, 96), 0.12), transparent 55%),
+            radial-gradient(circle at 65% 50%, rgba(var(--ar-accent-rgb, 242, 170, 0), 0.10), transparent 58%),
+            radial-gradient(circle at 50% 65%, var(--bg-tertiary, rgba(0, 0, 0, 0.04)), transparent 60%);
+        filter: blur(18px);
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 0;
+    }
+}
+
+.word-tag {
+    display: inline-block;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    border: none;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: transform 0.2s ease, color 0.2s ease;
+    cursor: default;
+    color: var(--ar-text-main);
+    font-weight: 600;
+    opacity: 0;
+    animation: wordPopIn 0.55s ease forwards;
+    position: absolute;
+    z-index: 1;
+    transform: translate(-50%, -50%) scale(0.8);
+
+    &:hover {
+        transform: translate(-50%, -50%) scale(1.08);
+        color: var(--ar-primary);
+        z-index: 2;
+    }
+}
+
+@keyframes wordPopIn {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.6);
+    }
+
+    100% {
+        opacity: var(--final-opacity, 1);
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+.word-cloud-note {
+    margin-top: 24px;
+    font-size: 14px !important;
+    color: var(--ar-text-sub) !important;
+    text-align: center;
+}

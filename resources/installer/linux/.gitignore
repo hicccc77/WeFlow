@@ -1,0 +1,6 @@
+*.tar.gz
+*.tar.xz
+*.zip
+src/
+pkg/
+weflow-*/

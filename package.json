@@ -1,0 +1,245 @@
+{
+  "name": "weflow",
+  "version": "5.0.0",
+  "description": "WeFlow",
+  "main": "dist-electron/main.js",
+  "author": {
+    "name": "cc",
+    "email": "yccccccy@proton.me"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hicccc77/WeFlow"
+  },
+  "//": "二改不应改变此处的作者与应用信息",
+  "scripts": {
+    "postinstall": "patch-package && electron-builder install-app-deps && node scripts/prepare-electron-runtime.cjs",
+    "rebuild": "electron-rebuild",
+    "dev": "node scripts/prepare-electron-runtime.cjs && vite",
+    "typecheck:renderer": "tsc --noEmit -p tsconfig.json",
+    "typecheck:electron": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron",
+    "build": "npm run typecheck && node scripts/clean-dist-electron.cjs && vite build && electron-builder",
+    "preview": "vite preview",
+    "electron:dev": "node scripts/prepare-electron-runtime.cjs && vite --mode electron",
+    "electron:build": "npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.12",
+    "@ai-sdk/google": "^4.0.12",
+    "@ai-sdk/openai": "^4.0.11",
+    "@ai-sdk/openai-compatible": "^3.0.7",
+    "@ai-sdk/react": "^4.0.23",
+    "@gravity-ui/icons": "^2.20.0",
+    "@heroui/react": "^3.2.2",
+    "@heroui/styles": "^3.2.2",
+    "@hicccc77/electron-liquid-glass": "^0.4.0",
+    "@lobehub/icons": "^5.10.1",
+    "@rc-component/qrcode": "^2.0.0",
+    "@tailwindcss/vite": "^4.3.2",
+    "@vscode/sudo-prompt": "^9.3.2",
+    "ai": "^7.0.22",
+    "ansi-to-react": "^6.1.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "dom-to-image-more": "^3.10.2",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.2",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
+    "ffmpeg-static": "^5.3.0",
+    "fzstd": "^0.1.1",
+    "html2canvas": "^1.4.1",
+    "jieba-wasm": "^2.2.0",
+    "jszip": "^3.10.1",
+    "koffi": "^3.1.0",
+    "lucide-react": "^1.23.0",
+    "motion": "^12.42.2",
+    "nanoid": "^5.1.16",
+    "radix-ui": "^1.6.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.1",
+    "react-virtuoso": "^4.18.10",
+    "remark-gfm": "^4.0.1",
+    "sherpa-onnx-node": "^1.13.3",
+    "shiki": "^4.3.1",
+    "silk-wasm": "^3.7.1",
+    "streamdown": "^2.5.0",
+    "tailwind-merge": "^3.6.0",
+    "tar": "^7.5.19",
+    "use-stick-to-bottom": "^1.1.6",
+    "wechat-emojis": "^1.0.2",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.1.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "patch-package": "^8.0.1",
+    "sass": "^1.101.0",
+    "sharp": "^0.35.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3",
+    "vite-plugin-electron": "^1.1.0",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "tar": ">=6.2.1",
+      "minimatch": ">=3.1.2",
+      "rollup": ">=4.0.0",
+      "immutable": ">=4.0.0",
+      "lodash": ">=4.17.21",
+      "brace-expansion": ">=1.1.11",
+      "picomatch": ">=2.3.1",
+      "ajv": ">=8.18.0"
+    }
+  },
+  "build": {
+    "appId": "com.WeFlow.app",
+    "publish": {
+      "provider": "github",
+      "owner": "hicccc77",
+      "repo": "WeFlow",
+      "releaseType": "release"
+    },
+    "productName": "WeFlow",
+    "artifactName": "${productName}-${version}-Setup.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "icon": "resources/icons/macos/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon.ico",
+      "extraFiles": [
+        {
+          "from": "resources/runtime/win32/msvcp140.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/runtime/win32/msvcp140_1.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/runtime/win32/vcruntime140.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/runtime/win32/vcruntime140_1.dll",
+          "to": "."
+        }
+      ]
+    },
+    "linux": {
+      "icon": "public/icon.png",
+      "target": [
+        "appimage",
+        "tar.gz"
+      ],
+      "category": "Utility",
+      "executableName": "weflow",
+      "synopsis": "WeFlow for Linux",
+      "extraFiles": [
+        {
+          "from": "resources/installer/linux/install.sh",
+          "to": "install.sh"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "differentialPackage": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "unicode": true,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "displayLanguageSelector": false,
+      "include": "installer.nsh",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico",
+      "perMachine": false,
+      "allowElevation": true,
+      "installerSidebar": null,
+      "uninstallerSidebar": null
+    },
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "public/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "public/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "electron/assets/wasm/",
+        "to": "assets/wasm/"
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/silk-wasm/**/*",
+      "node_modules/sherpa-onnx-node/**/*",
+      "node_modules/sherpa-onnx-*/*",
+      "node_modules/sherpa-onnx-*/**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/@hicccc77/electron-liquid-glass/**/*"
+    ],
+    "icon": "resources/icons/macos/icon.icns"
+  },
+  "overrides": {
+    "brace-expansion": {
+      ".": "^5.0.6"
+    },
+    "node-abi": ">=4.33.0",
+    "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "fast-uri": "^3.1.3",
+    "form-data": "^4.0.6",
+    "ip-address": "^10.2.0",
+    "picomatch": "^4.0.4",
+    "js-yaml": "^4.3.0",
+    "tar": "^7.5.19",
+    "tmp": "^0.2.7",
+    "immutable": "^5.1.5"
+  }
+}

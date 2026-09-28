@@ -1,0 +1,135 @@
+.agent-token-meter {
+  position: relative;
+  display: inline-flex;
+  width: 26px;
+  height: 40px;
+  min-width: 26px;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  cursor: help;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 570;
+  letter-spacing: -.01em;
+  line-height: 1;
+  outline: none;
+  white-space: nowrap;
+  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.agent-token-meter:hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.agent-token-meter:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 34%, transparent);
+}
+
+.agent-token-meter__ring {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: conic-gradient(var(--primary) 0 var(--agent-token-ratio), color-mix(in srgb, var(--border-color) 80%, transparent) var(--agent-token-ratio) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+}
+
+.agent-token-meter__value {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  display: inline-flex;
+  visibility: hidden;
+  align-items: baseline;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 97%, transparent);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .14), 0 2px 6px rgba(15, 23, 42, .08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+}
+
+.agent-token-meter__value::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 97%, transparent);
+  content: '';
+  transform: translate(-50%, -4px) rotate(45deg);
+}
+
+.agent-token-meter__value strong {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.agent-token-meter__value small {
+  margin-left: 1px;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.agent-token-meter__separator {
+  color: var(--text-tertiary);
+}
+
+.agent-token-meter:hover .agent-token-meter__value,
+.agent-token-meter:focus-visible .agent-token-meter__value {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.agent-token-meter.is-warning {
+  color: #b7791f;
+}
+
+.agent-token-meter.is-warning .agent-token-meter__ring {
+  background: conic-gradient(#d69e2e 0 var(--agent-token-ratio), color-mix(in srgb, var(--border-color) 80%, transparent) var(--agent-token-ratio) 360deg);
+}
+
+.agent-token-meter.is-danger {
+  color: var(--danger);
+}
+
+.agent-token-meter.is-danger .agent-token-meter__ring {
+  background: conic-gradient(var(--danger) 0 var(--agent-token-ratio), color-mix(in srgb, var(--border-color) 80%, transparent) var(--agent-token-ratio) 360deg);
+}
+
+@media (max-width: 620px) {
+  .agent-token-meter {
+    width: 24px;
+    min-width: 24px;
+    flex-basis: 24px;
+  }
+
+  .agent-token-meter__ring {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-token-meter,
+  .agent-token-meter__value {
+    transition: none;
+  }
+}

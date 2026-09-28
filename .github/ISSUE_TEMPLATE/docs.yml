@@ -1,0 +1,75 @@
+name: "文档反馈"
+description: "文档存在错别字、描述不清晰或缺少必要的示例"
+title: "[Docs]: "
+labels: ["type: docs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        优秀的文档和代码一样重要。感谢你帮助我们完善文档！
+  - type: input
+    id: confirm-unique
+    attributes:
+      label: 确认唯一性
+      description: 请输入：我已确认没有相同问题出现
+      placeholder: 我已确认没有相同问题出现
+    validations:
+      required: true
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: 文档类型
+      description: 问题出现在哪类文档中？
+      options:
+        - README 或项目说明
+        - 安装部署文档
+        - 使用教程
+        - API 文档
+        - 开发者文档
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: doc-link
+    attributes:
+      label: 文档位置
+      description: 提供文档的 URL 或文件路径
+      placeholder: 例如：docs/installation.md 或 https://github.com/xxx/xxx/wiki/xxx
+    validations:
+      required: true
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: 问题类型
+      description: 文档存在什么问题？
+      options:
+        - 错别字或语法错误
+        - 内容过时或不准确
+        - 描述不清晰或有歧义
+        - 缺少必要的示例代码
+        - 缺少重要的说明或警告
+        - 链接失效或错误
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: issue-desc
+    attributes:
+      label: 问题描述
+      description: 详细说明文档中存在的问题
+      placeholder: 例如：第 3 步中的命令拼写错误，应该是 "npm install" 而不是 "npm instal"
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 修改建议
+      description: 你认为应该如何修改？
+      placeholder: 例如：建议将"安装依赖"部分补充完整的命令示例，并说明不同操作系统的差异
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充说明
+      description: 其他需要补充的信息

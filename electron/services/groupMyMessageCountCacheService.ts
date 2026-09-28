@@ -1,0 +1,274 @@
+import { join, dirname } from 'path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { rename, rm, writeFile } from 'fs/promises'
+import { app } from 'electron'
+import { ConfigService } from './config'
+
+const CACHE_VERSION = 1
+const MAX_GROUP_ENTRIES_PER_SCOPE = 3000
+const MAX_SCOPE_ENTRIES = 12
+
+export interface GroupMyMessageCountCacheEntry {
+  updatedAt: number
+  messageCount: number
+}
+
+interface GroupMyMessageCountScopeMap {
+  [chatroomId: string]: GroupMyMessageCountCacheEntry
+}
+
+interface GroupMyMessageCountCacheStore {
+  version: number
+  scopes: Record<string, GroupMyMessageCountScopeMap>
+}
+
+function toNonNegativeInt(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return Math.max(0, Math.floor(value))
+}
+
+function normalizeEntry(raw: unknown): GroupMyMessageCountCacheEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const source = raw as Record<string, unknown>
+  const updatedAt = toNonNegativeInt(source.updatedAt)
+  const messageCount = toNonNegativeInt(source.messageCount)
+  if (updatedAt === undefined || messageCount === undefined) return null
+  return {
+    updatedAt,
+    messageCount
+  }
+}
+
+export class GroupMyMessageCountCacheService {
+  private readonly cacheFilePath: string
+  private persistTimer: NodeJS.Timeout | null = null
+  private persistInFlight = false
+  private persistDirty = false
+  private persistGeneration = 0
+  private store: GroupMyMessageCountCacheStore = {
+    version: CACHE_VERSION,
+    scopes: {}
+  }
+
+  constructor(cacheBasePath?: string) {
+    const basePath = cacheBasePath && cacheBasePath.trim().length > 0
+      ? cacheBasePath
+      : ConfigService.getInstance().getCacheBasePath()
+    this.cacheFilePath = join(basePath, 'group-my-message-counts.json')
+    this.ensureCacheDir()
+    this.load()
+    app?.once('will-quit', () => this.flushSync())
+  }
+
+  private ensureCacheDir(): void {
+    const dir = dirname(this.cacheFilePath)
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
+  }
+
+  private load(): void {
+    if (!existsSync(this.cacheFilePath)) return
+    try {
+      const raw = readFileSync(this.cacheFilePath, 'utf8')
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== 'object') {
+        this.store = { version: CACHE_VERSION, scopes: {} }
+        rmSync(this.cacheFilePath, { force: true })
+        return
+      }
+
+      const payload = parsed as Record<string, unknown>
+      const version = Number(payload.version)
+      if (!Number.isFinite(version) || version !== CACHE_VERSION) {
+        this.store = { version: CACHE_VERSION, scopes: {} }
+        rmSync(this.cacheFilePath, { force: true })
+        return
+      }
+      const scopesRaw = payload.scopes
+      if (!scopesRaw || typeof scopesRaw !== 'object') {
+        this.store = { version: CACHE_VERSION, scopes: {} }
+        rmSync(this.cacheFilePath, { force: true })
+        return
+      }
+
+      const scopes: Record<string, GroupMyMessageCountScopeMap> = {}
+      for (const [scopeKey, scopeValue] of Object.entries(scopesRaw as Record<string, unknown>)) {
+        if (!scopeValue || typeof scopeValue !== 'object') continue
+        const normalizedScope: GroupMyMessageCountScopeMap = {}
+        for (const [chatroomId, entryRaw] of Object.entries(scopeValue as Record<string, unknown>)) {
+          const entry = normalizeEntry(entryRaw)
+          if (!entry) continue
+          normalizedScope[chatroomId] = entry
+        }
+        if (Object.keys(normalizedScope).length > 0) {
+          scopes[scopeKey] = normalizedScope
+        }
+      }
+
+      this.store = {
+        version: CACHE_VERSION,
+        scopes
+      }
+    } catch (error) {
+      console.error('GroupMyMessageCountCacheService: 载入缓存失败', error)
+      this.store = { version: CACHE_VERSION, scopes: {} }
+      try { rmSync(this.cacheFilePath, { force: true }) } catch {}
+    }
+  }
+
+  get(scopeKey: string, chatroomId: string): GroupMyMessageCountCacheEntry | undefined {
+    if (!scopeKey || !chatroomId) return undefined
+    const scope = this.store.scopes[scopeKey]
+    if (!scope) return undefined
+    const entry = normalizeEntry(scope[chatroomId])
+    if (!entry) {
+      delete scope[chatroomId]
+      if (Object.keys(scope).length === 0) {
+        delete this.store.scopes[scopeKey]
+      }
+      this.persist()
+      return undefined
+    }
+    return entry
+  }
+
+  set(scopeKey: string, chatroomId: string, entry: GroupMyMessageCountCacheEntry): void {
+    if (!scopeKey || !chatroomId) return
+    const normalized = normalizeEntry(entry)
+    if (!normalized) return
+
+    if (!this.store.scopes[scopeKey]) {
+      this.store.scopes[scopeKey] = {}
+    }
+
+    const existing = this.store.scopes[scopeKey][chatroomId]
+    if (existing && existing.updatedAt > normalized.updatedAt) {
+      return
+    }
+
+    this.store.scopes[scopeKey][chatroomId] = normalized
+    this.trimScope(scopeKey)
+    this.trimScopes()
+    this.persist()
+  }
+
+  delete(scopeKey: string, chatroomId: string): void {
+    if (!scopeKey || !chatroomId) return
+    this.persistGeneration += 1
+    const scope = this.store.scopes[scopeKey]
+    if (scope) {
+      delete scope[chatroomId]
+      if (Object.keys(scope).length === 0) {
+        delete this.store.scopes[scopeKey]
+      }
+    }
+    if (this.persistInFlight) this.persistDirty = true
+    this.persist()
+  }
+
+  clearScope(scopeKey: string): void {
+    if (!scopeKey) return
+    this.persistGeneration += 1
+    delete this.store.scopes[scopeKey]
+    if (this.persistInFlight) this.persistDirty = true
+    this.persist()
+  }
+
+  clearAll(): void {
+    this.persistGeneration += 1
+    this.store = { version: CACHE_VERSION, scopes: {} }
+    this.persistDirty = false
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+    try {
+      rmSync(this.cacheFilePath, { force: true })
+    } catch (error) {
+      console.error('GroupMyMessageCountCacheService: 清理缓存失败', error)
+    }
+  }
+
+  private trimScope(scopeKey: string): void {
+    const scope = this.store.scopes[scopeKey]
+    if (!scope) return
+    const entries = Object.entries(scope)
+    if (entries.length <= MAX_GROUP_ENTRIES_PER_SCOPE) return
+    entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+    const trimmed: GroupMyMessageCountScopeMap = {}
+    for (const [chatroomId, entry] of entries.slice(0, MAX_GROUP_ENTRIES_PER_SCOPE)) {
+      trimmed[chatroomId] = entry
+    }
+    this.store.scopes[scopeKey] = trimmed
+  }
+
+  private trimScopes(): void {
+    const scopeEntries = Object.entries(this.store.scopes)
+    if (scopeEntries.length <= MAX_SCOPE_ENTRIES) return
+    scopeEntries.sort((a, b) => {
+      const aUpdatedAt = Math.max(...Object.values(a[1]).map((entry) => entry.updatedAt), 0)
+      const bUpdatedAt = Math.max(...Object.values(b[1]).map((entry) => entry.updatedAt), 0)
+      return bUpdatedAt - aUpdatedAt
+    })
+
+    const trimmedScopes: Record<string, GroupMyMessageCountScopeMap> = {}
+    for (const [scopeKey, scopeMap] of scopeEntries.slice(0, MAX_SCOPE_ENTRIES)) {
+      trimmedScopes[scopeKey] = scopeMap
+    }
+    this.store.scopes = trimmedScopes
+  }
+
+  /** 防抖异步落盘：批量刷新群统计时避免连续同步写盘阻塞主线程 */
+  private persist(): void {
+    if (this.persistTimer) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      void this.persistNow()
+    }, 1000)
+    this.persistTimer.unref?.()
+  }
+
+  private async persistNow(): Promise<void> {
+    if (this.persistInFlight) {
+      this.persistDirty = true
+      return
+    }
+    this.persistInFlight = true
+    const generation = this.persistGeneration
+    const payload = JSON.stringify(this.store)
+    const temporaryPath = `${this.cacheFilePath}.${process.pid}.${generation}.tmp`
+    try {
+      await writeFile(temporaryPath, payload, 'utf8')
+      if (generation !== this.persistGeneration) {
+        await rm(temporaryPath, { force: true })
+        return
+      }
+      await rename(temporaryPath, this.cacheFilePath)
+      if (generation !== this.persistGeneration) {
+        await rm(this.cacheFilePath, { force: true })
+      }
+    } catch (error) {
+      console.error('GroupMyMessageCountCacheService: 保存缓存失败', error)
+      await rm(temporaryPath, { force: true }).catch(() => {})
+    } finally {
+      this.persistInFlight = false
+      if (this.persistDirty) {
+        this.persistDirty = false
+        void this.persistNow()
+      }
+    }
+  }
+
+  /** 退出前把尚未落盘的改动同步写入 */
+  private flushSync(): void {
+    if (!this.persistTimer) return
+    clearTimeout(this.persistTimer)
+    this.persistTimer = null
+    try {
+      writeFileSync(this.cacheFilePath, JSON.stringify(this.store), 'utf8')
+    } catch (error) {
+      console.error('GroupMyMessageCountCacheService: 保存缓存失败', error)
+    }
+  }
+}

@@ -1,0 +1,404 @@
+.jump-date-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.jump-date-modal {
+    background: var(--card-bg);
+    width: 340px;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jump-date-header {
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+
+    .title-area {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text-primary);
+
+        svg {
+            color: var(--primary);
+        }
+
+        h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 6px;
+        display: flex;
+        transition: all 0.2s;
+
+        &:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+    }
+}
+
+.calendar-view {
+    padding: 20px;
+
+    .calendar-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+
+        .current-month {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            border: none;
+            background: transparent;
+
+            &.clickable {
+                cursor: pointer;
+                border-radius: 6px;
+                padding: 2px 8px;
+                transition: all 0.15s;
+
+                &:hover {
+                    background: var(--bg-hover);
+                    color: var(--primary);
+                }
+            }
+        }
+
+        .nav-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:hover {
+                background: var(--bg-hover);
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+        }
+    }
+
+    .year-month-picker {
+        padding: 4px 0;
+
+        .year-selector {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+
+            .year-label {
+                font-size: 15px;
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+
+            .nav-btn {
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--bg-secondary);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                color: var(--text-secondary);
+                cursor: pointer;
+                transition: all 0.2s;
+
+                &:hover {
+                    background: var(--bg-hover);
+                    border-color: var(--primary);
+                    color: var(--primary);
+                }
+            }
+        }
+
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+
+            .month-btn {
+                padding: 10px 0;
+                border: none;
+                background: transparent;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 13px;
+                color: var(--text-secondary);
+                transition: all 0.15s;
+
+                &:hover {
+                    background: var(--bg-hover);
+                    color: var(--text-primary);
+                }
+
+                &.active {
+                    background: var(--primary);
+                    color: #fff;
+                }
+            }
+        }
+
+        .year-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+
+            .year-btn {
+                padding: 10px 0;
+                border: none;
+                background: transparent;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 13px;
+                color: var(--text-secondary);
+                transition: all 0.15s;
+
+                &:hover {
+                    background: var(--bg-hover);
+                    color: var(--text-primary);
+                }
+
+                &.active {
+                    background: var(--primary);
+                    color: #fff;
+                }
+            }
+        }
+    }
+}
+
+.calendar-grid {
+    position: relative;
+
+    &.loading {
+
+        .weekdays,
+        .days {
+            pointer-events: none;
+        }
+    }
+
+    .calendar-loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: var(--text-secondary);
+        font-size: 13px;
+
+        .spin {
+            color: var(--primary);
+            animation: spin 1s linear infinite;
+        }
+    }
+
+    .weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        margin-bottom: 8px;
+
+        .weekday {
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            padding: 4px 0;
+        }
+    }
+
+    .days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        grid-template-rows: repeat(6, 36px);
+        gap: 4px;
+
+        .day-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: var(--text-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+
+            &.empty {
+                cursor: default;
+            }
+
+            &:not(.empty):not(.no-message):hover {
+                background: var(--bg-hover);
+            }
+
+            &.selected {
+                background: var(--primary);
+                color: #fff;
+                font-weight: 600;
+            }
+
+            &.today:not(.selected) {
+                color: var(--primary);
+                font-weight: 600;
+                background: var(--primary-light);
+            }
+
+            // 无消息的日期 - 灰显且不可点击
+            &.no-message {
+                opacity: 0.3;
+                cursor: default;
+                pointer-events: none;
+            }
+
+            // 有消息的日期指示器小圆点
+            .message-dot {
+                position: absolute;
+                bottom: 3px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 4px;
+                height: 4px;
+                border-radius: 50%;
+                background: var(--primary);
+            }
+
+            &.selected .message-dot {
+                background: rgba(255, 255, 255, 0.7);
+            }
+        }
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.quick-options {
+    display: flex;
+    gap: 8px;
+    padding: 0 20px 16px;
+
+    button {
+        flex: 1;
+        padding: 8px;
+        font-size: 12px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+            background: var(--bg-hover);
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+    }
+}
+
+.dialog-footer {
+    padding: 16px 20px;
+    display: flex;
+    gap: 12px;
+    background: var(--bg-secondary);
+
+    button {
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .cancel-btn {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+
+        &:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+    }
+
+    .confirm-btn {
+        background: var(--primary);
+        border: none;
+        color: #fff;
+
+        &:hover {
+            background: var(--primary-hover);
+        }
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes modalSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

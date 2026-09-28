@@ -1,0 +1,663 @@
+.session-table-container {
+  --session-table-min-width: 980px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-surface, var(--bg-primary)); // Fallback
+  border-radius: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--shadow-color) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+
+  // ── Top Filter (Search + Tabs inline) ──────────────────────────────────
+  .st-top-filter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    padding: 0 24px;
+    background: var(--bg-surface, var(--bg-primary));
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
+    gap: 24px;
+    -webkit-app-region: no-drag;
+    min-width: var(--session-table-min-width);
+
+    .st-tabs {
+      display: flex;
+      gap: 8px;
+
+      .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 6px 16px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 20px;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background: var(--bg-hover, color-mix(in srgb, var(--primary) 10%, transparent));
+          color: var(--text-primary);
+        }
+
+        &.active {
+          background: var(--bg-active, color-mix(in srgb, var(--primary) 15%, transparent));
+          color: var(--primary);
+          font-weight: 600;
+        }
+      }
+    }
+
+    .st-search {
+      display: flex;
+      align-items: center;
+      background: var(--bg-main, var(--bg-secondary));
+      border-radius: 20px;
+      padding: 6px 14px;
+      width: 280px;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+
+      &:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+        background: var(--bg-surface, var(--bg-primary));
+      }
+
+      .search-icon {
+        color: var(--text-tertiary);
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
+
+      input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: none;
+        color: var(--text-primary);
+        font-size: 13px;
+        min-width: 0;
+
+        &::placeholder {
+          color: var(--text-tertiary);
+        }
+      }
+
+      .clear-search-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px;
+        border-radius: 50%;
+        margin-left: 4px;
+
+        &:hover {
+          color: var(--text-secondary);
+        }
+      }
+    }
+
+    .st-selection-actions {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+
+      .st-selection-count {
+        font-size: 13px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+
+      .st-selection-btn {
+        height: 28px;
+        padding: 0 16px;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background 0.16s ease,
+          border-color 0.16s ease,
+          color 0.16s ease,
+          box-shadow 0.16s ease,
+          transform 0.16s ease;
+
+        &:hover {
+          transform: translateY(-1px);
+        }
+
+        &:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+        }
+
+        &.primary {
+          border: 1px solid var(--primary);
+          background: var(--primary);
+          color: var(--on-primary, #fff);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 14%, transparent);
+
+          &:hover {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+          }
+        }
+
+        &.secondary {
+          border: 1px solid color-mix(in srgb, var(--primary) 62%, transparent);
+          background: color-mix(in srgb, var(--primary) 7%, var(--bg-surface, var(--bg-primary)));
+          color: var(--primary);
+
+          &:hover {
+            border-color: var(--primary);
+            background: color-mix(in srgb, var(--primary) 12%, var(--bg-surface, var(--bg-primary)));
+          }
+        }
+      }
+    }
+
+    .st-refresh-stats-btn {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 17px;
+      border: 1px solid color-mix(in srgb, var(--border-color) 58%, transparent);
+      background: var(--bg-main, var(--bg-secondary));
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        transform 0.18s ease,
+        opacity 0.18s ease;
+
+      &:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--primary) 10%, var(--bg-surface));
+        border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color));
+        color: var(--primary);
+        transform: translateY(-1px);
+      }
+
+      &:disabled {
+        cursor: default;
+        opacity: 0.58;
+      }
+
+      &.refreshing svg {
+        animation: stRefreshStatsSpin 0.9s linear infinite;
+      }
+    }
+  }
+
+  // ── Grid Layout Definition ───────────────────────────────────────────
+  .st-header-row, .st-row {
+    display: grid;
+    grid-template-columns: 48px minmax(200px, 1fr) 80px 120px 60px 60px 60px 60px 60px 80px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 24px;
+    min-width: var(--session-table-min-width);
+  }
+
+  // ── Header Row ──────────────────────────────────────────────────────────
+  .st-header-row {
+    height: 44px;
+    background: var(--bg-main, var(--bg-secondary));
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+
+    .col-checkbox {
+      justify-content: flex-start;
+    }
+
+    > div {
+      display: flex;
+      align-items: center;
+    }
+
+    .col-stat, .col-count {
+      justify-content: flex-end;
+      text-align: right;
+    }
+    
+    .col-action {
+      justify-content: center;
+    }
+  }
+
+  // ── List Body ───────────────────────────────────────────────────────────
+  .table-body {
+    flex: 1;
+    position: relative;
+    overflow: hidden; // virtuoso handles scrolling
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100px;
+      color: var(--text-tertiary);
+      font-size: 14px;
+    }
+
+    .error-state {
+      height: 100%;
+      min-width: var(--session-table-min-width);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 32px;
+      text-align: center;
+      color: var(--text-secondary);
+
+      .error-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #ef4444;
+      }
+
+      .error-message {
+        max-width: 520px;
+        font-size: 13px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+    }
+
+    .st-metrics-status {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      z-index: 4;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      max-width: min(520px, calc(100% - 48px));
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 18px;
+      border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border-color));
+      background:
+        linear-gradient(135deg,
+          color-mix(in srgb, var(--primary) 10%, var(--bg-surface)),
+          color-mix(in srgb, var(--bg-surface) 92%, var(--bg-main))
+        );
+      box-shadow:
+        0 12px 30px color-mix(in srgb, var(--shadow-color) 18%, transparent),
+        0 1px 0 color-mix(in srgb, #fff 55%, transparent) inset;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.35;
+      pointer-events: none;
+      transform: translateX(-50%);
+      animation: stMetricsStatusEnter 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+      &.leaving {
+        animation: stMetricsStatusExit 0.24s ease both;
+      }
+
+      .st-metrics-status-dot {
+        position: relative;
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--primary);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent);
+
+        &::after {
+          content: '';
+          position: absolute;
+          inset: -5px;
+          border-radius: inherit;
+          border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
+          animation: stMetricsStatusPulse 1.2s ease-out infinite;
+        }
+      }
+
+      .st-metrics-status-count {
+        flex: 0 0 auto;
+        padding-left: 2px;
+        color: var(--primary);
+        font-weight: 600;
+      }
+    }
+  }
+
+  // ── Data Row ────────────────────────────────────────────────────────────
+  .st-row {
+    height: 64px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 20%, transparent);
+    transition: background 0.15s ease;
+    cursor: default;
+
+    &:hover {
+      background: var(--bg-hover, color-mix(in srgb, var(--text-primary) 3%, transparent));
+    }
+
+    > div {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .col-stat, .col-count {
+      justify-content: flex-end;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: var(--text-secondary);
+    }
+
+    .col-count {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .col-time {
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .col-action {
+      justify-content: center;
+      
+      .st-action-btn {
+        background: transparent;
+        border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+        color: var(--text-secondary);
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+          background: var(--bg-hover);
+          color: var(--primary);
+          border-color: var(--primary);
+        }
+      }
+    }
+
+    // Avatar and info
+    .col-info {
+      gap: 12px;
+      overflow: hidden;
+
+      .st-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        overflow: hidden;
+        flex-shrink: 0;
+        background: color-mix(in srgb, var(--primary) 10%, transparent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .avatar-letter {
+          font-size: 18px;
+          color: var(--primary);
+          font-weight: 600;
+        }
+      }
+
+      .st-text {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+        flex: 1;
+
+        .st-name {
+          font-size: 14px;
+          font-weight: 500;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .st-id {
+          font-size: 12px;
+          color: var(--text-tertiary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          margin-top: 2px;
+        }
+      }
+    }
+  }
+
+  // ── Checkbox ──────────────────────────────────────────────────────────
+  .checkbox-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+
+    .checked {
+      color: var(--primary);
+    }
+  }
+}
+
+// ── Skeleton Loading (参考「我的足迹」的 skeleton-shimmer 风格) ─────────
+.st-skeleton-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 24px;
+
+  .st-skeleton-header {
+    display: grid;
+    grid-template-columns: 48px minmax(200px, 1fr) 80px 120px 60px 60px 60px 60px 60px 80px;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
+
+    .st-skeleton-cell {
+      height: 14px;
+      border-radius: 4px;
+
+      &:nth-child(3),
+      &:nth-child(4),
+      &:nth-child(5),
+      &:nth-child(6),
+      &:nth-child(7),
+      &:nth-child(8),
+      &:nth-child(9) {
+        margin-left: auto;
+        width: 60%;
+      }
+
+      &:last-child {
+        margin: 0 auto;
+        width: 50%;
+      }
+    }
+  }
+
+  .st-skeleton-rows {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    .st-skeleton-row {
+      display: grid;
+      grid-template-columns: 48px minmax(200px, 1fr) 80px 120px 60px 60px 60px 60px 60px 80px;
+      align-items: center;
+      gap: 8px;
+      height: 64px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 20%, transparent);
+      padding: 0;
+
+      .st-skeleton-checkbox {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+      }
+
+      .st-skeleton-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .st-skeleton-avatar {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          flex-shrink: 0;
+        }
+
+        .st-skeleton-text {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          flex: 1;
+          overflow: hidden;
+
+          .st-skeleton-line {
+            height: 14px;
+            border-radius: 4px;
+            width: 60%;
+
+            &.short {
+              width: 40%;
+            }
+          }
+        }
+      }
+
+      .st-skeleton-stat {
+        height: 14px;
+        border-radius: 4px;
+        width: 60%;
+        margin-left: auto;
+      }
+    }
+  }
+}
+
+.st-skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text-tertiary) 6%, transparent);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--bg-primary) 50%, transparent),
+      transparent
+    );
+    transform: translateX(-100%);
+    animation: stShimmer 1.5s infinite;
+  }
+}
+
+@keyframes stShimmer {
+  100% { transform: translateX(100%); }
+}
+
+// 行级统计 shimmer 占位与数字淡入
+.st-stat-shimmer {
+  display: inline-block;
+  width: 20px;
+  height: 10px;
+  border-radius: 4px;
+  @extend .st-skeleton-shimmer;
+}
+
+.st-stat-fade-in {
+  animation: stStatFadeIn 0.2s ease forwards;
+}
+
+@keyframes stStatFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes stMetricsStatusEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes stMetricsStatusExit {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes stMetricsStatusPulse {
+  from {
+    opacity: 0.65;
+    transform: scale(0.65);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@keyframes stRefreshStatsSpin {
+  to { transform: rotate(360deg); }
+}

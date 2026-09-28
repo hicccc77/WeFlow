@@ -1,0 +1,370 @@
+/* DualReportWindow.scss */
+.annual-report-window.dual-report-window {
+
+  /* 全局公用样式补充 */
+  .center-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .title {
+    font-size: clamp(3rem, 10vw, 7rem);
+    font-family: 'PlayfairDisplayLocal', 'CormorantGaramondLocal', serif;
+    letter-spacing: 0.15em;
+    font-weight: 500;
+    margin-bottom: 2vh;
+    color: var(--c-gold-strong);
+    text-align: center;
+  }
+
+  /* 针对双人报告特有场景（S1-S8）的排版补充 */
+  
+  /* =========================================
+     S1: 首次聊天 (First Encounter)
+  ========================================= */
+  #scene-1 .s1-layout {
+    width: min(880px, 80vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3vh;
+    margin-top: 10vh;
+  }
+  
+  .s1-messages {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5vh;
+  }
+  
+  .s1-message-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    margin-bottom: 2vh;
+    
+    &.sent {
+      align-items: flex-end;
+    }
+  }
+  
+  .s1-meta {
+    font-size: 0.8rem;
+    color: var(--c-text-muted);
+    margin-bottom: 6px;
+    font-family: 'SpaceMonoLocal', monospace;
+  }
+  
+  .s1-bubble {
+    background: rgba(var(--c-gold-rgb), 0.12);
+    border: 1px solid rgba(var(--c-gold-rgb), 0.2);
+    padding: 12px 18px;
+    border-radius: 12px;
+    color: var(--c-text-bright);
+    font-size: clamp(0.95rem, 1.2vw, 1.1rem);
+    line-height: 1.6;
+    max-width: 80%;
+    word-break: break-all;
+    
+    &.sent {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+  }
+  
+  /* =========================================
+     S2: 作息波纹 (Heatmap)
+  ========================================= */
+  #scene-2 {
+    .heatmap-wrapper {
+      margin-top: 5vh;
+      width: min(1000px, 90vw);
+      
+      /* Make heatmap grid fit cinematic dark style */
+      .heatmap {
+        background: transparent !important;
+        * { border-color: rgba(var(--c-gold-rgb), 0.1) !important; }
+      }
+    }
+    
+    .s2-active-text {
+      margin-top: 4vh;
+      font-size: clamp(1.2rem, 1.5vw, 1.4rem);
+      color: var(--c-text-soft);
+      .hl { color: var(--c-gold-strong); font-weight: 600; margin: 0 8px;}
+    }
+  }
+
+  /* =========================================
+     S3: 情感的天平 (Initiative)
+  ========================================= */
+  #scene-3 .initiative-container {
+    width: min(700px, 80vw);
+    margin-top: 12vh;
+  }
+  
+  .initiative-bar-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+    padding: 24px 0;
+    position: relative;
+  }
+  
+  .initiative-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-width: 80px;
+    z-index: 2;
+    
+    .avatar-placeholder {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(var(--c-gold-rgb), 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: var(--c-text-muted);
+      overflow: hidden;
+      
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+    
+    .count {
+      font-size: 0.8rem;
+      color: var(--c-text-muted);
+    }
+    
+    .percent {
+      font-size: 1.5rem;
+      color: var(--c-gold-strong);
+      font-family: 'SpaceMonoLocal', monospace;
+    }
+  }
+  
+  .initiative-progress {
+    flex: 1;
+    height: 1px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    
+    .line-bg {
+      position: absolute;
+      left: 0; right: 0; height: 1px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .initiative-indicator {
+      position: absolute;
+      width: 12px; height: 12px;
+      background: var(--c-gold-strong);
+      border-radius: 50%;
+      transform: translateX(-50%);
+      transition: left 1.5s var(--ease-epic);
+      box-shadow: 0 0 20px var(--c-gold-strong);
+    }
+  }
+
+  /* =========================================
+     S4: 回应的速度 (Echoes)
+  ========================================= */
+  #scene-4 .response-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6vh;
+    margin-top: 15vh;
+  }
+  
+  .response-circle {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 1px solid rgba(var(--c-gold-rgb), 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    box-shadow: 0 0 50px rgba(var(--c-gold-rgb), 0.1);
+    
+    .label {
+      font-size: 1rem;
+      color: var(--c-text-muted);
+      letter-spacing: 0.2em;
+      margin-bottom: 8px;
+    }
+    
+    .value {
+      font-size: 3.5rem;
+      color: var(--c-gold-strong);
+      font-family: 'SpaceMonoLocal', monospace;
+      text-shadow: 0 0 20px rgba(var(--c-gold-rgb), 0.4);
+      
+      span { font-size: 1.2rem; margin-left: 4px; color: var(--c-text-soft); }
+    }
+  }
+
+  .response-stats {
+    display: flex;
+    gap: 10vw;
+    
+    .stat-item {
+      text-align: center;
+      .label { color: var(--c-text-muted); font-size: 0.9rem; margin-bottom: 8px; letter-spacing: 0.1em; }
+      .value { color: var(--c-text-bright); font-size: 1.8rem; font-family: 'SpaceMonoLocal', monospace; }
+    }
+  }
+
+  /* =========================================
+     S5: 连绵不绝的火花 (Streak)
+  ========================================= */
+  #scene-5 .streak-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 12vh;
+  }
+  
+  .streak-days {
+    font-size: clamp(6rem, 15vw, 10rem);
+    color: var(--c-gold-strong);
+    font-family: 'SpaceMonoLocal', monospace;
+    text-shadow: 0 0 40px rgba(var(--c-gold-rgb), 0.4);
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+  
+  .streak-label {
+    font-size: 1.5rem;
+    color: var(--c-text-soft);
+    letter-spacing: 0.5em;
+    margin-bottom: 4vh;
+  }
+  
+  .streak-dates {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: var(--c-text-muted);
+    font-family: 'SpaceMonoLocal', monospace;
+    font-size: 0.9rem;
+    
+    .line {
+      width: 100px;
+      height: 1px;
+      background: rgba(var(--c-gold-rgb), 0.4);
+    }
+  }
+
+  /* =========================================
+     S6: 专属词典 (Lexicon)
+  ========================================= */
+  #scene-6 .word-cloud-wrapper-outer {
+    margin-top: 15vh;
+    width: 80vw;
+    height: 50vh;
+    position: relative;
+    
+    .word-cloud-tabs {
+      position: absolute;
+      top: -6vh;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 16px;
+      z-index: 20;
+      
+      .tab-item {
+        background: transparent;
+        border: none;
+        color: var(--c-text-muted);
+        font-size: 0.9rem;
+        cursor: pointer;
+        padding: 4px 12px;
+        transition: all 0.3s;
+        
+        &.active, &:hover {
+          color: var(--c-gold-strong);
+        }
+      }
+    }
+  }
+
+  /* =========================================
+     S7: 绝对数据 (Stats)
+  ========================================= */
+  #scene-7 .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4vh 8vw;
+    margin-top: 15vh;
+    
+    .stat-card {
+      text-align: center;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      backdrop-filter: none;
+      padding: 0;
+      .val {
+        font-size: 2.5rem;
+        color: var(--c-gold-strong);
+        font-family: 'SpaceMonoLocal', monospace;
+        margin-bottom: 8px;
+      }
+      .lbl {
+        font-size: 0.9rem;
+        color: var(--c-text-muted);
+        letter-spacing: 0.1em;
+      }
+    }
+  }
+
+  /* =========================================
+     S8: 漫长的归途 / 提取 (Extraction)
+  ========================================= */
+  #scene-8 {
+    .extract-title {
+      font-size: clamp(3.5rem, 8vw, 5rem);
+      margin-top: 0;
+      color: var(--c-text-bright);
+    }
+  }
+
+  .extract-btn {
+    margin-top: 10vh;
+    background: transparent;
+    border: 1px solid rgba(var(--c-gold-rgb), 0.4);
+    color: var(--c-gold-strong);
+    padding: 16px 42px;
+    font-size: 1rem;
+    letter-spacing: 0.25em;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: all 0.4s var(--ease-epic);
+    
+    &:hover {
+      background: rgba(var(--c-gold-rgb), 0.1);
+      box-shadow: 0 0 20px rgba(var(--c-gold-rgb), 0.2);
+    }
+  }
+}

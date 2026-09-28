@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeFlow</title>
+  <script>
+    (function initSplashMode() {
+      var params = new URLSearchParams(window.location.search || "");
+      var mode = params.get("themeMode") || params.get("mode") || "system";
+      var themeId = params.get("themeId") || "cloud-dancer";
+      var mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+      var resolved = mode === "dark" || (mode === "system" && mq && mq.matches) ? "dark" : "light";
+
+      document.documentElement.setAttribute("data-theme", themeId);
+      document.documentElement.setAttribute("data-theme-mode", mode);
+      document.documentElement.setAttribute("data-mode", resolved);
+    })();
+  </script>
+  <style>
+    :root {
+      /* Satin White Gold (白金) */
+      --page-bg: #f5f4ef;
+      --card-bg: rgba(250, 250, 253, 0.96); /* 几乎不透明，确保极佳的文本可读性与深邃感 */
+      --border-color: rgba(234, 226, 211, 0.8); /* 温润的淡白金边框线 */
+      --gold-start: #c3aa87; /* 雅致浅香槟金 */
+      --gold-mid: #a88c64;
+      --gold-end: #7c6340;
+      --glow-color: rgba(168, 140, 100, 0.03);
+      --desc-text: #8e8a84; /* 提升浅色模式下小字的可见性 */
+      --brand-text: #d6d3d1; /* stone-300 */
+      --track-bg: #e7e5e4; /* stone-200 */
+      --active-track-bg: #a88c64;
+      --subtle-dot: #a88c64;
+      /* 极其精致、紧凑的阴影，确保完全不超出 40px 的窗口边缘（避免被 Electron 窗口裁剪成难看的黑边） */
+      --window-shadow: 0 12px 28px rgba(168, 140, 100, 0.12), 0 3px 10px rgba(168, 140, 100, 0.06), 0 0 0 1px var(--border-color);
+    }
+
+    [data-mode="dark"] {
+      /* Obsidian Dark Gold (黑金) */
+      --page-bg: #080809;
+      --card-bg: rgba(14, 15, 17, 0.95); /* 几乎不透明（从 0.65 显著提升至 0.95），完美遮挡亮色背景，确保文字与金色填充清晰可见 */
+      --border-color: rgba(46, 41, 34, 0.8); /* 稍亮且带暖金调的暗金边框线，更有高级金属边框质感 */
+      --gold-start: #e5d2b8; /* 哑光古铜拉丝金 */
+      --gold-mid: #cca87a;
+      --gold-end: #997750;
+      --glow-color: rgba(204, 168, 122, 0.03);
+      --desc-text: #a19a8f; /* 显著提升小字可见性，从暗淡的 stone-600 升级为温润的古铜灰金 */
+      --brand-text: #423d38; /* 提升未填充字母的可见性，使其隐约可见又不喧宾夺主 */
+      --track-bg: #2d2924; /* 提升进度条轨道的可见性 */
+      --active-track-bg: #cca87a;
+      --subtle-dot: #cca87a;
+      /* 极其精致、紧凑的阴影，确保完全不超出 40px 的窗口边缘（避免被 Electron 窗口裁剪成难看的黑边） */
+      --window-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border-color);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      user-select: none;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      -webkit-app-region: drag;
+    }
+
+    .splash-shell {
+      width: 720px; /* 整体宽度从 600px 放大至 720px */
+      height: 420px; /* 整体高度从 380px 放大至 420px */
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 54px; /* 增加内边距，使留白更显大气 */
+      border-radius: 18px; /* 稍微加大圆角 */
+      background-color: var(--card-bg);
+      /* 顶级毛玻璃模糊效果，完美融入桌面壁纸 */
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid var(--border-color);
+      box-shadow: var(--window-shadow);
+      overflow: hidden;
+      transition: all 1s ease-in-out;
+      animation: windowReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Subtle slow beating ambient background flow light */
+    .ambient-glow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 440px; /* 随窗口等比例放大 */
+      height: 440px;
+      border-radius: 50%;
+      background-color: var(--glow-color);
+      pointer-events: none;
+      z-index: 0;
+      transition: background-color 1s ease-in-out;
+    }
+
+    @keyframes subtle-breath {
+      0%, 100% { opacity: 0.15; filter: blur(45px); }
+      50% { opacity: 0.3; filter: blur(60px); }
+    }
+
+    .animate-breath {
+      animation: subtle-breath 9s ease-in-out infinite;
+    }
+
+    /* Header (Tucked away quietly) */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      animation: itemFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+    }
+
+    .header-left {
+      font-size: 10px; /* 字体从 8px 放大至 10px */
+      letter-spacing: 0.3em;
+      font-weight: 300;
+      text-transform: uppercase;
+      color: var(--desc-text);
+      transition: color 0.7s ease;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .header-right {
+      font-size: 10px; /* 字体从 8px 放大至 10px */
+      letter-spacing: 0.2em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--desc-text);
+      transition: color 0.7s ease;
+    }
+
+    /* Center Brand Area: Creative Character Loading Filling */
+    .center-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-top: auto;
+      margin-bottom: auto;
+      z-index: 10;
+      animation: itemFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+    }
+
+    .brand-letters {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 14px; /* 间距从 10px 放大至 14px */
+      margin-bottom: 24px;
+    }
+
+    .letter {
+      position: relative;
+      display: inline-block;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+      font-weight: 200;
+      font-size: 72px; /* 字母大小从 56px 显著放大至 72px，气场全开 */
+      line-height: 1;
+      text-transform: lowercase;
+    }
+
+    .letter-bg {
+      opacity: 0.25;
+      color: var(--brand-text);
+      transition: color 0.7s ease;
+    }
+
+    .letter-fill-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0%;
+      height: 100%;
+      overflow: hidden;
+      transition: width 0.15s linear;
+    }
+
+    .letter-fill-content {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: max-content;
+      height: 100%;
+      background: linear-gradient(to bottom, var(--gold-start), var(--gold-mid), var(--gold-end));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* 对应字母的脉冲流光动画 */
+    .letter.pulse-active .letter-fill-content {
+      background: linear-gradient(90deg, var(--gold-start) 0%, var(--gold-mid) 35%, #ffffff 50%, var(--gold-mid) 65%, var(--gold-end) 100%);
+      background-size: 200% 100%;
+      animation: gold-flow 2s infinite linear;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* 字母等待/停顿状态：优雅的微光呼吸与轻微悬浮动画 */
+    .brand-letters.waiting .letter {
+      animation: letter-waiting-breath 2.5s ease-in-out infinite;
+    }
+
+    .brand-letters.waiting .letter:nth-child(1) { animation-delay: 0s; }
+    .brand-letters.waiting .letter:nth-child(2) { animation-delay: 0.15s; }
+    .brand-letters.waiting .letter:nth-child(3) { animation-delay: 0.3s; }
+    .brand-letters.waiting .letter:nth-child(4) { animation-delay: 0.45s; }
+    .brand-letters.waiting .letter:nth-child(5) { animation-delay: 0.6s; }
+    .brand-letters.waiting .letter:nth-child(6) { animation-delay: 0.75s; }
+
+    @keyframes letter-waiting-breath {
+      0%, 100% {
+        transform: translateY(0) scale(1);
+        filter: drop-shadow(0 0 0px rgba(0, 0, 0, 0));
+      }
+      50% {
+        transform: translateY(-4px) scale(1.03); /* 放大悬浮幅度 */
+        filter: drop-shadow(0 6px 16px var(--glow-color));
+      }
+    }
+
+    /* Status Line (Absolute quiet) */
+    .status-line {
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-line p {
+      font-size: 10px; /* 状态字号从 8px 放大至 10px */
+      font-weight: 300;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--desc-text);
+      transition: color 0.7s ease;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* Bottom Progress Section */
+    .progress-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10;
+      animation: itemFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+    }
+
+    .progress-track-wrapper {
+      position: relative;
+      width: 100%;
+      height: 2px; /* 发丝线厚度从 1.2px 放大至 2px，提升可见性 */
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 100%;
+      background-color: var(--track-bg);
+      transition: background-color 0.7s ease;
+    }
+
+    .progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background-color: var(--active-track-bg);
+      transition: width 0.3s ease-out;
+    }
+
+    /* 进度条等待状态：整条发丝线化作流动的金色光河 */
+    .progress-fill.indeterminate {
+      width: 100% !important;
+      background: linear-gradient(90deg, var(--track-bg) 0%, var(--active-track-bg) 35%, #ffffff 50%, var(--active-track-bg) 65%, var(--track-bg) 100%);
+      background-size: 200% 100%;
+      animation: gold-flow 2s infinite linear;
+      border-radius: 3px;
+    }
+
+    /* 进度条卡顿脉冲状态：在当前进度范围内流动 */
+    .progress-fill.pulse-active {
+      background: linear-gradient(90deg, var(--active-track-bg) 0%, #ffffff 50%, var(--active-track-bg) 100%);
+      background-size: 200% 100%;
+      animation: gold-flow 2s infinite linear;
+    }
+
+    .progress-dot {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      width: 6px; /* 圆点从 4px 放大至 6px */
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--subtle-dot);
+      transform: translate(-50%, -50%);
+      transition: left 0.3s ease-out;
+      display: none;
+    }
+
+    /* Micro Details (Numeric and Active State) */
+    .metadata-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px; /* 字体从 9px 放大至 11px */
+      letter-spacing: 0.05em;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .metadata-left {
+      color: var(--desc-text);
+      transition: color 0.7s ease;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+    }
+
+    .metadata-right {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      display: flex;
+      align-items: baseline;
+    }
+
+    .percent-num {
+      font-size: 15px; /* 进度百分比数字从 12px 放大至 15px */
+      font-weight: 300;
+      background: linear-gradient(to bottom, var(--gold-start), var(--gold-mid), var(--gold-end));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .percent-symbol {
+      font-size: 10px; /* 从 8px 放大至 10px */
+      margin-left: 2px;
+      color: var(--desc-text);
+      transition: color 0.7s ease;
+    }
+
+    /* Animations */
+    @keyframes windowReveal {
+      0% { opacity: 0; transform: scale(0.97); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes itemFadeUp {
+      0% { opacity: 0; transform: translateY(12px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes gold-flow {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="splash-shell" id="splash">
+    <!-- Subtle slow beating ambient background flow light -->
+    <div class="ambient-glow animate-breath"></div>
+
+    <!-- Header (Tucked away quietly) -->
+    <header class="card-header">
+      <span class="header-left">WEFLOW</span>
+      <span class="header-right" id="versionText">STABLE</span>
+    </header>
+
+    <!-- Center Brand Area: Creative Character Loading Filling -->
+    <section class="center-brand">
+      <div class="brand-letters" id="brandLetters">
+        <span class="letter"><span class="letter-bg">w</span><span class="letter-fill-wrapper"><span class="letter-fill-content">w</span></span></span>
+        <span class="letter"><span class="letter-bg">e</span><span class="letter-fill-wrapper"><span class="letter-fill-content">e</span></span></span>
+        <span class="letter"><span class="letter-bg">f</span><span class="letter-fill-wrapper"><span class="letter-fill-content">f</span></span></span>
+        <span class="letter"><span class="letter-bg">l</span><span class="letter-fill-wrapper"><span class="letter-fill-content">l</span></span></span>
+        <span class="letter"><span class="letter-bg">o</span><span class="letter-fill-wrapper"><span class="letter-fill-content">o</span></span></span>
+        <span class="letter"><span class="letter-bg">w</span><span class="letter-fill-wrapper"><span class="letter-fill-content">w</span></span></span>
+      </div>
+      <div class="status-line">
+        <p id="progressText">SYSTEM INITIALIZING...</p>
+      </div>
+    </section>
+
+    <!-- Bottom Progress Section -->
+    <footer class="progress-section">
+      <div class="progress-track-wrapper">
+        <div class="progress-track"></div>
+        <div class="progress-fill" id="progressFill"></div>
+        <div class="progress-dot" id="progressDot"></div>
+      </div>
+      <div class="metadata-row">
+        <span class="metadata-left">系统初始化</span>
+        <div class="metadata-right">
+          <span class="percent-num" id="percentNum">0</span><span class="percent-symbol">%</span>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    var themeModeQuery = null;
+    var systemModeQuery = null;
+    var loadingTimeout = null;
+
+    function resolveMode(mode) {
+      if (mode === "dark" || mode === "light") return mode;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function syncSystemModeListener(mode) {
+      if (!window.matchMedia) return;
+      var nextQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      if (systemModeQuery && systemModeQuery !== nextQuery && systemModeQuery.removeEventListener) {
+        systemModeQuery.removeEventListener("change", handleSystemModeChange);
+      }
+
+      systemModeQuery = nextQuery;
+      themeModeQuery = mode;
+
+      if (mode === "system" && nextQuery.addEventListener) {
+        nextQuery.addEventListener("change", handleSystemModeChange);
+      }
+    }
+
+    function handleSystemModeChange() {
+      if (themeModeQuery === "system") {
+        document.documentElement.setAttribute("data-mode", resolveMode("system"));
+      }
+    }
+
+    function applyTheme(themeId, mode) {
+      var safeThemeId = String(themeId || "cloud-dancer");
+      var safeMode = mode === "light" || mode === "dark" || mode === "system" ? mode : "system";
+      var resolvedMode = resolveMode(safeMode);
+
+      document.documentElement.setAttribute("data-theme", safeThemeId);
+      document.documentElement.setAttribute("data-theme-mode", safeMode);
+      document.documentElement.setAttribute("data-mode", resolvedMode);
+      syncSystemModeListener(safeMode);
+    }
+
+    function updateProgress(percent, text, waiting) {
+      var fill = document.getElementById("progressFill");
+      var dot = document.getElementById("progressDot");
+      var label = document.getElementById("progressText");
+      var percentNum = document.getElementById("percentNum");
+      var lettersContainer = document.getElementById("brandLetters");
+      var metadataLeft = document.querySelector(".metadata-left");
+      var safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+
+      // 每次更新进度，清除之前的等待定时器
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+      }
+
+      // 移除所有字母的脉冲动画类
+      var letters = document.querySelectorAll("#brandLetters .letter");
+      letters.forEach(function(letter) {
+        letter.classList.remove("pulse-active");
+      });
+
+      if (fill) {
+        fill.classList.remove("pulse-active");
+        if (waiting) {
+          fill.classList.add("indeterminate");
+          fill.style.width = "100%";
+          if (dot) dot.style.display = "none";
+          if (lettersContainer) lettersContainer.classList.add("waiting");
+        } else {
+          fill.classList.remove("indeterminate");
+          fill.style.width = safePercent + "%";
+          if (lettersContainer) lettersContainer.classList.remove("waiting");
+          if (dot) {
+            if (safePercent > 0 && safePercent < 100) {
+              dot.style.display = "block";
+              dot.style.left = safePercent + "%";
+            } else {
+              dot.style.display = "none";
+            }
+          }
+        }
+      }
+
+      if (percentNum) {
+        percentNum.textContent = Math.round(safePercent);
+      }
+
+      if (label && text) {
+        // 中间大字：智能转换为英文/拼音核心词，并大写、宽字距，营造高定科技感
+        var englishStatus = "PROCESSING";
+        var lowerText = text.toLowerCase();
+        if (lowerText.indexOf("预加载") !== -1 || lowerText.indexOf("preload") !== -1) {
+          englishStatus = "PRELOADING METADATA";
+        } else if (lowerText.indexOf("主窗口") !== -1 || lowerText.indexOf("window") !== -1) {
+          englishStatus = "PREPARING WINDOW";
+        } else if (lowerText.indexOf("初始化") !== -1 || lowerText.indexOf("init") !== -1) {
+          englishStatus = "INITIALIZING SYSTEM";
+        } else if (lowerText.indexOf("会话") !== -1 || lowerText.indexOf("session") !== -1) {
+          englishStatus = "SYNCHRONIZING SESSIONS";
+        } else if (lowerText.indexOf("配置") !== -1 || lowerText.indexOf("config") !== -1) {
+          englishStatus = "LOADING CONFIGURATION";
+        } else if (lowerText.indexOf("数据库") !== -1 || lowerText.indexOf("db") !== -1) {
+          englishStatus = "CONNECTING DATABASE";
+        } else if (lowerText.indexOf("准备") !== -1 || lowerText.indexOf("prepare") !== -1) {
+          englishStatus = "PREPARING ENVIRONMENT";
+        }
+        label.textContent = englishStatus;
+        
+        // 左下角小字：显示原始的中文状态文案，温润、清晰、本土化
+        if (metadataLeft) {
+          var cleanText = text.trim();
+          if (cleanText.length > 0) {
+            // 如果状态词太长，截取前 12 个字符，保持排版精致
+            metadataLeft.textContent = cleanText.length > 12 ? cleanText.slice(0, 11) + "..." : cleanText;
+          }
+        }
+      }
+
+      // Smooth letter-by-letter filling
+      if (letters.length > 0) {
+        var charProgress = (safePercent / 100) * letters.length;
+        letters.forEach(function(letter, index) {
+          var wrapper = letter.querySelector(".letter-fill-wrapper");
+          if (wrapper) {
+            var fillRatio = Math.max(0, Math.min(1, charProgress - index));
+            wrapper.style.width = (fillRatio * 100) + "%";
+          }
+        });
+      }
+
+      // 如果当前不是 waiting 状态，且进度未达到 100%，则启动 0.5s 定时器
+      if (!waiting && safePercent < 100) {
+        loadingTimeout = setTimeout(function() {
+          if (fill) {
+            fill.classList.add("pulse-active");
+            // 保持原来的 fill.style.width，即 safePercent% 宽度，不设为 100%
+          }
+          
+          if (letters.length > 0) {
+            var charProgress = (safePercent / 100) * letters.length;
+            var activeIndex = Math.min(letters.length - 1, Math.floor(charProgress));
+            if (activeIndex >= 0 && activeIndex < letters.length) {
+              letters[activeIndex].classList.add("pulse-active");
+              // 保持原来的 wrapper.style.width (即当前的 fillRatio * 100%)，不设为 100%
+            }
+          }
+        }, 500);
+      }
+    }
+
+    function setVersion(version) {
+      var el = document.getElementById("versionText");
+      if (!el) return;
+      var text = String(version || "").trim();
+      el.textContent = text ? "STABLE VER. " + text.replace(/^v/i, "") : "STABLE";
+    }
+
+    (function bootstrapSplash() {
+      var params = new URLSearchParams(window.location.search || "");
+      applyTheme(params.get("themeId") || "cloud-dancer", params.get("themeMode") || "system");
+      setVersion(params.get("version") || "");
+      updateProgress(0, "", false);
+    })();
+  </script>
+</body>
+</html>
