@@ -1,6 +1,7 @@
 ﻿import { parentPort, workerData } from 'worker_threads'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { parsePcmWav } from './pcmWav'
 
 interface WorkerParams {
     modelPath: string
@@ -190,7 +191,7 @@ async function run() {
             return;
         }
 
-        const { modelPath, tokensPath, wavData: rawWavData, sampleRate, languages } = params
+        const { modelPath, tokensPath, wavData: rawWavData, languages } = params
         const wavData = normalizeBuffer(rawWavData);
         // 确保有有效的语言列表，默认只允许中文
         let allowedLanguages = languages || ['zh']
@@ -215,11 +216,7 @@ async function run() {
         const recognizer = new sherpa.OfflineRecognizer(recognizerConfig)
 
         // 2. 处理音频数据 (全量识别)
-        const pcmData = wavData.slice(44)
-        const samples = new Float32Array(pcmData.length / 2)
-        for (let i = 0; i < samples.length; i++) {
-            samples[i] = pcmData.readInt16LE(i * 2) / 32768.0
-        }
+        const { sampleRate, samples } = parsePcmWav(wavData)
 
         const stream = recognizer.createStream()
         stream.acceptWaveform({ sampleRate, samples })
