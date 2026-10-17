@@ -2782,6 +2782,7 @@ class ChatService {
           return { success: false, error: '账号已切换，已丢弃过期通讯录结果' }
         }
       }
+      const visibleSystemAccountIdPrefix = String(this.configService.get('systemAccountId') || '').trim().toLowerCase()
       for (const row of rows) {
         const username = String(row.username || '').trim()
 
@@ -2802,7 +2803,6 @@ class ChatService {
         if (isOpenimEnterprise && !this.isAllowedEnterpriseOpenimByLocalType(username, localType)) {
           continue
         }
-        const visibleSystemAccountIdPrefix = String(this.configService.get('systemAccountId') || '').trim().toLowerCase()
         const isVisibleSystemAccountContact = Boolean(visibleSystemAccountIdPrefix) && loweredUsername.startsWith(visibleSystemAccountIdPrefix) && loweredUsername !== visibleSystemAccountIdPrefix
 
         if (username.endsWith('@chatroom')) {

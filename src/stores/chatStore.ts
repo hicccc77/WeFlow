@@ -13,7 +13,8 @@ function buildMessageAliasKeys(message: Message): string[] {
   const sourceScope = String(message._db_path || '').trim()
   const keys = [buildPrimaryMessageKey(message, sourceScope)]
   const localId = Math.max(0, Number(message.localId || 0))
-  const serverId = Math.max(0, Number(message.serverId || 0))
+  const serverIdText = String(message.serverIdRaw ?? message.serverId ?? '0').trim()
+  const serverId = /^\d+$/.test(serverIdText) ? serverIdText.replace(/^0+(?=\d)/, '') : '0'
   const createTime = Math.max(0, Number(message.createTime || 0))
   const localType = Math.floor(Number(message.localType || 0))
   const sender = String(message.senderUsername || '')
@@ -28,7 +29,7 @@ function buildMessageAliasKeys(message: Message): string[] {
       keys.push(`lid_fallback:${localId}:${createTime}:${sender}:${localType}:${serverId}`)
     }
   }
-  if (serverId > 0) {
+  if (serverId !== '0') {
     // server_id 在跨库场景并非绝对全局唯一；必须带来源作用域避免误去重。
     if (sourceScope) {
       keys.push(`sid:${sourceScope}:${serverId}`)

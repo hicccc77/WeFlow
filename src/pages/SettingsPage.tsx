@@ -3082,12 +3082,16 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       })
     }
 
+    const sessionTimes = new Map<string, number>()
+    for (const session of chatSessions) {
+      if (!sessionTimes.has(session.username)) {
+        sessionTimes.set(session.username, Number(session.sortTimestamp || session.lastTimestamp || 0))
+      }
+    }
+
     const options = Array.from(optionMap.values())
       .sort((a, b) => {
-        const aSession = chatSessions.find(session => session.username === a.username)
-        const bSession = chatSessions.find(session => session.username === b.username)
-        return Number(bSession?.sortTimestamp || bSession?.lastTimestamp || 0) -
-          Number(aSession?.sortTimestamp || aSession?.lastTimestamp || 0)
+        return (sessionTimes.get(b.username) || 0) - (sessionTimes.get(a.username) || 0)
       })
 
     return { sessionFilterOptionMap: optionMap, sessionFilterOptions: options }
