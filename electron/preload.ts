@@ -7,6 +7,17 @@ type CloseConfirmPayload = {
 
 // 暴露给渲染进程的 API
 contextBridge.exposeInMainWorld('electronAPI', {
+  snsRetention: {
+    status: () => ipcRenderer.invoke('snsRetention:status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('snsRetention:setEnabled', enabled),
+    list: (options?: { query?: string; username?: string; limit?: number; offset?: number }) => ipcRenderer.invoke('snsRetention:list', options),
+    scanNow: () => ipcRenderer.invoke('snsRetention:scanNow')
+  },
+  messageRetention: {
+    status: () => ipcRenderer.invoke('messageRetention:status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('messageRetention:setEnabled', enabled),
+    list: (options?: { query?: string; onlyRevoked?: boolean; limit?: number; offset?: number }) => ipcRenderer.invoke('messageRetention:list', options)
+  },
   // 配置
   config: {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
