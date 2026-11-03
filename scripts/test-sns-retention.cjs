@@ -150,8 +150,10 @@ test('source validation blocks SSRF destinations, credentials, and escaping cach
   const outsideDir = path.join(fixture, 'outside'); fs.mkdirSync(outsideDir)
   fs.writeFileSync(path.join(outsideDir, 'secret.png'), png)
   const symlink = path.join(cache, 'escape'); fs.symlinkSync(outsideDir, symlink, process.platform === 'win32' ? 'junction' : 'dir')
-  assert.equal(await trustedSnsLocalPath(local, [cache]), fs.realpathSync(local))
-  assert.equal(await trustedSnsLocalPath(require('node:url').pathToFileURL(local).href, [cache]), fs.realpathSync(local))
+  // The native async resolver expands Windows 8.3 aliases, unlike realpathSync.
+  const canonicalLocal = await fs.promises.realpath(local)
+  assert.equal(await trustedSnsLocalPath(local, [cache]), canonicalLocal)
+  assert.equal(await trustedSnsLocalPath(require('node:url').pathToFileURL(local).href, [cache]), canonicalLocal)
   assert.equal(await trustedSnsLocalPath(path.join(symlink, 'secret.png'), [cache]), null)
   assert.equal(await trustedSnsLocalPath(outside, [cache]), null)
 })
