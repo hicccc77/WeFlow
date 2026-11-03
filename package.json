@@ -17,6 +17,7 @@
     "rebuild": "electron-rebuild",
     "dev": "node scripts/prepare-electron-runtime.cjs && vite",
     "test:wcdb": "node --test scripts/check-wcdb-optional-exports.cjs",
+    "test:retention": "node --test scripts/test-message-retention.cjs scripts/test-sns-retention.cjs scripts/test-sns-download.cjs",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.json",
     "typecheck:electron": "tsc --noEmit -p tsconfig.node.json",
     "typecheck": "npm run typecheck:renderer && npm run typecheck:electron",

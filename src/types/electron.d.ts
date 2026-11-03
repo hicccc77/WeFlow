@@ -479,7 +479,93 @@ export interface RelayOneOrderInfo {
   resume_token?: string
 }
 
+export interface RetentionStatus {
+  enabled: boolean
+  running: boolean
+  totalMessages: number
+  revokedMessages: number
+  lastScanAt: number | null
+  error?: string
+  archivePath?: string
+}
+
+export interface RetainedMessage {
+  id: string
+  sessionId: string
+  sessionName: string
+  senderName: string
+  content: string
+  rawContent: string
+  createTime: number
+  localId: number
+  serverId: string
+  localType: number
+  isSend: boolean
+  recalledAt: number | null
+  originalMissing: boolean
+  mediaPath?: string
+  mediaState: 'none' | 'pending' | 'saved' | 'unavailable'
+  capturedAt: number
+}
+
+export interface SnsRetentionStatus {
+  enabled: boolean
+  running: boolean
+  totalPosts: number
+  totalSnapshots: number
+  savedMedia: number
+  pendingMedia: number
+  failedMedia: number
+  lastScanAt: number | null
+  baselineComplete: boolean
+  baselineOffset: number
+  error?: string
+  archivePath?: string
+}
+
+export interface RetainedSnsMedia {
+  id: string
+  mediaIndex: number
+  kind: 'image' | 'video' | 'livephoto'
+  localPath?: string
+  thumbnailPath?: string
+  status: 'pending' | 'saved' | 'failed' | 'blocked'
+  quality: 'original' | 'thumbnail' | 'none'
+  contentType?: string
+  bytes?: number
+  error?: string
+}
+
+export interface RetainedSnsPost {
+  id: string
+  username: string
+  nickname: string
+  createTime: number
+  contentDesc: string
+  type?: number
+  likes: string[]
+  comments: { id: string; nickname: string; content: string; refCommentId: string; refNickname?: string; emojis?: { url: string; md5: string; width: number; height: number; encryptUrl?: string; aesKey?: string }[] }[]
+  location?: { latitude?: number; longitude?: number; city?: string; country?: string; poiName?: string; poiAddress?: string; poiAddressName?: string; label?: string }
+  linkTitle?: string
+  linkUrl?: string
+  capturedAt: number
+  lastSeenAt: number
+  snapshotCount: number
+  media: RetainedSnsMedia[]
+}
+
 export interface ElectronAPI {
+  snsRetention: {
+    status: () => Promise<SnsRetentionStatus>
+    setEnabled: (enabled: boolean) => Promise<SnsRetentionStatus>
+    list: (options?: { query?: string; username?: string; limit?: number; offset?: number }) => Promise<{ items: RetainedSnsPost[]; total: number }>
+    scanNow: () => Promise<SnsRetentionStatus>
+  }
+  messageRetention: {
+    status: () => Promise<RetentionStatus>
+    setEnabled: (enabled: boolean) => Promise<RetentionStatus>
+    list: (options?: { query?: string; onlyRevoked?: boolean; limit?: number; offset?: number }) => Promise<{ items: RetainedMessage[]; total: number }>
+  }
   window: {
     minimize: () => void
     maximize: () => void

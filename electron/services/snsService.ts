@@ -3,7 +3,7 @@ import { ConfigService } from './config'
 import { ContactCacheService, buildStableAccountCacheScope } from './contactCacheService'
 import { app } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, renameSync } from 'fs'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, open } from 'fs/promises'
 import { basename, join } from 'path'
 import crypto from 'crypto'
 import { WasmService } from './wasmService'
@@ -215,8 +215,24 @@ import { Isaac64 } from './isaac64'
 const extractVideoKey = (xml: string): string | undefined => {
     if (!xml) return undefined
     // 匹配 <enc key="2105122989" ... /> 或 <enc key="2105122989">
-    const match = xml.match(/<enc\s+key="(\d+)"/i)
-    return match ? match[1] : undefined
+    const match = xml.match(/<enc\b[^>]*\bkey\s*=\s*["'](\d+)["']/i)
+    return match && !/^0+$/.test(match[1]) ? match[1] : undefined
+}
+
+// The database fallback may label a video as type 1. Use the content object's
+// own type, never a nested media/action type or the hostname of a thumbnail.
+const snsXmlContentType = (xml: string): number | undefined => {
+    const content = xml.match(/<ContentObject\b[^>]*>([\s\S]*?)<\/ContentObject>/i)?.[1]
+    if (!content) return undefined
+    const withoutMedia = content.replace(/<mediaList\b[^>]*>[\s\S]*?<\/mediaList>/gi, '')
+    const token = withoutMedia.match(/<(?:contentStyle|type)\b[^>]*>\s*(?:<!\[CDATA\[)?(\d+)(?:\]\]>)?\s*<\/(?:contentStyle|type)>/i)?.[1]
+    return token === undefined ? undefined : Number(token)
+}
+const preciseSnsVideoUrl = (value: string): boolean => {
+    try {
+        const pathname = new URL(value).pathname
+        return /\.(?:mp4|m4v|mov)$/i.test(pathname) || /(?:^|\/)(?:video|snsvideo)(?:\/|$)/i.test(pathname)
+    } catch { return false }
 }
 
 /**
@@ -353,6 +369,78 @@ const resolveSnsLocationText = (location?: SnsLocation): string => {
         return `${primary} · ${region}`
     }
     return primary || region
+}
+
+
+export interface SnsDownloadOptions { maxBytes?: number; timeoutMs?: number; kind?: 'image' | 'video' }
+const snsDownloadLimits = (options: SnsDownloadOptions = {}) => ({
+    // Existing interactive/export callers keep their size policy and 15-second
+    // idle timeout. The retention worker explicitly opts into both hard limits.
+    maxBytes: Number.isSafeInteger(options.maxBytes) && options.maxBytes! > 0 ? options.maxBytes! : Infinity,
+    timeoutMs: Number.isSafeInteger(options.timeoutMs) && options.timeoutMs! > 0 ? options.timeoutMs! : undefined
+})
+const validSnsVideo = (data: Buffer): boolean => data.length >= 12 &&
+    data.subarray(4, 8).toString('ascii') === 'ftyp' && detectImageMime(data, '') === 'video/mp4'
+
+/** HTTPS download with opt-in byte/deadline limits; redirects are never followed. */
+export function fetchSnsMediaBounded(url: string, options: SnsDownloadOptions = {}): Promise<{ data: Buffer; contentType: string; encrypted: boolean }> {
+    const { maxBytes, timeoutMs } = snsDownloadLimits(options)
+    return new Promise((resolve, reject) => {
+        let req: any; let response: any; let body: any; let settled = false
+        const chunks: Buffer[] = []; let total = 0
+        const finish = (error?: Error, value?: { data: Buffer; contentType: string; encrypted: boolean }) => {
+            if (settled) return
+            settled = true; clearTimeout(timer)
+            if (error) {
+                chunks.length = 0
+                body?.destroy(); response?.destroy(); req?.destroy()
+                reject(error)
+            } else resolve(value!)
+        }
+        // This deadline is absolute, so trickling bytes cannot keep a download alive indefinitely.
+        const timer = timeoutMs === undefined ? undefined
+            : setTimeout(() => finish(new Error('SNS_MEDIA_TIMEOUT: 媒体下载超时')), timeoutMs)
+        try {
+            const parsed = new URL(url)
+            if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.port && parsed.port !== '443')) {
+                throw new Error('SNS_MEDIA_URL: 仅支持标准 HTTPS 媒体地址')
+            }
+            req = require('https').request({ hostname: parsed.hostname, path: parsed.pathname + parsed.search, method: 'GET',
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36', 'Accept': '*/*', 'Accept-Encoding': 'gzip, deflate, br', 'Accept-Language': 'zh-CN,zh;q=0.9' }
+            }, (res: any) => {
+                response = res
+                if (settled) { res.destroy(); return }
+                if (res.statusCode !== 200 && res.statusCode !== 206) {
+                    const error = new Error(`HTTP ${res.statusCode}`) as Error & { status?: number }
+                    error.status = res.statusCode; finish(error); return
+                }
+                const length = Number(res.headers['content-length'])
+                if (Number.isFinite(length) && length > maxBytes) {
+                    finish(new Error('SNS_MEDIA_TOO_LARGE: 媒体超过大小限制')); return
+                }
+                const encoding = String(res.headers['content-encoding'] || '').toLowerCase()
+                body = encoding === 'gzip' ? res.pipe(zlib.createGunzip()) : encoding === 'deflate' ? res.pipe(zlib.createInflate())
+                    : encoding === 'br' ? res.pipe(zlib.createBrotliDecompress()) : res
+                res.on('error', () => finish(new Error('SNS_MEDIA_NETWORK: 媒体传输失败')))
+                res.on('aborted', () => finish(new Error('SNS_MEDIA_NETWORK: 媒体传输中断')))
+                body.on('error', () => finish(new Error('SNS_MEDIA_NETWORK: 媒体解码或传输失败')))
+                body.on('data', (chunk: Buffer) => {
+                    if (settled) return
+                    total += chunk.length
+                    // Count decoded bytes, not only Content-Length (which may be compressed or absent).
+                    if (total > maxBytes) { finish(new Error('SNS_MEDIA_TOO_LARGE: 媒体超过大小限制')); return }
+                    chunks.push(chunk)
+                })
+                body.on('end', () => {
+                    if (!settled) finish(undefined, { data: Buffer.concat(chunks, total),
+                        contentType: String(res.headers['content-type'] || ''), encrypted: String(res.headers['x-enc'] || '') === '1' })
+                })
+            })
+            req.on('error', () => finish(new Error('SNS_MEDIA_NETWORK: 媒体请求失败')))
+            req.setTimeout(15_000, () => finish(new Error('SNS_MEDIA_TIMEOUT: 媒体下载超时')))
+            req.end()
+        } catch (error) { finish(error instanceof Error ? error : new Error('SNS_MEDIA_NETWORK: 媒体请求失败')) }
+    })
 }
 
 class SnsService {
@@ -948,9 +1036,9 @@ class SnsService {
         }
     }
 
-    private getCacheFilePath(url: string): string {
+    private getCacheFilePath(url: string, kind?: 'image' | 'video'): string {
         const hash = crypto.createHash('md5').update(this.normalizeCacheUrl(url)).digest('hex')
-        const ext = isVideoUrl(url) ? '.mp4' : '.jpg'
+        const ext = (kind ? kind === 'video' : isVideoUrl(url)) ? '.mp4' : '.jpg'
         return join(this.getSnsCacheDir(), `${hash}${ext}`)
     }
 
@@ -959,11 +1047,11 @@ class SnsService {
      * 改为规范化 URL 命名后会全部失配。这里按需将当前 URL 对应的旧命名文件
      * 重命名为新命名，仅针对单个 URL、不遍历目录，迁移一次后不再触发，避免反复扫描。
      */
-    private migrateLegacyCacheFile(url: string, newPath: string): void {
+    private migrateLegacyCacheFile(url: string, newPath: string, kind?: 'image' | 'video'): void {
         try {
             if (existsSync(newPath)) return
             const legacyHash = crypto.createHash('md5').update(url).digest('hex')
-            const ext = isVideoUrl(url) ? '.mp4' : '.jpg'
+            const ext = (kind ? kind === 'video' : isVideoUrl(url)) ? '.mp4' : '.jpg'
             const legacyPath = join(this.getSnsCacheDir(), `${legacyHash}${ext}`)
             if (legacyPath !== newPath && existsSync(legacyPath)) {
                 renameSync(legacyPath, newPath)
@@ -1310,33 +1398,35 @@ class SnsService {
 
         const enrichedTimeline = result.timeline.map((post: any) => {
             const contact = this.contactCache.get(contactCacheScope, post.username)
-            const isVideoPost = post.type === 15
             const rawXml = post.rawXml || ''
+            const isVideoPost = post.type === 15 || snsXmlContentType(rawXml) === 15
             const videoKey = extractVideoKey(rawXml)
             const location = this.mergeLocation(
                 this.normalizeLocation((post as { location?: unknown }).location),
                 this.parseLocationFromXml(rawXml)
             )
 
-            const fixedMedia = (post.media || []).map((m: any) => ({
-                url: fixSnsUrl(m.url, m.token, isVideoPost),
-                thumb: fixSnsUrl(m.thumb, m.thumbToken || m.token, false),
-                md5: m.md5,
-                token: m.token,
-                thumbToken: m.thumbToken,
-                key: isVideoPost ? (videoKey || m.key) : m.key,
-                encIdx: m.encIdx || m.enc_idx,
-                livePhoto: m.livePhoto ? {
-                    ...m.livePhoto,
-                    url: fixSnsUrl(m.livePhoto.url, m.livePhoto.token, true),
-                    thumb: fixSnsUrl(m.livePhoto.thumb, m.livePhoto.thumbToken || m.livePhoto.token, false),
-                    token: m.livePhoto.token,
-                    thumbToken: m.livePhoto.thumbToken,
-                    key: videoKey || m.livePhoto.key || m.key,
-                    encIdx: m.livePhoto.encIdx || m.livePhoto.enc_idx
-                } : undefined
-            }))
-
+            const fixedMedia = (post.media || []).map((m: any) => {
+                const isVideoMedia = isVideoPost || preciseSnsVideoUrl(m.url || '')
+                return {
+                    url: fixSnsUrl(m.url, m.token, isVideoMedia),
+                    thumb: fixSnsUrl(m.thumb, m.thumbToken || m.token, false),
+                    md5: m.md5,
+                    token: m.token,
+                    thumbToken: m.thumbToken,
+                    key: isVideoMedia ? (videoKey || m.key) : m.key,
+                    encIdx: m.encIdx || m.enc_idx,
+                    livePhoto: m.livePhoto ? {
+                        ...m.livePhoto,
+                        url: fixSnsUrl(m.livePhoto.url, m.livePhoto.token, true),
+                        thumb: fixSnsUrl(m.livePhoto.thumb, m.livePhoto.thumbToken || m.livePhoto.token, false),
+                        token: m.livePhoto.token,
+                        thumbToken: m.livePhoto.thumbToken,
+                        key: videoKey || m.livePhoto.key || m.key,
+                        encIdx: m.livePhoto.encIdx || m.livePhoto.enc_idx
+                    } : undefined
+                }
+            })
             //数据服务已返回完整评论数据（含 emojis、refNickname）
             // 如果数据服务评论缺少表情包信息，回退到从 rawXml 重新解析
             const dllComments: any[] = post.comments || []
@@ -1356,6 +1446,7 @@ class SnsService {
 
             return {
                 ...post,
+                type: isVideoPost ? 15 : post.type,
                 avatarUrl: contact?.avatarUrl,
                 nickname: post.nickname || contact?.displayName || post.username,
                 media: fixedMedia,
@@ -1459,8 +1550,8 @@ class SnsService {
         return { success: false, status: result.status, error: result.error }
     }
 
-    async downloadImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; error?: string }> {
-        return this.fetchAndDecryptImage(url, key)
+    async downloadImage(url: string, key?: string | number, options: SnsDownloadOptions = {}): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; error?: string }> {
+        return this.fetchAndDecryptImage(url, key, options)
     }
 
     /**
@@ -2138,241 +2229,86 @@ window.addEventListener('scroll',function(){document.getElementById('btt').class
 </html>`
     }
 
-    private async fetchAndDecryptImage(url: string, key?: string | number): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; status?: number; error?: string }> {
+    private async fetchAndDecryptImage(url: string, key?: string | number, options: SnsDownloadOptions = {}): Promise<{ success: boolean; data?: Buffer; contentType?: string; cachePath?: string; status?: number; error?: string }> {
         if (!url) return { success: false, error: 'url 不能为空' }
-
-        const isVideo = isVideoUrl(url)
-        const cachePath = this.getCacheFilePath(url)
-        this.migrateLegacyCacheFile(url, cachePath)
-
-        // 1. 优先尝试从当前缓存目录读取
+        const { maxBytes, timeoutMs } = snsDownloadLimits(options)
+        let isVideo = options.kind ? options.kind === 'video' : isVideoUrl(url)
+        const cachePath = this.getCacheFilePath(url, options.kind)
+        this.migrateLegacyCacheFile(url, cachePath, options.kind)
+        // Validate bounded cache reads too; old cache entries may be encrypted or incomplete.
         if (existsSync(cachePath)) {
+            let handle: Awaited<ReturnType<typeof open>> | undefined
             try {
-                // 对于视频，不读取整个文件到内存，只确认存在即可
-                if (isVideo) {
-                    return { success: true, cachePath, contentType: 'video/mp4' }
+                handle = await open(cachePath, 'r')
+                const info = await handle.stat()
+                if (!info.isFile() || info.size > maxBytes) return { success: false, error: 'SNS_MEDIA_TOO_LARGE: 缓存媒体超过大小限制' }
+                let data = Buffer.alloc(isVideo ? Math.min(info.size, 64) : info.size)
+                let offset = 0
+                while (offset < data.length) {
+                    const { bytesRead } = await handle.read(data, offset, data.length - offset, offset)
+                    if (!bytesRead) break
+                    offset += bytesRead
                 }
-
-                const data = await readFile(cachePath)
-                if (!detectImageMime(data, '').startsWith('image/')) {
-                    // 旧版本可能把未解密内容写入缓存；发现无效图片头时删除并重新拉取。
-                    try { unlinkSync(cachePath) } catch { }
-                } else {
-                    const contentType = detectImageMime(data)
-                    return { success: true, data, contentType, cachePath }
-                }
-            } catch (e) {
-                console.warn(`[SnsService] 读取缓存失败: ${cachePath}`, e)
-            }
-        }
-
-        if (isVideo) {
-            // 视频专用下载逻辑 (下载 -> 解密 -> 缓存)
-            return new Promise(async (resolve) => {
-                const tmpPath = join(require('os').tmpdir(), `sns_video_${Date.now()}_${Math.random().toString(36).slice(2)}.enc`)
-
-                try {
-                    const https = require('https')
-                    const urlObj = new URL(url)
-                    const fs = require('fs')
-
-                    const fileStream = fs.createWriteStream(tmpPath)
-
-                    const options = {
-                        hostname: urlObj.hostname,
-                        path: urlObj.pathname + urlObj.search,
-                        method: 'GET',
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36',
-                            'Accept': '*/*',
-                            // 'Accept-Encoding': 'gzip, deflate, br', // 视频流通常不压缩，去掉以免 stream 处理复杂
-                            'Connection': 'keep-alive'
+                // A video CDN also serves image thumbnails. With no explicit kind,
+                // trust a valid image header rather than a hostname heuristic.
+                if (!options.kind && isVideo && detectImageMime(data.subarray(0, offset), '').startsWith('image/')) {
+                    isVideo = false
+                    if (data.length < info.size) {
+                        data = Buffer.alloc(info.size); offset = 0
+                        while (offset < data.length) {
+                            const { bytesRead } = await handle.read(data, offset, data.length - offset, offset)
+                            if (!bytesRead) break
+                            offset += bytesRead
                         }
                     }
-
-                    const req = https.request(options, (res: any) => {
-                        if (res.statusCode !== 200 && res.statusCode !== 206) {
-                            fileStream.close()
-                            fs.unlink(tmpPath, () => { }) // 删除临时文件
-                            resolve({ success: false, status: res.statusCode, error: `HTTP ${res.statusCode}` })
-                            return
-                        }
-
-                        res.pipe(fileStream)
-                        fileStream.on('finish', async () => {
-                            fileStream.close()
-
-                            try {
-                                const encryptedBuffer = await readFile(tmpPath)
-                                const raw = encryptedBuffer // 引用，方便后续操作
-
-
-                                if (key && String(key).trim().length > 0) {
-                                    try {
-                                        const keyText = String(key).trim()
-                                        let keystream: Buffer
-
-                                        try {
-                                            const wasmService = WasmService.getInstance()
-                                            // 只需要前 128KB (131072 bytes) 用于解密头部
-                                            keystream = await wasmService.getKeystream(keyText, 131072)
-                                        } catch (wasmErr) {
-                                            // 打包漏带 wasm 或 wasm 初始化异常时，回退到纯 TS ISAAC64
-                                            const isaac = new Isaac64(keyText)
-                                            keystream = isaac.generateKeystreamBE(131072)
-                                        }
-
-                                        const decryptLen = Math.min(keystream.length, raw.length)
-
-                                        // XOR 解密
-                                        for (let i = 0; i < decryptLen; i++) {
-                                            raw[i] ^= keystream[i]
-                                        }
-
-                                        // 验证 MP4 签名 ('ftyp' at offset 4)
-                                        const ftyp = raw.subarray(4, 8).toString('ascii')
-                                        if (ftyp !== 'ftyp') {
-                                            // 可以在此处记录解密可能失败的标记，但不打印详细 hex
-                                        }
-                                    } catch (err) {
-                                        console.error(`[SnsService] 视频解密出错: ${err}`)
-                                    }
-                                }
-
-                                // 写入最终缓存 (覆盖)
-                                await writeFile(cachePath, raw)
-
-                                // 删除临时文件
-                                try { await import('fs/promises').then(fs => fs.unlink(tmpPath)) } catch (e) { }
-
-                                resolve({ success: true, data: raw, contentType: 'video/mp4', cachePath })
-                            } catch (e: any) {
-                                console.error(`[SnsService] 视频处理失败:`, e)
-                                resolve({ success: false, error: e.message })
-                            }
-                        })
-                    })
-
-                    req.on('error', (e: any) => {
-                        fs.unlink(tmpPath, () => { })
-                        resolve({ success: false, error: e.message })
-                    })
-
-                    req.setTimeout(15000, () => {
-                        req.destroy()
-                        fs.unlink(tmpPath, () => { })
-                        resolve({ success: false, error: '请求超时' })
-                    })
-
-                    req.end()
-
-                } catch (e: any) {
-                    resolve({ success: false, error: e.message })
                 }
-            })
+                const read = data.subarray(0, offset)
+                if (isVideo ? validSnsVideo(read) : detectImageMime(read, '').startsWith('image/')) {
+                    return isVideo ? { success: true, cachePath, contentType: 'video/mp4' }
+                        : { success: true, data: read, contentType: detectImageMime(read), cachePath }
+                }
+            } catch { /* An unreadable or invalid cache falls back to a bounded download. */ }
+            finally { await handle?.close().catch(() => {}) }
         }
-
-        // 图片逻辑 (保持流式处理)
-        return new Promise((resolve) => {
+        try {
+            const result = await fetchSnsMediaBounded(url, { maxBytes, timeoutMs })
+            const raw = result.data
+            let decoded = raw
+            if (!options.kind && isVideo && detectImageMime(raw, '').startsWith('image/')) isVideo = false
+            if (isVideo) {
+                if (!validSnsVideo(raw) && key !== undefined && key !== null && String(key).trim()) {
+                    const keyText = String(key).trim()
+                    let keystream: Buffer
+                    try { keystream = await WasmService.getInstance().getKeystream(keyText, 131072) }
+                    catch { keystream = new Isaac64(keyText).generateKeystreamBE(131072) }
+                    decoded = Buffer.from(raw)
+                    for (let i = 0; i < Math.min(keystream.length, decoded.length); i++) decoded[i] ^= keystream[i]
+                }
+                if (!validSnsVideo(decoded)) return { success: false, error: 'SNS_MEDIA_INVALID_VIDEO: 视频解密失败或 MP4 格式无效' }
+            } else {
+                const rawMime = detectImageMime(raw, '')
+                if (!rawMime.startsWith('image/') && key !== undefined && key !== null && /^\d+$/.test(String(key).trim())) {
+                    try {
+                        const keystream = await WasmService.getInstance().getKeystream(String(key).trim(), raw.length)
+                        decoded = Buffer.allocUnsafe(raw.length)
+                        for (let i = 0; i < raw.length; i++) decoded[i] = raw[i] ^ keystream[i]
+                    } catch { return { success: false, error: 'SNS_MEDIA_DECRYPT: 图片解密失败' } }
+                }
+                if (!detectImageMime(decoded, '').startsWith('image/')) return { success: false, error: 'SNS_MEDIA_INVALID_IMAGE: 图片解密失败：无法识别图片格式' }
+            }
+            // Do not claim cache success until a complete, validated private file is atomically published.
+            const temporary = cachePath + '.' + crypto.randomUUID() + '.tmp'
             try {
-                const https = require('https')
-                const zlib = require('zlib')
-                const urlObj = new URL(url)
-
-                const options = {
-                    hostname: urlObj.hostname,
-                    path: urlObj.pathname + urlObj.search,
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36',
-                        'Accept': '*/*',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                        'Accept-Language': 'zh-CN,zh;q=0.9',
-                        'Connection': 'keep-alive'
-                    }
-                }
-
-                const req = https.request(options, (res: any) => {
-                    if (res.statusCode !== 200 && res.statusCode !== 206) {
-                        console.error(`[SnsService] CDN 请求失败: HTTP ${res.statusCode}`)
-                        resolve({ success: false, status: res.statusCode, error: `HTTP ${res.statusCode}` })
-                        return
-                    }
-
-                    const chunks: Buffer[] = []
-                    let stream = res
-
-                    const encoding = res.headers['content-encoding']
-                    if (encoding === 'gzip') stream = res.pipe(zlib.createGunzip())
-                    else if (encoding === 'deflate') stream = res.pipe(zlib.createInflate())
-                    else if (encoding === 'br') stream = res.pipe(zlib.createBrotliDecompress())
-
-                    stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-                    stream.on('end', async () => {
-                        const raw = Buffer.concat(chunks)
-                        const xEnc = String(res.headers['x-enc'] || '').trim()
-
-                        let decoded = raw
-                        const rawMagicMime = detectImageMime(raw, '')
-
-                        // 图片逻辑
-                        const shouldDecrypt = (xEnc === '1' || !!key) && key !== undefined && key !== null && String(key).trim().length > 0
-                        if (shouldDecrypt) {
-                            try {
-                                const keyStr = String(key).trim()
-                                if (/^\d+$/.test(keyStr)) {
-                                    // 使用 WASM 版本的 Isaac64 解密图片
-                                    // 修正逻辑：使用带 reverse 且修正了 8字节对齐偏移的 getKeystream
-                                    const wasmService = WasmService.getInstance()
-                                    const keystream = await wasmService.getKeystream(keyStr, raw.length)
-
-                                    const decrypted = Buffer.allocUnsafe(raw.length)
-                                    for (let i = 0; i < raw.length; i++) {
-                                        decrypted[i] = raw[i] ^ keystream[i]
-                                    }
-
-                                    const decryptedMagicMime = detectImageMime(decrypted, '')
-                                    if (decryptedMagicMime.startsWith('image/')) {
-                                        decoded = decrypted
-                                    } else if (!rawMagicMime.startsWith('image/')) {
-                                        decoded = decrypted
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('[SnsService] TS Decrypt Error:', e)
-                            }
-                        }
-
-                        const decodedMagicMime = detectImageMime(decoded, '')
-                        if (!decodedMagicMime.startsWith('image/')) {
-                            console.error(`[SnsService] 图片解密失败: 原始mime=${rawMagicMime}, 解密后mime=${decodedMagicMime}, key=${key}`)
-                            resolve({ success: false, error: '图片解密失败：无法识别图片格式' })
-                            return
-                        }
-
-                        // 写入磁盘缓存
-                        try {
-                            await writeFile(cachePath, decoded)
-                        } catch (e) {
-                            console.warn(`[SnsService] 写入缓存失败: ${cachePath}`, e)
-                        }
-
-                        const contentType = detectImageMime(decoded, (res.headers['content-type'] || 'image/jpeg') as string)
-                        resolve({ success: true, data: decoded, contentType, cachePath })
-                    })
-                    stream.on('error', (e: any) => resolve({ success: false, error: e.message }))
-                })
-
-                req.on('error', (e: any) => resolve({ success: false, error: e.message }))
-                req.setTimeout(15000, () => {
-                    req.destroy()
-                    resolve({ success: false, error: '请求超时' })
-                })
-                req.end()
-            } catch (e: any) {
-                resolve({ success: false, error: e.message })
-            }
-        })
+                await writeFile(temporary, decoded, { mode: 0o600 })
+                renameSync(temporary, cachePath)
+            } finally { if (existsSync(temporary)) { try { unlinkSync(temporary) } catch {} } }
+            return { success: true, data: decoded, contentType: isVideo ? 'video/mp4' : detectImageMime(decoded), cachePath }
+        } catch (error) {
+            const value = error as Error & { status?: number }
+            // Error strings from the network/decryptor can include private URLs or keys; expose only our bounded codes.
+            const safe = /^SNS_MEDIA_|^HTTP \d{3}$/.test(value.message || '') ? value.message : 'SNS_MEDIA_FAILED: 媒体下载或保存失败'
+            return { success: false, status: value.status, error: safe }
+        }
     }
 
     /** 判断 buffer 是否为有效图片头 */

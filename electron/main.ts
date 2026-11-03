@@ -29,6 +29,8 @@ import { cloudControlService } from './services/cloudControlService'
 import { destroyNotificationWindow, registerNotificationHandlers, showNotification, setNotificationNavigateHandler } from './windows/notificationWindow'
 import { httpService } from './services/httpService'
 import { messagePushService } from './services/messagePushService'
+import { messageRetentionService } from './services/messageRetentionService'
+import { snsRetentionService } from './services/snsRetentionService'
 import { insightService } from './services/insightService'
 import { insightRecordService } from './services/insightRecordService'
 import { insightProfileService } from './services/insightProfileService'
@@ -2141,6 +2143,13 @@ const runLegacySnsCacheMigration = async (
 
 // 注册 IPC 处理器
 function registerIpcHandlers() {
+  ipcMain.handle('snsRetention:status', () => snsRetentionService.status())
+  ipcMain.handle('snsRetention:setEnabled', (_, enabled: boolean) => snsRetentionService.setEnabled(enabled === true))
+  ipcMain.handle('snsRetention:list', (_, options?: { query?: string; username?: string; limit?: number; offset?: number }) => snsRetentionService.list(options))
+  ipcMain.handle('snsRetention:scanNow', () => snsRetentionService.scanNow())
+  ipcMain.handle('messageRetention:status', () => messageRetentionService.status())
+  ipcMain.handle('messageRetention:setEnabled', (_, enabled: boolean) => messageRetentionService.setEnabled(enabled === true))
+  ipcMain.handle('messageRetention:list', (_, options?: { query?: string; onlyRevoked?: boolean; limit?: number; offset?: number }) => messageRetentionService.list(options))
   const relayOneService = new RelayOneService(configService!)
   registerNotificationHandlers()
   ensureNotificationNavigateHandlerRegistered()
@@ -2164,6 +2173,8 @@ function registerIpcHandlers() {
       applyAutoUpdateChannel('settings')
     }
     void messagePushService.handleConfigChanged(key)
+    messageRetentionService.handleConfigChanged(key)
+    snsRetentionService.handleConfigChanged(key)
     void insightService.handleConfigChanged(key)
     void groupSummaryService.handleConfigChanged(key)
     if (['dbPath', 'decryptKey', 'myAccountId'].includes(key)) {
@@ -3027,6 +3038,8 @@ function registerIpcHandlers() {
     }
     configService?.clear()
     messagePushService.handleConfigCleared()
+    messageRetentionService.handleConfigChanged('dbPath')
+    snsRetentionService.handleConfigChanged('dbPath')
     insightService.handleConfigCleared()
     groupSummaryService.handleConfigCleared()
     snsService.clearMemoryCache()
@@ -4008,7 +4021,12 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) => {
-    return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+    const accountScope = JSON.stringify([configService?.get('myAccountId'), configService?.get('dbPath')])
+    const result = await snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+    if (result.success && result.timeline && accountScope === JSON.stringify([configService?.get('myAccountId'), configService?.get('dbPath')])) {
+      snsRetentionService.captureVisible(result.timeline)
+    }
+    return result
   })
 
   ipcMain.handle('sns:getSnsUsernames', async () => {
@@ -5568,6 +5586,8 @@ app.whenReady().then(async () => {
   })
   chatService.addDbMonitorListener((type, json) => {
     messagePushService.handleDbMonitorChange(type, json)
+    messageRetentionService.handleDbMonitorChange(type, json)
+    snsRetentionService.handleDbMonitorChange(type, json)
     insightService.handleDbMonitorChange(type, json)
   })
 
@@ -5648,6 +5668,8 @@ app.whenReady().then(async () => {
 
   // 依赖数据库的后台服务在窗口显示后再启动，避免与启动预热争抢数据库 worker
   messagePushService.start()
+  messageRetentionService.start()
+  snsRetentionService.start()
   insightService.start()
   groupSummaryService.start()
   if (configService.get('autoDownloadHighRes')) {
@@ -5687,6 +5709,8 @@ const shutdownAppServices = async (): Promise<void> => {
     // 通知窗使用 hide 而非 close，退出时主动销毁，避免残留窗口阻塞进程退出。
     destroyNotificationWindow()
     messagePushService.stop()
+    messageRetentionService.stop()
+    snsRetentionService.stop()
     insightService.stop()
     groupSummaryService.stop()
     // before-quit 不会等待后续 await，先同步落盘刚生成的语音转写。

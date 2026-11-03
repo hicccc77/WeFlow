@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Home, MessageSquare, MessageSquareMore, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, FolderClosed, Footprints, Users, ArchiveRestore, Sparkles, CircleHelp } from 'lucide-react'
+import { Home, MessageSquare, MessageSquareMore, BarChart3, FileText, Settings, Download, Aperture, UserCircle, Lock, LockOpen, ChevronUp, FolderClosed, Footprints, Users, ArchiveRestore, Sparkles, CircleHelp, ShieldCheck } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import * as configService from '../services/config'
 import { onExportSessionStatus, requestExportSessionStatus } from '../services/exportBridge'
@@ -445,6 +445,24 @@ function Sidebar({ collapsed }: SidebarProps) {
           >
             <span className="nav-icon"><ArchiveRestore size={20} /></span>
             <span className="nav-label">数据库备份</span>
+          </NavLink>
+
+          <NavLink
+            to="/retention"
+            className={`nav-item ${isActive('/retention') ? 'active' : ''}`}
+            title={collapsed ? '消息留存' : undefined}
+          >
+            <span className="nav-icon"><ShieldCheck size={20} /></span>
+            <span className="nav-label">消息留存</span>
+          </NavLink>
+
+          <NavLink
+            to="/sns-retention"
+            className={`nav-item ${isActive('/sns-retention') ? 'active' : ''}`}
+            title={collapsed ? '朋友圈留存' : undefined}
+          >
+            <span className="nav-icon"><ArchiveRestore size={20} /></span>
+            <span className="nav-label">朋友圈留存</span>
           </NavLink>
 
 

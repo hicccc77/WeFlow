@@ -41,6 +41,8 @@ const ChatHistoryPage = lazy(() => import('./pages/ChatHistoryPage'))
 const NotificationWindow = lazy(() => import('./pages/NotificationWindow'))
 const AccountManagementPage = lazy(() => import('./pages/AccountManagementPage'))
 const BackupPage = lazy(() => import('./pages/BackupPage'))
+const MessageRetentionPage = lazy(() => import('./pages/MessageRetentionPage'))
+const SnsRetentionPage = lazy(() => import('./pages/SnsRetentionPage'))
 const InsightInboxPage = lazy(() => import('./pages/InsightInboxPage'))
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
 const GroupAnalyticsPage = lazy(() => import('./pages/GroupAnalyticsPage'))
@@ -854,6 +856,8 @@ function App() {
                 <Route path="/contacts" element={<ContactsPage />} />
                 <Route path="/resources" element={<ResourcesPage />} />
                 <Route path="/backup" element={<BackupPage />} />
+                <Route path="/retention" element={<MessageRetentionPage />} />
+                <Route path="/sns-retention" element={<SnsRetentionPage />} />
                 <Route path="/chat-history/:sessionId/:messageId" element={<ChatHistoryPage />} />
                 <Route path="/chat-history-inline/:payloadId" element={<ChatHistoryPage />} />
               </Routes>

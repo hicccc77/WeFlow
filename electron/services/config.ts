@@ -53,6 +53,8 @@ interface ConfigSchema {
   cachePath: string
   lastOpenedDb: string
   lastSession: string
+  messageRetentionEnabled: boolean
+  snsRetentionEnabled: boolean
 
   // 界面相关
   theme: 'light' | 'dark' | 'system'
@@ -229,6 +231,8 @@ export class ConfigService {
       cachePath: '',
       lastOpenedDb: '',
       lastSession: '',
+      messageRetentionEnabled: false,
+      snsRetentionEnabled: false,
       theme: 'system',
       themeId: 'cloud-dancer',
       language: 'zh-CN',

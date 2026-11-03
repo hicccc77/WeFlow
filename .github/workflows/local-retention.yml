@@ -1,0 +1,41 @@
+name: Local retention
+
+on:
+  pull_request:
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/test-*-retention.cjs'
+      - 'scripts/test-sns-download.cjs'
+      - 'package*.json'
+      - 'tsconfig*.json'
+      - '.github/workflows/local-retention.yml'
+  push:
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/test-*-retention.cjs'
+      - 'scripts/test-sns-download.cjs'
+      - 'package*.json'
+      - 'tsconfig*.json'
+      - '.github/workflows/local-retention.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+      - run: npm run test:retention
+      - run: npm run typecheck
