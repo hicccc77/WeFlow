@@ -89,7 +89,7 @@
           ln -s "$appDir/node_modules" "$runtimeDir/resources/app.asar.unpacked/node_modules"
 
           makeWrapper "$runtimeDir/electron" "$out/bin/weflow" \
-            --add-flags "--ozone-platform-hint=auto" \
+            --add-flags "\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-features=WaylandWindowDecorations --enable-wayland-ime=true}" \
             --add-flags "$appDir" \
             --set ELECTRON_FORCE_IS_PACKAGED 1 \
             --set AUTO_UPDATE_ENABLED 0 \
