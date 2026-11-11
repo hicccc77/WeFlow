@@ -53,8 +53,17 @@
         npmRebuildFlags = [ "--ignore-scripts" ];
         nativeBuildInputs = [
           pkgs.makeWrapper
+          pkgs.wrapGAppsHook3
         ];
-        buildInputs = [ electron pkgs.ffmpeg ];
+        buildInputs = with pkgs; [
+          electron
+          ffmpeg
+          gsettings-desktop-schemas
+          glib
+          gtk3
+          gtk4
+        ];
+        dontWrapGApps = true;
         env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
         dontNpmBuild = true;
 
@@ -84,11 +93,14 @@
 
           cp -a ${electron.unwrapped}/libexec/electron/. "$runtimeDir/"
           chmod u+w "$runtimeDir/resources"
+          cp public/icon.png "$runtimeDir/resources/icon.png"
           ln -s ${pkgs.ffmpeg}/bin/ffmpeg "$appDir/node_modules/ffmpeg-static/ffmpeg"
           mkdir -p "$runtimeDir/resources/app.asar.unpacked"
           ln -s "$appDir/node_modules" "$runtimeDir/resources/app.asar.unpacked/node_modules"
 
+          gappsWrapperArgsHook
           makeWrapper "$runtimeDir/electron" "$out/bin/weflow" \
+            "''${gappsWrapperArgs[@]}" \
             --add-flags "\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-features=WaylandWindowDecorations --enable-wayland-ime=true}" \
             --add-flags "$appDir" \
             --set ELECTRON_FORCE_IS_PACKAGED 1 \
