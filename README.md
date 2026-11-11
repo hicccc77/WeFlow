@@ -84,6 +84,17 @@ npm install
 npm run dev
 ```
 
+NixOS x86_64 用户可以通过 Flake 构建并运行应用：
+
+```bash
+nix build
+./result/bin/weflow
+```
+
+也可以直接运行 `nix run`，或用 `nix profile install .` 安装到个人 profile。该 Nix 包关闭应用内自动更新，请通过更新 Flake 输入并重新构建来升级。
+
+项目采用 CC BY-NC-SA 4.0 非商业许可；此 Flake 仅自动允许构建 WeFlow 本身，使用和再分发仍须遵守 [LICENSE](LICENSE)。
+
 ## 推广与合作
 
 如果您对 **WeFlow** 有兴趣，或者希望与我们展开深度合作或投放你的广告，欢迎随时通过邮件取得联系。我们非常期待与各位创作者、开发者及合作伙伴共同探索。
