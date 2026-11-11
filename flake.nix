@@ -52,7 +52,7 @@
         npmInstallFlags = [ "--legacy-peer-deps" ];
         npmRebuildFlags = [ "--ignore-scripts" ];
         nativeBuildInputs = [
-          pkgs.makeWrapper
+          pkgs.makeShellWrapper
           pkgs.wrapGAppsHook3
         ];
         buildInputs = with pkgs; [
@@ -99,7 +99,7 @@
           ln -s "$appDir/node_modules" "$runtimeDir/resources/app.asar.unpacked/node_modules"
 
           gappsWrapperArgsHook
-          makeWrapper "$runtimeDir/electron" "$out/bin/weflow" \
+          makeShellWrapper "$runtimeDir/electron" "$out/bin/weflow" \
             "''${gappsWrapperArgs[@]}" \
             --add-flags "\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-features=WaylandWindowDecorations --enable-wayland-ime=true}" \
             --add-flags "$appDir" \
