@@ -803,21 +803,23 @@ function App() {
           <RouteGuard>
             {/* Agent 首次打开后保持挂载，页面切换时继续流式回答、工具调用与会话持久化。 */}
             {agentMounted && (
-              <LoadErrorBoundary
-                title="AI 页面加载失败"
-                retryLabel="重新加载"
-                onRetry={() => window.location.reload()}
-              >
-                <Suspense fallback={isAgentRoute ? <div className="route-loading" role="status" aria-live="polite"><span /><small>正在打开 AI 聊天…</small></div> : null}>
-                  <div className={`agent-keepalive-page ${isAgentRoute ? 'active' : 'hidden'}`} aria-hidden={!isAgentRoute}>
+              <div className={`agent-keepalive-page ${isAgentRoute ? 'active' : 'hidden'}`} aria-hidden={!isAgentRoute}>
+                {/* 错误边界必须放在可见性容器内部：否则导入失败后错误态会常驻在 <main> 里，
+                    切换到其它页面时仍会占据整屏，把新页面挤到下面。 */}
+                <LoadErrorBoundary
+                  title="AI 页面加载失败"
+                  retryLabel="重新加载"
+                  onRetry={() => window.location.reload()}
+                >
+                  <Suspense fallback={isAgentRoute ? <div className="route-loading" role="status" aria-live="polite"><span /><small>正在打开 AI 聊天…</small></div> : null}>
                     <AgentPage
                       active={isAgentRoute}
                       routeSessionId={agentRoute.sessionId}
                       routeState={agentRoute.state}
                     />
-                  </div>
-                </Suspense>
-              </LoadErrorBoundary>
+                  </Suspense>
+                </LoadErrorBoundary>
+              </div>
             )}
 
             {/* Export 模块按需挂载（首次访问或有自动化任务时），挂载后 keepalive 保持任务/调度状态 */}
