@@ -18,6 +18,7 @@ import LockScreen from './components/LockScreen'
 import { GlobalSessionMonitor } from './components/GlobalSessionMonitor'
 import WindowCloseDialog from './components/WindowCloseDialog'
 import { resolveAutomationScopeKey } from './pages/Export/hooks/useAutomation'
+import { LoadErrorBoundary } from './components/LoadErrorBoundary'
 import { loadAgentPage } from './pages/agent/loadAgentPage'
 
 // 全部页面懒加载：主窗口首屏只解析 App 壳 + HomePage；
@@ -802,15 +803,21 @@ function App() {
           <RouteGuard>
             {/* Agent 首次打开后保持挂载，页面切换时继续流式回答、工具调用与会话持久化。 */}
             {agentMounted && (
-              <Suspense fallback={isAgentRoute ? <div className="route-loading" role="status" aria-live="polite"><span /><small>正在打开 AI 聊天…</small></div> : null}>
-                <div className={`agent-keepalive-page ${isAgentRoute ? 'active' : 'hidden'}`} aria-hidden={!isAgentRoute}>
-                  <AgentPage
-                    active={isAgentRoute}
-                    routeSessionId={agentRoute.sessionId}
-                    routeState={agentRoute.state}
-                  />
-                </div>
-              </Suspense>
+              <LoadErrorBoundary
+                title="AI 页面加载失败"
+                retryLabel="重新加载"
+                onRetry={() => window.location.reload()}
+              >
+                <Suspense fallback={isAgentRoute ? <div className="route-loading" role="status" aria-live="polite"><span /><small>正在打开 AI 聊天…</small></div> : null}>
+                  <div className={`agent-keepalive-page ${isAgentRoute ? 'active' : 'hidden'}`} aria-hidden={!isAgentRoute}>
+                    <AgentPage
+                      active={isAgentRoute}
+                      routeSessionId={agentRoute.sessionId}
+                      routeState={agentRoute.state}
+                    />
+                  </div>
+                </Suspense>
+              </LoadErrorBoundary>
             )}
 
             {/* Export 模块按需挂载（首次访问或有自动化任务时），挂载后 keepalive 保持任务/调度状态 */}

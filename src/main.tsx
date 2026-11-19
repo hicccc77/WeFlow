@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import App from './App'
+import { LoadErrorBoundary } from './components/LoadErrorBoundary'
 import './styles/main.scss'
 
 const RelationshipAchievementsDemoPage = React.lazy(() => import('./pages/RelationshipAchievementsPage'))
@@ -53,13 +54,16 @@ function ErrorReferenceWindowApp() {
 ReactDOM.createRoot(document.getElementById('app')!).render(
   <React.StrictMode>
     <HashRouter>
-      {isErrorReferenceWindow ? (
-        <ErrorReferenceWindowApp />
-      ) : isRelationshipAchievementsDemo ? (
-        <React.Suspense fallback={null}>
-          <RelationshipAchievementsDemoPage demo />
-        </React.Suspense>
-      ) : <App />}
+      {/* 根级兜底：任何未被捕获的渲染错误（包括动态导入失败）都不再让窗口只剩一片背景色 */}
+      <LoadErrorBoundary title="应用渲染出错" retryLabel="重新加载" onRetry={() => window.location.reload()}>
+        {isErrorReferenceWindow ? (
+          <ErrorReferenceWindowApp />
+        ) : isRelationshipAchievementsDemo ? (
+          <React.Suspense fallback={null}>
+            <RelationshipAchievementsDemoPage demo />
+          </React.Suspense>
+        ) : <App />}
+      </LoadErrorBoundary>
     </HashRouter>
   </React.StrictMode>
 )

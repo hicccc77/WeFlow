@@ -342,7 +342,12 @@ function Sidebar({ collapsed }: SidebarProps) {
           <NavLink
             to="/ai"
             className={`nav-item ${isActive('/ai') ? 'active' : ''}`}
-            onPointerEnter={() => { void loadAgentPage() }}
+            onPointerEnter={() => {
+              // 预加载失败不阻塞使用：真正进入页面时会重新发起导入并给出可重试的提示
+              void loadAgentPage().catch((error) => {
+                console.warn('AI 页面预加载失败，进入 AI 页面时会重试:', error)
+              })
+            }}
             title={collapsed ? 'AI Agent' : undefined}
           >
             <span className="nav-icon"><MessageSquareMore size={20} strokeWidth={1.8} /></span>
