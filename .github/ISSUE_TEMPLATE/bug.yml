@@ -1,0 +1,140 @@
+name: "报告 Bug"
+description: "代码出现了非预期的问题、崩溃或报错"
+title: "[Bug]: "
+labels: ["type: bug", "status: needs info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供尽可能详细的信息，帮助我们快速定位和修复问题。
+  - type: input
+    id: confirm-unique
+    attributes:
+      label: 确认唯一性
+      description: 请输入：我已确认没有相同问题出现
+      placeholder: 我已确认没有相同问题出现
+    validations:
+      required: true
+  - type: dropdown
+    id: standard-operation
+    attributes:
+      label: 这是标准操作流程下出现的问题吗？
+      description: 确认你是按照正常方式使用，而不是非常规操作
+      options:
+        - 是，标准操作
+        - 否，非标准操作
+    validations:
+      required: true
+  - type: dropdown
+    id: code-issue-confirm
+    attributes:
+      label: 你确认这真的是我们的代码导致的吗？
+      description: 请仔细思考，排除网络、系统、第三方服务等外部因素
+      options:
+        - 是，确认是代码问题
+        - 不确定
+        - 否，可能是其他原因
+    validations:
+      required: true
+  - type: checkboxes
+    id: pre-check
+    attributes:
+      label: 基础确认
+      options:
+        - label: 我使用的是最新版本
+          required: true
+        - label: 我已阅读过相关文档
+          required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 使用平台
+      description: 选择出现问题的平台
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 问题严重程度
+      description: 这个问题对你的使用造成了多大影响？
+      options:
+        - 严重崩溃或数据丢失（无法使用）
+        - 核心功能受影响（在下一个常规发布中必须修复）
+        - 边缘场景或轻微问题（等待空闲时修复）
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰描述你遇到的问题，包括实际发生了什么
+      placeholder: 例如：当我点击发送按钮时，应用程序崩溃并显示白屏
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 提供详细的操作步骤，让我们能够重现这个问题
+      placeholder: |
+        1. 打开应用并登录账号
+        2. 进入聊天页面
+        3. 点击发送按钮
+        4. 观察到应用崩溃
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 预期行为
+      description: 描述你期望的正确行为应该是什么样的
+      placeholder: 例如：点击发送按钮后，消息应该正常发送并显示在聊天窗口中
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: 实际行为
+      description: 描述实际发生的错误行为
+      placeholder: 例如：点击后应用直接崩溃，显示白屏
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志或截图
+      description: 粘贴控制台错误信息、崩溃日志，或拖入截图
+      placeholder: 请粘贴完整的错误堆栈信息
+      render: shell
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统版本
+      description: 例如：Windows 11 24H2、macOS 15.0、Ubuntu 24.04
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: 应用版本
+      description: 在关于页面或设置中查看版本号
+      placeholder: v1.2.3
+    validations:
+      required: true
+  - type: input
+    id: architecture
+    attributes:
+      label: 系统架构
+      description: 例如：x64、arm64
+      placeholder: x64
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 补充信息
+      description: 其他可能有助于定位问题的信息
+      placeholder: 例如：这个问题是在某次更新后开始出现的，或者只在特定网络环境下出现
